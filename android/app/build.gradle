@@ -4,6 +4,13 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// GitHub Secrets বা Local key.properties থেকে তথ্য পড়ার জন্য এই অংশটি
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace "com.hanif.mymanager"
     compileSdk 34
@@ -18,17 +25,28 @@ android {
         jvmTarget = '1.8'
     }
 
+    signingConfigs {
+        release {
+            // এটি প্রথমে GitHub-এর Environment Variable খুঁজবে, না পেলে local key.properties খুঁজবে
+            keyAlias System.getenv("ALIAS") ?: keystoreProperties['keyAlias']
+            keyPassword System.getenv("KEY_PASSWORD") ?: keystoreProperties['keyPassword']
+            storeFile file(System.getenv("KEYSTORE_PATH") ?: (keystoreProperties['storeFile'] ?: "my-manager.jks"))
+            storePassword System.getenv("STORE_PASSWORD") ?: keystoreProperties['storePassword']
+        }
+    }
+
     defaultConfig {
         applicationId "com.hanif.mymanager"
         minSdk 21
         targetSdk 34
-        versionCode 2
+        versionCode 2 // প্রতিবার আপডেটের সময় এটি ১ করে বাড়িয়ে দেবেন (যেমন: ৩, ৪...)
         versionName "2.0.0"
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.debug
+            // এখানে debug সরিয়ে release করা হয়েছে
+            signingConfig signingConfigs.release
             minifyEnabled false
             shrinkResources false
         }
