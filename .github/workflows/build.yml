@@ -45,11 +45,14 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
 
-      - name: Rename APK
+      - name: Organize APK Files
         run: |
           mkdir -p output
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk output/MyManager-arm64.apk || true
-          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk output/MyManager-arm32.apk || true
+          # ফাইলগুলো খুঁজে বের করে আউটপুট ফোল্ডারে কপি করা
+          find build/app/outputs/flutter-apk/ -name "*arm64-v8a-release.apk" -exec cp {} output/MyManager-arm64.apk \;
+          find build/app/outputs/flutter-apk/ -name "*armeabi-v7a-release.apk" -exec cp {} output/MyManager-arm32.apk \;
+          # যদি কোনো কারণে স্প্লিট না হয়ে একটি ফাইল তৈরি হয়
+          find build/app/outputs/flutter-apk/ -name "app-release.apk" -exec cp {} output/MyManager-Full.apk \;
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -57,23 +60,11 @@ jobs:
         with:
           tag_name: v${{ github.run_number }}
           name: "My Manager v${{ github.run_number }}"
-          files: output/*.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-
-      - name: Rename APK
-        run: |
-          mkdir -p output
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk output/MyManager-arm64.apk || true
-          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk output/MyManager-arm32.apk || true
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main'
-        with:
-          tag_name: v${{ github.run_number }}
-          name: "My Manager v${{ github.run_number }}"
+          body: |
+            ## 🚀 My Manager APK Updated
+            - **MyManager-arm64.apk** (নতুন ফোনের জন্য)
+            - **MyManager-arm32.apk** (পুরানো ফোনের জন্য)
+            - **Build Number:** ${{ github.run_number }}
           files: output/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
