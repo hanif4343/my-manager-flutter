@@ -4,6 +4,7 @@ import '../models/project.dart';
 import '../widgets/app_theme.dart';
 import 'project_detail_screen.dart';
 import 'project_form_screen.dart';
+import 'backup_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -36,8 +37,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         content: Text('"${p.name}" এবং সব ডেটা মুছে যাবে।',
             style: const TextStyle(color: AppTheme.textSecondary)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false),
-              child: const Text('বাতিল')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
           TextButton(onPressed: () => Navigator.pop(context, true),
               child: const Text('মুছো', style: TextStyle(color: AppTheme.red))),
         ],
@@ -71,6 +71,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ]),
         automaticallyImplyLeading: false,
+        actions: [
+          IconButton(
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const BackupScreen())),
+            icon: const Icon(Icons.cloud_outlined, color: AppTheme.textSecondary),
+            tooltip: 'Google Drive Backup',
+          ),
+        ],
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(1),
           child: Divider(height: 1, color: AppTheme.border),
@@ -78,8 +86,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
-          : _projects.isEmpty
-              ? _emptyState()
+          : _projects.isEmpty ? _emptyState()
               : RefreshIndicator(
                   onRefresh: _load, color: AppTheme.accent,
                   child: ListView.separated(
@@ -128,7 +135,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _load();
         },
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Color bar
           Container(height: 4, decoration: BoxDecoration(
             color: p.color, borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
           )),
@@ -155,15 +161,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(height: 8),
                 Wrap(spacing: 6, runSpacing: 4, children: p.tags.map((t) => Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppTheme.bg3, borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppTheme.border),
-                  ),
+                  decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppTheme.border)),
                   child: Text(t, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
                 )).toList()),
               ],
               const SizedBox(height: 10),
-              // Progress
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
