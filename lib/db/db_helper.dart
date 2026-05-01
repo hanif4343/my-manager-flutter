@@ -6,7 +6,7 @@ import '../models/idea_file.dart';
 
 class DBHelper {
   static Database? _db;
-  static const _version = 1;
+  static const _version = 2;
 
   static Future<Database> get db async {
     _db ??= await _initDB();
@@ -15,7 +15,8 @@ class DBHelper {
 
   static Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'mymanager.db');
-    return openDatabase(path, version: _version, onCreate: _onCreate);
+    return openDatabase(path, version: _version,
+        onCreate: _onCreate, onUpgrade: _onUpgrade);
   }
 
   static Future<void> _onCreate(Database db, int version) async {
@@ -27,6 +28,7 @@ class DBHelper {
         color INTEGER NOT NULL DEFAULT 4284955319,
         tags TEXT,
         status TEXT DEFAULT 'active',
+        version INTEGER DEFAULT 1,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
@@ -58,6 +60,34 @@ class DBHelper {
         FOREIGN KEY(idea_id) REFERENCES ideas(id)
       )
     ''');
+    await db.execute('''
+      CREATE TABLE project_versions(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        version INTEGER NOT NULL,
+        note TEXT,
+        snapshot TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY(project_id) REFERENCES projects(id)
+      )
+    ''');
+  }
+
+  static Future<void> _onUpgrade(Database db, int oldV, int newV) async {
+    if (oldV < 2) {
+      await db.execute('ALTER TABLE projects ADD COLUMN version INTEGER DEFAULT 1');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS project_versions(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id INTEGER NOT NULL,
+          version INTEGER NOT NULL,
+          note TEXT,
+          snapshot TEXT,
+          created_at INTEGER NOT NULL,
+          FOREIGN KEY(project_id) REFERENCES projects(id)
+        )
+      ''');
+    }
   }
 
   // ── PROJECTS ──────────────────────────────────────────
@@ -84,6 +114,7 @@ class DBHelper {
       await d.delete('idea_files', where: 'idea_id=?', whereArgs: [idea['id']]);
     }
     await d.delete('ideas', where: 'project_id=?', whereArgs: [id]);
+    await d.delete('project_versions', where: 'project_id=?', whereArgs: [id]);
     await d.delete('projects', where: 'id=?', whereArgs: [id]);
   }
 
@@ -94,6 +125,29 @@ class DBHelper {
     final done = ideas.where((i) => i['status'] == 'done').length;
     final doing = ideas.where((i) => i['status'] == 'doing').length;
     return {'total': total, 'done': done, 'doing': doing, 'todo': total - done - doing};
+  }
+
+  // ── PROJECT VERSIONS ──────────────────────────────────
+  static Future<List<Map<String, dynamic>>> getProjectVersions(int projectId) async {
+    final d = await db;
+    return d.query('project_versions',
+        where: 'project_id=?', whereArgs: [projectId], orderBy: 'version DESC');
+  }
+
+  static Future<void> saveProjectVersion(int projectId, int version, String note) async {
+    final d = await db;
+    // snapshot: all ideas + files as JSON string
+    final ideas = await d.query('ideas', where: 'project_id=?', whereArgs: [projectId]);
+    final snapshot = ideas.toString();
+    await d.insert('project_versions', {
+      'project_id': projectId,
+      'version': version,
+      'note': note,
+      'snapshot': snapshot,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+    await d.update('projects', {'version': version, 'updated_at': DateTime.now().millisecondsSinceEpoch},
+        where: 'id=?', whereArgs: [projectId]);
   }
 
   // ── IDEAS ─────────────────────────────────────────────
@@ -128,9 +182,15 @@ class DBHelper {
     return rows.map(IdeaFile.fromMap).toList();
   }
 
+  static Future<List<IdeaFile>> getAllFilesForProject(int projectId) async {
+    final d = await db;
+    final rows = await d.query('idea_files',
+        where: 'project_id=?', whereArgs: [projectId]);
+    return rows.map(IdeaFile.fromMap).toList();
+  }
+
   static Future<int> insertFile(IdeaFile file) async {
     final d = await db;
-    // auto-version
     final existing = await d.query('idea_files',
         where: 'idea_id=? AND name LIKE ?',
         whereArgs: [file.ideaId, '${file.baseName}%']);
@@ -146,5 +206,35 @@ class DBHelper {
   static Future<void> deleteFile(int id) async {
     final d = await db;
     await d.delete('idea_files', where: 'id=?', whereArgs: [id]);
+  }
+
+  static Future<void> renameFile(int id, String newName) async {
+    final d = await db;
+    await d.update('idea_files',
+        {'name': newName, 'updated_at': DateTime.now().millisecondsSinceEpoch},
+        where: 'id=?', whereArgs: [id]);
+  }
+
+  static Future<int> copyFile(IdeaFile file, int toIdeaId, int toProjectId) async {
+    final n = DateTime.now().millisecondsSinceEpoch;
+    return insertFile(IdeaFile(
+      ideaId: toIdeaId, projectId: toProjectId,
+      name: file.name, type: file.type,
+      content: file.content, createdAt: n, updatedAt: n,
+    ));
+  }
+
+  static Future<void> moveFile(int fileId, int toIdeaId, int toProjectId) async {
+    final d = await db;
+    await d.update('idea_files',
+        {'idea_id': toIdeaId, 'project_id': toProjectId,
+         'updated_at': DateTime.now().millisecondsSinceEpoch},
+        where: 'id=?', whereArgs: [fileId]);
+  }
+
+  static Future<List<Idea>> getAllIdeas() async {
+    final d = await db;
+    final rows = await d.query('ideas', orderBy: 'project_id ASC');
+    return rows.map(Idea.fromMap).toList();
   }
 }
