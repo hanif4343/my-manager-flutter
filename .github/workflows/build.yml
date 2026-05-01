@@ -1,4 +1,4 @@
-Name: Build My Manager APK
+name: Build My Manager APK
 
 on:
   push:
@@ -35,7 +35,6 @@ jobs:
         run: flutter analyze --no-fatal-infos
         continue-on-error: true
 
-      # এই ধাপটি নতুন যোগ করা হয়েছে (Base64 থেকে JKS ফাইল তৈরি করবে)
       - name: Decode Keystore
         run: |
           echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > android/app/my-manager.jks
