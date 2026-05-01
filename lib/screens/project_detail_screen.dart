@@ -4,6 +4,7 @@ import '../models/project.dart';
 import '../models/idea.dart';
 import '../widgets/app_theme.dart';
 import 'idea_detail_screen.dart';
+import 'project_version_screen.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final Project project;
