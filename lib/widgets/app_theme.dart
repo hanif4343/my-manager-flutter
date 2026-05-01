@@ -36,7 +36,7 @@ class AppTheme {
           ),
           iconTheme: IconThemeData(color: textSecondary),
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: bg2,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -49,6 +49,7 @@ class AppTheme {
       );
 }
 
+// Status config
 const statusConfig = {
   'todo':  {'label': 'বাকি',  'color': Color(0xFF94A3B8)},
   'doing': {'label': 'চলছে', 'color': Color(0xFFF59E0B)},
