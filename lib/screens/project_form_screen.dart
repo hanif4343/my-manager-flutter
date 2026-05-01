@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../db/db_helper.dart';
 import '../models/project.dart';
 import '../widgets/app_theme.dart';
+import '../services/notification_service.dart'; // সার্ভিসটি ইমপোর্ট করুন
+import 'package:intl/intl.dart'; // তারিখ দেখানোর জন্য
 
 class ProjectFormScreen extends StatefulWidget {
   final Project? project;
@@ -16,6 +18,9 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
   int _colorValue = AppTheme.projectColors[0].value;
   bool _saving = false;
 
+  // রিমাইন্ডারের জন্য ভেরিয়েবল
+  DateTime? _selectedReminder;
+
   @override
   void initState() {
     super.initState();
@@ -28,6 +33,30 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
     }
   }
 
+  // তারিখ ও সময় সিলেক্ট করার ফাংশন
+  Future<void> _pickReminder() async {
+    DateTime? date = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+
+    if (date != null) {
+      TimeOfDay? time = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.now(),
+      );
+
+      if (time != null) {
+        setState(() {
+          _selectedReminder = DateTime(
+            date.year, date.month, date.day, time.hour, time.minute);
+        });
+      }
+    }
+  }
+
   Future<void> _save() async {
     if (_name.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -35,19 +64,39 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
       return;
     }
     setState(() => _saving = true);
-    final n = now();
+    final n = DateTime.now(); // changed from now() to DateTime.now()
     final tags = _tags.text.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
+    
+    int projectId;
+    Project projectObj;
+
     if (widget.project == null) {
-      await DBHelper.insertProject(Project(
-        name: _name.text.trim(), description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
+      projectObj = Project(
+        name: _name.text.trim(), 
+        description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
         colorValue: _colorValue, tags: tags, createdAt: n, updatedAt: n,
-      ));
+      );
+      projectId = await DBHelper.insertProject(projectObj);
     } else {
-      await DBHelper.updateProject(widget.project!.copyWith(
-        name: _name.text.trim(), description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
+      projectObj = widget.project!.copyWith(
+        name: _name.text.trim(), 
+        description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
         colorValue: _colorValue, tags: tags, updatedAt: n,
-      ));
+      );
+      await DBHelper.updateProject(projectObj);
+      projectId = widget.project!.id!;
     }
+
+    // যদি রিমাইন্ডার সিলেক্ট করা থাকে তবে নোটিফিকেশন সেট হবে
+    if (_selectedReminder != null) {
+      await NotificationService.scheduleNotification(
+        projectId,
+        "প্রজেক্ট রিমাইন্ডার: ${projectObj.name}",
+        "আপনার এই প্রজেক্টের কাজটি শুরু করার সময় হয়েছে।",
+        _selectedReminder!,
+      );
+    }
+
     if (mounted) Navigator.pop(context);
   }
 
@@ -76,6 +125,34 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
           const SizedBox(height: 16),
           _label('বিবরণ (ঐচ্ছিক)'),
           _field(_desc, 'প্রজেক্ট সম্পর্কে কিছু লিখো...', maxLines: 3),
+          const SizedBox(height: 16),
+          _label('রিমাইন্ডার সেট করো (ঐচ্ছিক)'),
+          InkWell(
+            onTap: _pickReminder,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTheme.bg3,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _selectedReminder != null ? AppTheme.accent : AppTheme.border),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.alarm, color: _selectedReminder != null ? AppTheme.accent : AppTheme.textMuted),
+                  const SizedBox(width: 10),
+                  Text(
+                    _selectedReminder == null 
+                        ? 'সময় নির্বাচন করো' 
+                        : DateFormat('dd MMM, hh:mm a').format(_selectedReminder!),
+                    style: TextStyle(
+                      color: _selectedReminder != null ? AppTheme.textPrimary : AppTheme.textMuted,
+                      fontSize: 15
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           _label('ট্যাগ (কমা দিয়ে আলাদা করো)'),
           _field(_tags, 'Flutter, Firebase, API'),
