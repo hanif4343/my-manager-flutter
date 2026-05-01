@@ -57,14 +57,17 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
     }
   }
 
-  Future<void> _save() async {
+    Future<void> _save() async {
     if (_name.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('প্রজেক্টের নাম দাও!')));
       return;
     }
     setState(() => _saving = true);
-    final n = DateTime.now(); // changed from now() to DateTime.now()
+    
+    // DateTime.now() কে .millisecondsSinceEpoch দিয়ে int এ রূপান্তর করা হলো
+    final int n = DateTime.now().millisecondsSinceEpoch; 
+    
     final tags = _tags.text.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
     
     int projectId;
@@ -74,31 +77,41 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
       projectObj = Project(
         name: _name.text.trim(), 
         description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
-        colorValue: _colorValue, tags: tags, createdAt: n, updatedAt: n,
+        colorValue: _colorValue, 
+        tags: tags, 
+        createdAt: n, // এখন এটি int হিসেবে কাজ করবে
+        updatedAt: n, 
       );
       projectId = await DBHelper.insertProject(projectObj);
     } else {
       projectObj = widget.project!.copyWith(
         name: _name.text.trim(), 
         description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
-        colorValue: _colorValue, tags: tags, updatedAt: n,
+        colorValue: _colorValue, 
+        tags: tags, 
+        updatedAt: n, // এখানেও int হিসেবে যাবে
       );
       await DBHelper.updateProject(projectObj);
       projectId = widget.project!.id!;
     }
 
-    // যদি রিমাইন্ডার সিলেক্ট করা থাকে তবে নোটিফিকেশন সেট হবে
+    // রিমাইন্ডার সেট করার লজিক
     if (_selectedReminder != null) {
-      await NotificationService.scheduleNotification(
-        projectId,
-        "প্রজেক্ট রিমাইন্ডার: ${projectObj.name}",
-        "আপনার এই প্রজেক্টের কাজটি শুরু করার সময় হয়েছে।",
-        _selectedReminder!,
-      );
+      try {
+        await NotificationService.scheduleNotification(
+          projectId,
+          "প্রজেক্ট রিমাইন্ডার: ${projectObj.name}",
+          "আপনার এই প্রজেক্টের কাজটি শুরু করার সময় হয়েছে।",
+          _selectedReminder!,
+        );
+      } catch (e) {
+        debugPrint("Notification Error: $e");
+      }
     }
 
     if (mounted) Navigator.pop(context);
   }
+
 
   @override
   Widget build(BuildContext context) {
