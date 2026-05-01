@@ -21,6 +21,9 @@ dependencies:
   cupertino_icons: ^1.0.6
   image_picker: ^1.0.7
   archive: ^3.4.10
+  # নতুন প্যাকেজগুলো এখানে যোগ করা হলো
+  flutter_local_notifications: ^17.0.0
+  timezone: ^0.9.2
 
 dev_dependencies:
   flutter_test:
@@ -29,9 +32,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  
-dependencies:
-  flutter:
-    sdk: flutter
-  flutter_local_notifications: ^17.0.0
-  timezone: ^0.9.2
