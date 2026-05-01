@@ -31,11 +31,16 @@ class _FileEditorScreenState extends State<FileEditorScreen> {
     if (mounted) setState(() => _modified = false);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('\${widget.file.name} সেভ হয়েছে ✅'),
-            backgroundColor: AppTheme.green,
-            duration: const Duration(seconds: 2)));
+        SnackBar(
+          content: Text('${widget.file.name} সেভ হয়েছে ✅'),
+          backgroundColor: AppTheme.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
+
+  int get _lineCount => _ctrl.text.split('\n').length;
 
   @override
   Widget build(BuildContext context) {
@@ -51,11 +56,20 @@ class _FileEditorScreenState extends State<FileEditorScreen> {
             content: const Text('পরিবর্তন সেভ না করে বেরিয়ে গেলে হারিয়ে যাবে।',
                 style: TextStyle(color: AppTheme.textSecondary)),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
-              TextButton(onPressed: () => Navigator.pop(context, true),
-                  child: const Text('সেভ না করে বেরাই', style: TextStyle(color: AppTheme.red))),
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('বাতিল'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('সেভ না করে বেরাই',
+                    style: TextStyle(color: AppTheme.red)),
+              ),
               ElevatedButton(
-                onPressed: () async { await _save(); if (context.mounted) Navigator.pop(context, true); },
+                onPressed: () async {
+                  await _save();
+                  if (context.mounted) Navigator.pop(context, true);
+                },
                 style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
                 child: const Text('সেভ করো'),
               ),
@@ -69,20 +83,31 @@ class _FileEditorScreenState extends State<FileEditorScreen> {
         appBar: AppBar(
           backgroundColor: const Color(0xFF161B22),
           title: Row(children: [
-            Text(widget.file.name, style: const TextStyle(fontFamily: 'monospace', fontSize: 14, color: AppTheme.textPrimary)),
+            Text(widget.file.name,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 14, color: AppTheme.textPrimary)),
             const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: AppTheme.accent.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
-              child: Text('v\${widget.file.version}', style: const TextStyle(color: AppTheme.accent, fontSize: 10, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+              decoration: BoxDecoration(
+                  color: AppTheme.accent.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4)),
+              child: Text('v${widget.file.version}',
+                  style: const TextStyle(color: AppTheme.accent, fontSize: 10,
+                      fontWeight: FontWeight.w700, fontFamily: 'monospace')),
             ),
-            if (_modified) ...[const SizedBox(width: 8), Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppTheme.yellow, shape: BoxShape.circle))],
+            if (_modified) ...[
+              const SizedBox(width: 8),
+              Container(width: 8, height: 8,
+                  decoration: const BoxDecoration(color: AppTheme.yellow, shape: BoxShape.circle)),
+            ],
           ]),
           actions: [
             IconButton(
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(text: _ctrl.text));
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('কপি হয়েছে!'), backgroundColor: AppTheme.green, duration: Duration(seconds: 2)));
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('কপি হয়েছে!'),
+                        backgroundColor: AppTheme.green, duration: Duration(seconds: 2)));
               },
               icon: const Icon(Icons.copy_outlined, size: 18),
             ),
@@ -91,7 +116,8 @@ class _FileEditorScreenState extends State<FileEditorScreen> {
               child: TextButton.icon(
                 onPressed: _save,
                 icon: const Icon(Icons.save_outlined, size: 18, color: AppTheme.accent),
-                label: const Text('সেভ', style: TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w700)),
+                label: const Text('সেভ',
+                    style: TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w700)),
               ),
             ),
           ],
@@ -101,24 +127,33 @@ class _FileEditorScreenState extends State<FileEditorScreen> {
               color: const Color(0xFF161B22),
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Row(children: [
-                Text('\${_ctrl.text.split('\n').length} লাইন', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11, fontFamily: 'monospace')),
+                Text('$_lineCount লাইন',
+                    style: const TextStyle(color: AppTheme.textMuted, fontSize: 11, fontFamily: 'monospace')),
                 const SizedBox(width: 16),
-                Text('\${_ctrl.text.length} chars', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11, fontFamily: 'monospace')),
+                Text('${_ctrl.text.length} chars',
+                    style: const TextStyle(color: AppTheme.textMuted, fontSize: 11, fontFamily: 'monospace')),
                 const Spacer(),
-                Text(widget.file.ext.toUpperCase(), style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontFamily: 'monospace')),
+                Text(widget.file.ext.toUpperCase(),
+                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontFamily: 'monospace')),
               ]),
             ),
           ),
         ),
         body: TextField(
-          controller: _ctrl, maxLines: null, expands: true,
-          keyboardType: TextInputType.multiline, textAlignVertical: TextAlignVertical.top,
-          style: const TextStyle(fontFamily: 'monospace', fontSize: 13.5, color: Color(0xFFC9D1D9), height: 1.7),
+          controller: _ctrl,
+          maxLines: null,
+          expands: true,
+          keyboardType: TextInputType.multiline,
+          textAlignVertical: TextAlignVertical.top,
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 13.5,
+              color: Color(0xFFC9D1D9), height: 1.7),
           decoration: const InputDecoration(
-            border: InputBorder.none, contentPadding: EdgeInsets.all(16),
+            border: InputBorder.none,
+            contentPadding: EdgeInsets.all(16),
             hintText: 'এখানে কোড বা টেক্সট লিখো...',
             hintStyle: TextStyle(color: AppTheme.textMuted, fontFamily: 'monospace'),
-            filled: true, fillColor: Color(0xFF0D1117),
+            filled: true,
+            fillColor: Color(0xFF0D1117),
           ),
         ),
       ),
