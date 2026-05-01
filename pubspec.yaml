@@ -29,3 +29,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_local_notifications: ^17.1.2  # এই লাইনটি যোগ করুন
+  timezone: ^0.9.4  # সময়ের হিসাবের জন্য এটিও লাগবে
