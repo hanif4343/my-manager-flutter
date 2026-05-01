@@ -33,5 +33,5 @@ flutter:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_local_notifications: ^17.1.2  # এই লাইনটি যোগ করুন
-  timezone: ^0.9.4  # সময়ের হিসাবের জন্য এটিও লাগবে
+  flutter_local_notifications: ^17.0.0
+  timezone: ^0.9.2
