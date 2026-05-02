@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:timezone/data/latest.dart' as tz;
 import 'screens/dashboard_screen.dart';
 import 'widgets/app_theme.dart';
-import 'services/notification_service.dart'; // নোটিফিকেশন সার্ভিস ইমপোর্ট করুন
+import 'services/notification_service.dart';
 
-void main() async { // এখানে async যোগ করা হয়েছে
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // নোটিফিকেশন সার্ভিস ইনিশিয়ালাইজ করা
-  await NotificationService.init(); 
-
+  tz.initializeTimeZones();
+  await NotificationService.init();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
@@ -19,7 +18,6 @@ void main() async { // এখানে async যোগ করা হয়েছে
 
 class MyManagerApp extends StatelessWidget {
   const MyManagerApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
