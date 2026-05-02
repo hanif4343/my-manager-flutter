@@ -5,9 +5,12 @@ import '../widgets/app_theme.dart';
 import 'project_detail_screen.dart';
 import 'project_form_screen.dart';
 import 'backup_screen.dart';
+import 'search_screen.dart';
+import 'settings_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final VoidCallback onThemeToggle;
+  const DashboardScreen({super.key, required this.onThemeToggle});
   @override State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
@@ -25,7 +28,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     for (final p in projects) {
       if (p.id != null) stats[p.id!] = await DBHelper.getProjectStats(p.id!);
     }
-    if (mounted) setState(() { _projects = projects; _stats = stats; _loading = false; });
+    if (mounted) setState(() {
+      _projects = projects; _stats = stats; _loading = false;
+    });
   }
 
   Future<void> _delete(Project p) async {
@@ -33,13 +38,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: const Text('মুছে ফেলবে?', style: TextStyle(color: AppTheme.textPrimary)),
+        title: const Text('মুছে ফেলবে?',
+            style: TextStyle(color: AppTheme.textPrimary)),
         content: Text('"${p.name}" এবং সব ডেটা মুছে যাবে।',
             style: const TextStyle(color: AppTheme.textSecondary)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
+          TextButton(onPressed: () => Navigator.pop(context, false),
+              child: const Text('বাতিল')),
           TextButton(onPressed: () => Navigator.pop(context, true),
-              child: const Text('মুছো', style: TextStyle(color: AppTheme.red))),
+              child: const Text('মুছো',
+                  style: TextStyle(color: AppTheme.red))),
         ],
       ),
     );
@@ -58,7 +66,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: Row(children: [
           const Text('🚀', style: TextStyle(fontSize: 20)),
           const SizedBox(width: 8),
-          const Text('My Manager', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w800)),
+          const Text('My Manager', style: TextStyle(
+              color: AppTheme.textPrimary, fontWeight: FontWeight.w800)),
           const Spacer(),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -67,16 +76,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
               border: Border.all(color: AppTheme.border),
             ),
             child: Text('${_projects.length} প্রজেক্ট',
-                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                style: const TextStyle(
+                    color: AppTheme.textSecondary, fontSize: 12)),
           ),
         ]),
         automaticallyImplyLeading: false,
         actions: [
           IconButton(
             onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const SearchScreen())),
+            icon: const Icon(Icons.search, color: AppTheme.textSecondary),
+            tooltip: 'খোঁজো',
+          ),
+          IconButton(
+            onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const BackupScreen())),
             icon: const Icon(Icons.cloud_outlined, color: AppTheme.textSecondary),
-            tooltip: 'Google Drive Backup',
+            tooltip: 'Drive Backup',
+          ),
+          IconButton(
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => SettingsScreen(
+                    onThemeToggle: widget.onThemeToggle))),
+            icon: const Icon(Icons.settings_outlined, color: AppTheme.textSecondary),
+            tooltip: 'সেটিংস',
           ),
         ],
         bottom: const PreferredSize(
@@ -103,8 +126,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _load();
         },
         backgroundColor: AppTheme.accent,
-        icon: const Icon(Icons.add),
-        label: const Text('নতুন প্রজেক্ট', style: TextStyle(fontWeight: FontWeight.w700)),
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text('নতুন প্রজেক্ট',
+            style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
       ),
     );
   }
@@ -113,10 +137,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
       const Text('🚀', style: TextStyle(fontSize: 56)),
       const SizedBox(height: 16),
-      const Text('এখনো কোনো প্রজেক্ট নেই',
-          style: TextStyle(color: AppTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
+      const Text('এখনো কোনো প্রজেক্ট নেই', style: TextStyle(
+          color: AppTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
       const SizedBox(height: 8),
-      const Text('নিচের + বাটনে চাপো', style: TextStyle(color: AppTheme.textMuted, fontSize: 14)),
+      const Text('নিচের + বাটনে চাপো',
+          style: TextStyle(color: AppTheme.textMuted, fontSize: 14)),
     ]),
   );
 
@@ -130,41 +155,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () async {
-          await Navigator.push(context,
-              MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: p)));
+          await Navigator.push(context, MaterialPageRoute(
+              builder: (_) => ProjectDetailScreen(project: p)));
           _load();
         },
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(height: 4, decoration: BoxDecoration(
-            color: p.color, borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            color: p.color,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
           )),
           Padding(
             padding: const EdgeInsets.all(14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
               Row(children: [
-                Expanded(child: Text(p.name,
-                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700))),
+                Expanded(child: Text(p.name, style: const TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 16, fontWeight: FontWeight.w700))),
                 _iconBtn(Icons.edit_outlined, () async {
-                  await Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => ProjectFormScreen(project: p)));
+                  await Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => ProjectFormScreen(project: p)));
                   _load();
                 }),
                 const SizedBox(width: 4),
-                _iconBtn(Icons.delete_outline, () => _delete(p), color: AppTheme.red),
+                _iconBtn(Icons.delete_outline, () => _delete(p),
+                    color: AppTheme.red),
               ]),
               if (p.description != null && p.description!.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text(p.description!, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                Text(p.description!, style: const TextStyle(
+                    color: AppTheme.textSecondary, fontSize: 13),
                     maxLines: 2, overflow: TextOverflow.ellipsis),
               ],
               if (p.tags.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                Wrap(spacing: 6, runSpacing: 4, children: p.tags.map((t) => Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppTheme.border)),
-                  child: Text(t, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
-                )).toList()),
+                Wrap(spacing: 6, runSpacing: 4, children: p.tags.map((t) =>
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                          color: AppTheme.bg3,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: AppTheme.border)),
+                      child: Text(t, style: const TextStyle(
+                          color: AppTheme.textSecondary, fontSize: 11)),
+                    )).toList()),
               ],
               const SizedBox(height: 10),
               ClipRRect(
@@ -183,8 +217,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(width: 10),
                 _statChip('✅ ${st['done']}', AppTheme.green),
                 const Spacer(),
-                Text('${(progress * 100).round()}%',
-                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.w700)),
+                Text('${(progress * 100).round()}%', style: const TextStyle(
+                    color: AppTheme.textSecondary, fontSize: 13,
+                    fontWeight: FontWeight.w700)),
               ]),
             ]),
           ),
@@ -193,16 +228,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _iconBtn(IconData icon, VoidCallback onTap, {Color color = AppTheme.textMuted}) =>
+  Widget _iconBtn(IconData icon, VoidCallback onTap,
+      {Color color = AppTheme.textMuted}) =>
       GestureDetector(
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(8)),
+          decoration: BoxDecoration(
+              color: AppTheme.bg3, borderRadius: BorderRadius.circular(8)),
           child: Icon(icon, size: 16, color: color),
         ),
       );
 
   Widget _statChip(String text, Color color) =>
-      Text(text, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600));
+      Text(text, style: TextStyle(
+          color: color, fontSize: 12, fontWeight: FontWeight.w600));
 }
