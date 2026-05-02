@@ -4,13 +4,6 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
-// GitHub Secrets বা Local key.properties থেকে তথ্য পড়ার জন্য এই অংশটি
-def keystoreProperties = new Properties()
-def keystorePropertiesFile = rootProject.file('key.properties')
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-}
-
 android {
     namespace "com.hanif.mymanager"
     compileSdk 34
@@ -19,33 +12,33 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
         jvmTarget = '1.8'
     }
 
-    signingConfigs {
-        release {
-            // এটি প্রথমে GitHub-এর Environment Variable খুঁজবে, না পেলে local key.properties খুঁজবে
-            keyAlias System.getenv("ALIAS") ?: keystoreProperties['keyAlias']
-            keyPassword System.getenv("KEY_PASSWORD") ?: keystoreProperties['keyPassword']
-            storeFile file(System.getenv("KEYSTORE_PATH") ?: (keystoreProperties['storeFile'] ?: "my-manager.jks"))
-            storePassword System.getenv("STORE_PASSWORD") ?: keystoreProperties['storePassword']
-        }
-    }
-
     defaultConfig {
         applicationId "com.hanif.mymanager"
         minSdk 21
         targetSdk 34
-        versionCode 3 // প্রতিবার আপডেটের সময় এটি ১ করে বাড়িয়ে দেবেন (যেমন: ৩, ৪...)
+        versionCode 3
         versionName "3.0.0"
+        multiDexEnabled true
+    }
+
+    signingConfigs {
+        release {
+            keyAlias System.getenv("ALIAS") ?: "hanif-key"
+            keyPassword System.getenv("KEY_PASSWORD") ?: ""
+            storeFile file("my-manager.jks")
+            storePassword System.getenv("STORE_PASSWORD") ?: ""
+        }
     }
 
     buildTypes {
         release {
-            // এখানে debug সরিয়ে release করা হয়েছে
             signingConfig signingConfigs.release
             minifyEnabled false
             shrinkResources false
@@ -55,4 +48,8 @@ android {
 
 flutter {
     source '../..'
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
 }
