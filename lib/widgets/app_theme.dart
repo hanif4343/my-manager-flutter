@@ -24,16 +24,12 @@ class AppTheme {
         brightness: Brightness.dark,
         scaffoldBackgroundColor: bg,
         colorScheme: const ColorScheme.dark(
-          primary: accent,
-          surface: bg2,
-          background: bg,
+          primary: accent, surface: bg2, background: bg,
         ),
         appBarTheme: const AppBarTheme(
-          backgroundColor: bg2,
-          elevation: 0,
-          titleTextStyle: TextStyle(
-            color: textPrimary, fontSize: 17, fontWeight: FontWeight.w700,
-          ),
+          backgroundColor: bg2, elevation: 0,
+          titleTextStyle: TextStyle(color: textPrimary,
+              fontSize: 17, fontWeight: FontWeight.w700),
           iconTheme: IconThemeData(color: textSecondary),
         ),
         cardTheme: CardTheme(
@@ -45,6 +41,32 @@ class AppTheme {
           margin: EdgeInsets.zero,
         ),
         dividerColor: border,
+        fontFamily: 'Roboto',
+      );
+
+  static ThemeData get light => ThemeData(
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: const Color(0xFFF1F5F9),
+        colorScheme: const ColorScheme.light(
+          primary: accent,
+          surface: Colors.white,
+          background: Color(0xFFF1F5F9),
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white, elevation: 0,
+          titleTextStyle: TextStyle(color: Color(0xFF1E293B),
+              fontSize: 17, fontWeight: FontWeight.w700),
+          iconTheme: IconThemeData(color: Color(0xFF64748B)),
+        ),
+        cardTheme: CardTheme(
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+          margin: EdgeInsets.zero,
+        ),
+        dividerColor: const Color(0xFFE2E8F0),
         fontFamily: 'Roboto',
       );
 }
