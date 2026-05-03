@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:archive/archive_io.dart';
 import 'dart:io';
 import 'dart:convert';
@@ -38,30 +39,59 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
   }
 
   Future<void> _cycleStatus() async {
-    const next = {'todo': 'doing', 'doing': 'done', 'done': 'todo'};
+    const next = {'todo':'doing','doing':'done','done':'todo'};
     final updated = _idea.copyWith(status: next[_idea.status]!, updatedAt: now());
     await DBHelper.updateIdea(updated);
     setState(() => _idea = updated);
   }
 
-  // ── ADD TEXT FILE ──────────────────────────────────────
+  // ── ADD OPTIONS SHEET ─────────────────────────────────
+  void _showAddOptions() {
+    showModalBottomSheet(
+      context: context, backgroundColor: AppTheme.bg2,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const SizedBox(height: 8),
+        Container(width: 40, height: 4, decoration: BoxDecoration(
+            color: AppTheme.border, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 12),
+        const Text('ফাইল যোগ করো', style: TextStyle(color: AppTheme.textPrimary,
+            fontSize: 15, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        _sheetTile(Icons.code_outlined, 'কোড / টেক্সট ফাইল', AppTheme.accent,
+            () { Navigator.pop(context); _addTextFile(); }),
+        _sheetTile(Icons.photo_library_outlined, 'গ্যালারি থেকে ছবি', AppTheme.green,
+            () { Navigator.pop(context); _addImage(ImageSource.gallery); }),
+        _sheetTile(Icons.camera_alt_outlined, 'ক্যামেরা দিয়ে ছবি', AppTheme.yellow,
+            () { Navigator.pop(context); _addImage(ImageSource.camera); }),
+        _sheetTile(Icons.attach_file_outlined, 'যেকোনো ফাইল (APK, PDF, ZIP...)', AppTheme.textSecondary,
+            () { Navigator.pop(context); _addAnyFile(); }),
+        const SizedBox(height: 8),
+      ])),
+    );
+  }
+
+  // ── ADD TEXT FILE ─────────────────────────────────────
   Future<void> _addTextFile() async {
     final nameCtrl = TextEditingController();
     final contentCtrl = TextEditingController();
     await showModalBottomSheet(
-      context: context, isScrollControlled: true,
-      backgroundColor: AppTheme.bg2,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      context: context, isScrollControlled: true, backgroundColor: AppTheme.bg2,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom, left: 16, right: 16, top: 20),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('নতুন ফাইল', style: TextStyle(color: AppTheme.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 14),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 16, right: 16, top: 20),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('নতুন টেক্সট/কোড ফাইল', style: TextStyle(
+              color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
           _field(nameCtrl, 'ফাইলের নাম: index.js, style.css, README.md'),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           _field(contentCtrl, 'কোড বা টেক্সট (ঐচ্ছিক)...', maxLines: 4, mono: true),
-          const SizedBox(height: 16),
-          SizedBox(width: double.infinity, child: ElevatedButton(
+          const SizedBox(height: 12),
+          SizedBox(width: double.infinity, child: ElevatedButton.icon(
             onPressed: () async {
               if (nameCtrl.text.trim().isEmpty) return;
               final n = now();
@@ -73,10 +103,12 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
               if (ctx.mounted) Navigator.pop(ctx);
               _load();
             },
+            icon: const Icon(Icons.add, color: Colors.white, size: 16),
+            label: const Text('যোগ করো', style: TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent,
-                padding: const EdgeInsets.symmetric(vertical: 13),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-            child: const Text('যোগ করো', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
           )),
           const SizedBox(height: 20),
         ]),
@@ -92,8 +124,8 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
       final bytes = await picked.readAsBytes();
       final b64 = base64Encode(bytes);
       final ext = picked.name.split('.').last.toLowerCase();
-      // auto name: icon if image, else original name
-      final name = picked.name.toLowerCase().contains('icon') ? picked.name : 'icon.$ext';
+      final name = picked.name.toLowerCase().contains('icon')
+          ? picked.name : 'icon.$ext';
       final n = now();
       await DBHelper.insertFile(IdeaFile(
         ideaId: _idea.id!, projectId: widget.project.id!,
@@ -106,20 +138,44 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
     }
   }
 
-  void _showAddOptions() {
-    showModalBottomSheet(
-      context: context, backgroundColor: AppTheme.bg2,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const SizedBox(height: 8),
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: AppTheme.border, borderRadius: BorderRadius.circular(2))),
-        const SizedBox(height: 16),
-        _sheetTile(Icons.code, 'কোড / টেক্সট ফাইল', AppTheme.accent, () { Navigator.pop(context); _addTextFile(); }),
-        _sheetTile(Icons.photo_camera, 'ক্যামেরা থেকে ছবি', AppTheme.green, () { Navigator.pop(context); _addImage(ImageSource.camera); }),
-        _sheetTile(Icons.photo_library, 'গ্যালারি থেকে ছবি', AppTheme.yellow, () { Navigator.pop(context); _addImage(ImageSource.gallery); }),
-        const SizedBox(height: 16),
-      ])),
-    );
+  // ── ADD ANY FILE ──────────────────────────────────────
+  Future<void> _addAnyFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any, allowMultiple: true,
+        withData: true,
+      );
+      if (result == null) return;
+      final n = now();
+      for (final pf in result.files) {
+        if (pf.bytes == null && pf.path == null) continue;
+        final bytes = pf.bytes ?? await File(pf.path!).readAsBytes();
+        final ext = pf.extension?.toLowerCase() ?? '';
+        // Determine type
+        final dummy = IdeaFile(ideaId: 0, projectId: 0,
+            name: pf.name, type: 'binary', createdAt: 0, updatedAt: 0);
+        final isText = dummy.isText;
+        String content;
+        if (isText) {
+          content = utf8.decode(bytes, allowMalformed: true);
+        } else {
+          content = base64Encode(bytes);
+        }
+        await DBHelper.insertFile(IdeaFile(
+          ideaId: _idea.id!, projectId: widget.project.id!,
+          name: pf.name, type: isText ? 'text' : 'binary',
+          content: content, createdAt: n, updatedAt: n,
+        ));
+      }
+      _load();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${result.files.length} ফাইল যোগ হয়েছে!'),
+        backgroundColor: AppTheme.green,
+      ));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.red));
+    }
   }
 
   // ── ZIP EXPORT ────────────────────────────────────────
@@ -133,18 +189,14 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
     for (final f in _files) {
       if (f.content == null) continue;
       List<int> bytes;
-      if (f.isImage) {
-        bytes = base64Decode(f.content!);
-      } else {
-        bytes = utf8.encode(f.content!);
-      }
+      if (f.isText) bytes = utf8.encode(f.content!);
+      else { try { bytes = base64Decode(f.content!); } catch (_) { bytes = utf8.encode(f.content!); } }
       archive.addFile(ArchiveFile(f.name, bytes.length, bytes));
     }
     final dir = await getTemporaryDirectory();
-    final zipName = '${_idea.title.replaceAll(' ', '_')}_v${_files.length}.zip';
+    final zipName = '${_idea.title.replaceAll(' ', '_')}.zip';
     final zipFile = File('${dir.path}/$zipName');
-    final encoder = ZipEncoder();
-    final encoded = encoder.encode(archive);
+    final encoded = ZipEncoder().encode(archive);
     if (encoded == null) return;
     await zipFile.writeAsBytes(encoded);
     await Share.shareXFiles([XFile(zipFile.path)], text: zipName);
@@ -153,27 +205,24 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
   // ── FILE ACTIONS ──────────────────────────────────────
   Future<void> _renameFile(IdeaFile file) async {
     final ctrl = TextEditingController(text: file.name);
-    final result = await showDialog<String>(
-      context: context,
+    final result = await showDialog<String>(context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: const Text('ফাইল রিনেম', style: TextStyle(color: AppTheme.textPrimary)),
-        content: TextField(
-          controller: ctrl, autofocus: true,
+        title: const Text('রিনেম', style: TextStyle(color: AppTheme.textPrimary)),
+        content: TextField(controller: ctrl, autofocus: true,
           style: const TextStyle(color: AppTheme.textPrimary, fontFamily: 'monospace'),
-          decoration: InputDecoration(
-            filled: true, fillColor: AppTheme.bg4,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.border)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
+          decoration: InputDecoration(filled: true, fillColor: AppTheme.bg4,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: AppTheme.border)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
           ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('বাতিল')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
-            child: const Text('রিনেম'),
-          ),
+          ElevatedButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent),
+              child: const Text('রিনেম')),
         ],
       ),
     );
@@ -184,12 +233,12 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
   }
 
   Future<void> _deleteFile(IdeaFile file) async {
-    final confirm = await showDialog<bool>(
-      context: context,
+    final confirm = await showDialog<bool>(context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: const Text('ফাইল মুছবে?', style: TextStyle(color: AppTheme.textPrimary)),
-        content: Text('"${file.name}" মুছে যাবে।', style: const TextStyle(color: AppTheme.textSecondary)),
+        title: const Text('মুছবে?', style: TextStyle(color: AppTheme.textPrimary)),
+        content: Text('"${file.name}" মুছে যাবে।',
+            style: const TextStyle(color: AppTheme.textSecondary)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
           TextButton(onPressed: () => Navigator.pop(context, true),
@@ -197,74 +246,81 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
         ],
       ),
     );
-    if (confirm == true && file.id != null) {
-      await DBHelper.deleteFile(file.id!);
-      _load();
-    }
+    if (confirm == true && file.id != null) { await DBHelper.deleteFile(file.id!); _load(); }
   }
 
   Future<void> _shareFile(IdeaFile file) async {
     if (file.content == null) return;
     final dir = await getTemporaryDirectory();
     final f = File('${dir.path}/${file.name}');
-    if (file.isImage) {
-      await f.writeAsBytes(base64Decode(file.content!));
-    } else {
-      await f.writeAsString(file.content!);
-    }
+    if (file.isText) await f.writeAsString(file.content!);
+    else { try { await f.writeAsBytes(base64Decode(file.content!)); } catch(_) { await f.writeAsString(file.content!); } }
     await Share.shareXFiles([XFile(f.path)], text: file.name);
-  }
-
-  Future<void> _copyContent(IdeaFile file) async {
-    if (file.content == null || file.isImage) return;
-    await Clipboard.setData(ClipboardData(text: file.content!));
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${file.name} কপি হয়েছে!'),
-            backgroundColor: AppTheme.green, duration: const Duration(seconds: 2)));
   }
 
   void _showFileMenu(IdeaFile file) {
     showModalBottomSheet(
       context: context, backgroundColor: AppTheme.bg2,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
         const SizedBox(height: 8),
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: AppTheme.border, borderRadius: BorderRadius.circular(2))),
+        Container(width: 40, height: 4, decoration: BoxDecoration(
+            color: AppTheme.border, borderRadius: BorderRadius.circular(2))),
         Padding(
           padding: const EdgeInsets.all(16),
           child: Row(children: [
-            Text(file.name, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+            Text(file.name, style: const TextStyle(color: AppTheme.textPrimary,
+                fontWeight: FontWeight.w700, fontFamily: 'monospace')),
             const SizedBox(width: 8),
-            Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: AppTheme.accent.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
-              child: Text('v${file.version}', style: const TextStyle(color: AppTheme.accent, fontSize: 11, fontWeight: FontWeight.w700))),
+            _vBadge('v${file.version}'),
+            const SizedBox(width: 6),
+            Text(file.sizeLabel, style: const TextStyle(
+                color: AppTheme.textMuted, fontSize: 11)),
           ]),
         ),
-        if (!file.isImage) _sheetTile(Icons.edit_outlined, 'এডিট করো', AppTheme.accent, () async {
-          Navigator.pop(context);
-          await Navigator.push(context, MaterialPageRoute(builder: (_) => FileEditorScreen(file: file)));
-          _load();
-        }),
-        if (!file.isImage) _sheetTile(Icons.copy_outlined, 'কোড কপি করো', AppTheme.textSecondary, () { Navigator.pop(context); _copyContent(file); }),
-        if (file.isImage) _sheetTile(Icons.image_outlined, 'ছবি দেখো', AppTheme.accent, () async {
-          Navigator.pop(context);
-          await Navigator.push(context, MaterialPageRoute(builder: (_) => ImageViewerScreen(file: file)));
-        }),
-        _sheetTile(Icons.drive_file_rename_outline, 'রিনেম করো', AppTheme.yellow, () { Navigator.pop(context); _renameFile(file); }),
+        if (file.isText)
+          _sheetTile(Icons.edit_outlined, 'এডিট করো', AppTheme.accent, () async {
+            Navigator.pop(context);
+            await Navigator.push(context, MaterialPageRoute(
+                builder: (_) => FileEditorScreen(file: file)));
+            _load();
+          }),
+        if (file.isText)
+          _sheetTile(Icons.copy_outlined, 'কোড কপি করো', AppTheme.textSecondary, () {
+            Navigator.pop(context);
+            Clipboard.setData(ClipboardData(text: file.content ?? ''));
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('${file.name} কপি হয়েছে!'),
+                backgroundColor: AppTheme.green,
+                duration: const Duration(seconds: 2)));
+          }),
+        if (file.isImage)
+          _sheetTile(Icons.image_outlined, 'ছবি দেখো', AppTheme.accent, () async {
+            Navigator.pop(context);
+            await Navigator.push(context, MaterialPageRoute(
+                builder: (_) => ImageViewerScreen(file: file)));
+          }),
+        _sheetTile(Icons.drive_file_rename_outline, 'রিনেম', AppTheme.yellow,
+            () { Navigator.pop(context); _renameFile(file); }),
         _sheetTile(Icons.copy_all_outlined, 'Copy To...', AppTheme.green, () async {
           Navigator.pop(context);
           await Navigator.push(context, MaterialPageRoute(
-              builder: (_) => CopyMoveScreen(file: file, mode: 'copy', currentIdeaId: _idea.id!)));
+              builder: (_) => CopyMoveScreen(file: file, mode: 'copy',
+                  currentIdeaId: _idea.id!)));
           _load();
         }),
         _sheetTile(Icons.drive_file_move_outline, 'Move To...', AppTheme.yellow, () async {
           Navigator.pop(context);
           await Navigator.push(context, MaterialPageRoute(
-              builder: (_) => CopyMoveScreen(file: file, mode: 'move', currentIdeaId: _idea.id!)));
+              builder: (_) => CopyMoveScreen(file: file, mode: 'move',
+                  currentIdeaId: _idea.id!)));
           _load();
         }),
-        _sheetTile(Icons.share_outlined, 'শেয়ার করো', AppTheme.textSecondary, () { Navigator.pop(context); _shareFile(file); }),
-        _sheetTile(Icons.delete_outline, 'মুছো', AppTheme.red, () { Navigator.pop(context); _deleteFile(file); }),
+        _sheetTile(Icons.share_outlined, 'শেয়ার করো', AppTheme.textSecondary,
+            () { Navigator.pop(context); _shareFile(file); }),
+        _sheetTile(Icons.delete_outline, 'মুছো', AppTheme.red,
+            () { Navigator.pop(context); _deleteFile(file); }),
         const SizedBox(height: 8),
       ])),
     );
@@ -277,19 +333,18 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
         title: Row(children: [
-          Container(width: 10, height: 10, decoration: BoxDecoration(color: widget.project.color, shape: BoxShape.circle)),
+          Container(width: 10, height: 10, decoration: BoxDecoration(
+              color: widget.project.color, shape: BoxShape.circle)),
           const SizedBox(width: 8),
           Expanded(child: Text(_idea.title,
-              style: const TextStyle(color: AppTheme.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
+              style: const TextStyle(color: AppTheme.textPrimary,
+                  fontSize: 15, fontWeight: FontWeight.w700),
               overflow: TextOverflow.ellipsis)),
         ]),
         actions: [
-          // ZIP export
-          IconButton(
-            onPressed: _exportZip,
-            icon: const Icon(Icons.folder_zip_outlined, size: 20),
-            tooltip: 'ZIP Export',
-          ),
+          IconButton(onPressed: _exportZip,
+              icon: const Icon(Icons.folder_zip_outlined, size: 20),
+              tooltip: 'ZIP'),
           GestureDetector(
             onTap: _cycleStatus,
             child: Container(
@@ -300,8 +355,8 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: sc['color'] as Color),
               ),
-              child: Text(sc['label'] as String,
-                  style: TextStyle(color: sc['color'] as Color, fontSize: 12, fontWeight: FontWeight.w700)),
+              child: Text(sc['label'] as String, style: TextStyle(
+                  color: sc['color'] as Color, fontSize: 12, fontWeight: FontWeight.w700)),
             ),
           ),
         ],
@@ -312,7 +367,8 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
               if (_idea.description != null && _idea.description!.isNotEmpty)
                 Container(width: double.infinity, padding: const EdgeInsets.all(14),
                     color: AppTheme.bg2,
-                    child: Text(_idea.description!, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.5))),
+                    child: Text(_idea.description!, style: const TextStyle(
+                        color: AppTheme.textSecondary, fontSize: 13, height: 1.5))),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                 child: Row(children: [
@@ -320,17 +376,19 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                   const SizedBox(width: 6),
                   Text('ফাইলসমূহ (${_files.length})',
                       style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13,
-                          fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+                          fontWeight: FontWeight.w600)),
                   const Spacer(),
                   GestureDetector(
                     onTap: _showAddOptions,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(color: AppTheme.accent, borderRadius: BorderRadius.circular(8)),
+                      decoration: BoxDecoration(color: AppTheme.accent,
+                          borderRadius: BorderRadius.circular(8)),
                       child: const Row(children: [
                         Icon(Icons.add, size: 14, color: Colors.white),
                         SizedBox(width: 4),
-                        Text('যোগ করো', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                        Text('যোগ করো', style: TextStyle(color: Colors.white,
+                            fontSize: 12, fontWeight: FontWeight.w700)),
                       ]),
                     ),
                   ),
@@ -341,81 +399,87 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                     ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                         const Text('📄', style: TextStyle(fontSize: 40)),
                         const SizedBox(height: 12),
-                        const Text('কোনো ফাইল নেই', style: TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
+                        const Text('কোনো ফাইল নেই', style: TextStyle(
+                            color: AppTheme.textSecondary, fontSize: 15)),
                         const SizedBox(height: 6),
-                        const Text('+ যোগ করো বাটনে চাপো', style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+                        const Text('+ যোগ করো বাটনে চাপো', style: TextStyle(
+                            color: AppTheme.textMuted, fontSize: 13)),
                       ]))
                     : ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
                         itemCount: _files.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (_, i) => _fileCard(_files[i]),
                       ),
               ),
             ]),
-      floatingActionButton: _files.isEmpty ? null : FloatingActionButton(
+      floatingActionButton: FloatingActionButton(
         onPressed: _showAddOptions,
         backgroundColor: AppTheme.accent, mini: true,
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
 
   Widget _fileCard(IdeaFile file) {
     final extColor = _extColor(file.ext);
+    final extLabel = file.ext.isEmpty ? '?' : file.ext.toUpperCase().substring(0, file.ext.length.clamp(0, 4));
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => _showFileMenu(file),
         onLongPress: () {
-          if (!file.isImage) {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => FileEditorScreen(file: file)))
-                .then((_) => _load());
+          if (file.isText) {
+            Navigator.push(context, MaterialPageRoute(
+                builder: (_) => FileEditorScreen(file: file))).then((_) => _load());
           }
         },
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(children: [
-            // Thumbnail for image, icon for text
             Container(
               width: 48, height: 48,
-              decoration: BoxDecoration(color: extColor.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+              decoration: BoxDecoration(color: extColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10)),
               clipBehavior: Clip.antiAlias,
               child: file.isImage && file.content != null
-                  ? Image.memory(base64Decode(file.content!), fit: BoxFit.cover)
-                  : Center(child: Text(
-                      file.ext.isEmpty ? '?' : file.ext.toUpperCase().substring(0, file.ext.length.clamp(0, 4)),
+                  ? Image.memory(base64Decode(file.content!), fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Center(child: Text(extLabel,
+                          style: TextStyle(color: extColor, fontSize: 11, fontWeight: FontWeight.w800))))
+                  : Center(child: Text(extLabel,
                       style: TextStyle(color: extColor, fontSize: 11, fontWeight: FontWeight.w800))),
             ),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(file.name,
-                  style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14,
-                      fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+              Text(file.name, style: const TextStyle(color: AppTheme.textPrimary,
+                  fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
                   overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Row(children: [
-                _versionBadge('v${file.version}'),
+                _vBadge('v${file.version}'),
                 const SizedBox(width: 8),
-                if (!file.isImage)
-                  Text('${file.lineCount} লাইন',
-                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 11))
-                else
-                  Text('image', style: TextStyle(color: AppTheme.yellow.withOpacity(0.8), fontSize: 11)),
+                Text(file.sizeLabel, style: const TextStyle(
+                    color: AppTheme.textMuted, fontSize: 11)),
+                if (file.isText) ...[
+                  const SizedBox(width: 6),
+                  Text('${file.lineCount} লাইন', style: const TextStyle(
+                      color: AppTheme.textMuted, fontSize: 11)),
+                ],
               ]),
             ])),
-            Icon(Icons.more_vert, size: 18, color: AppTheme.textMuted),
+            const Icon(Icons.more_vert, size: 18, color: AppTheme.textMuted),
           ]),
         ),
       ),
     );
   }
 
-  Widget _versionBadge(String v) => Container(
+  Widget _vBadge(String v) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-    decoration: BoxDecoration(color: AppTheme.accent.withOpacity(0.15), borderRadius: BorderRadius.circular(4)),
-    child: Text(v, style: const TextStyle(color: AppTheme.accent, fontSize: 10,
-        fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+    decoration: BoxDecoration(color: AppTheme.accent.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(4)),
+    child: Text(v, style: const TextStyle(color: AppTheme.accent,
+        fontSize: 10, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
   );
 
   Widget _sheetTile(IconData icon, String label, Color color, VoidCallback onTap) =>
@@ -425,29 +489,34 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
 
   Color _extColor(String ext) {
     const map = {
-      'js': Color(0xFFF7DF1E), 'jsx': Color(0xFF61DAFB), 'ts': Color(0xFF3178C6),
-      'tsx': Color(0xFF61DAFB), 'dart': Color(0xFF54C5F8), 'py': Color(0xFF3776AB),
-      'html': Color(0xFFE34F26), 'css': Color(0xFF264DE4), 'scss': Color(0xFFCC6699),
-      'json': Color(0xFF5BC8F5), 'yml': Color(0xFFCB171E), 'yaml': Color(0xFFCB171E),
-      'md': Color(0xFF083FA1), 'java': Color(0xFFED8B00), 'kt': Color(0xFF7F52FF),
-      'svg': Color(0xFFFFB13B), 'xml': Color(0xFFF16529),
-      'png': Color(0xFF10B981), 'jpg': Color(0xFF10B981), 'jpeg': Color(0xFF10B981),
-      'gif': Color(0xFF10B981), 'webp': Color(0xFF10B981),
+      'js':Color(0xFFF7DF1E),'jsx':Color(0xFF61DAFB),'ts':Color(0xFF3178C6),
+      'tsx':Color(0xFF61DAFB),'dart':Color(0xFF54C5F8),'py':Color(0xFF3776AB),
+      'html':Color(0xFFE34F26),'css':Color(0xFF264DE4),'scss':Color(0xFFCC6699),
+      'json':Color(0xFF5BC8F5),'yml':Color(0xFFCB171E),'yaml':Color(0xFFCB171E),
+      'md':Color(0xFF083FA1),'java':Color(0xFFED8B00),'kt':Color(0xFF7F52FF),
+      'svg':Color(0xFFFFB13B),'xml':Color(0xFFF16529),
+      'png':Color(0xFF10B981),'jpg':Color(0xFF10B981),'jpeg':Color(0xFF10B981),
+      'pdf':Color(0xFFEF4444),'apk':Color(0xFF4CAF50),'zip':Color(0xFF9C27B0),
+      'mp3':Color(0xFFFF9800),'wav':Color(0xFFFF9800),'mp4':Color(0xFF2196F3),
     };
     return map[ext] ?? AppTheme.textSecondary;
   }
 
-  Widget _field(TextEditingController ctrl, String hint, {int maxLines = 1, bool mono = false}) =>
-      TextField(
-        controller: ctrl, maxLines: maxLines,
-        style: TextStyle(color: AppTheme.textPrimary, fontFamily: mono ? 'monospace' : null, fontSize: 13),
-        decoration: InputDecoration(
-          hintText: hint, hintStyle: const TextStyle(color: AppTheme.textMuted),
-          filled: true, fillColor: AppTheme.bg3,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.border)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.border)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        ),
-      );
+  Widget _field(TextEditingController ctrl, String hint,
+      {int maxLines = 1, bool mono = false}) => TextField(
+    controller: ctrl, maxLines: maxLines,
+    style: TextStyle(color: AppTheme.textPrimary,
+        fontFamily: mono ? 'monospace' : null, fontSize: 13),
+    decoration: InputDecoration(
+      hintText: hint, hintStyle: const TextStyle(color: AppTheme.textMuted),
+      filled: true, fillColor: AppTheme.bg3,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppTheme.border)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppTheme.border)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    ),
+  );
 }
