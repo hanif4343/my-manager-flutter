@@ -49,7 +49,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           result.files.single.path!);
       if (mounted) {
         setState(() => _importing = false);
-        if (importResult.success) {
+        if (importResult.isOk) {
           _load();
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('✅ Import সফল! ${importResult.ideaCount} আইডিয়া, ${importResult.fileCount} ফাইল'),
