@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../db/db_helper.dart';
 import '../models/project.dart';
 import '../widgets/app_theme.dart';
+import '../services/export_service.dart';
 import 'project_detail_screen.dart';
 import 'project_form_screen.dart';
 import 'backup_screen.dart';
@@ -18,6 +20,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<Project> _projects = [];
   Map<int, Map<String, int>> _stats = {};
   bool _loading = true;
+  bool _importing = false;
 
   @override
   void initState() { super.initState(); _load(); }
@@ -33,21 +36,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
+  Future<void> _importProject() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['zip'],
+        withData: false,
+      );
+      if (result == null || result.files.single.path == null) return;
+      setState(() => _importing = true);
+      final importResult = await ExportService.importProject(
+          result.files.single.path!);
+      if (mounted) {
+        setState(() => _importing = false);
+        if (importResult.success) {
+          _load();
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('✅ Import সফল! ${importResult.ideaCount} আইডিয়া, ${importResult.fileCount} ফাইল'),
+            backgroundColor: AppTheme.green,
+            duration: const Duration(seconds: 3),
+          ));
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('❌ ${importResult.error ?? 'Import ব্যর্থ'}'),
+            backgroundColor: AppTheme.red,
+            duration: const Duration(seconds: 3),
+          ));
+        }
+      }
+    } catch (e) {
+      setState(() => _importing = false);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.red));
+    }
+  }
+
   Future<void> _delete(Project p) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: const Text('মুছে ফেলবে?',
-            style: TextStyle(color: AppTheme.textPrimary)),
+        title: const Text('মুছে ফেলবে?', style: TextStyle(color: AppTheme.textPrimary)),
         content: Text('"${p.name}" এবং সব ডেটা মুছে যাবে।',
             style: const TextStyle(color: AppTheme.textSecondary)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false),
               child: const Text('বাতিল')),
           TextButton(onPressed: () => Navigator.pop(context, true),
-              child: const Text('মুছো',
-                  style: TextStyle(color: AppTheme.red))),
+              child: const Text('মুছো', style: TextStyle(color: AppTheme.red))),
         ],
       ),
     );
@@ -71,34 +107,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const Spacer(),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppTheme.bg3, borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppTheme.border),
-            ),
+            decoration: BoxDecoration(color: AppTheme.bg3,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppTheme.border)),
             child: Text('${_projects.length} প্রজেক্ট',
-                style: const TextStyle(
-                    color: AppTheme.textSecondary, fontSize: 12)),
+                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
           ),
         ]),
         automaticallyImplyLeading: false,
         actions: [
+          // Search
           IconButton(
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const SearchScreen())),
-            icon: const Icon(Icons.search, color: AppTheme.textSecondary),
+            icon: const Icon(Icons.search, size: 22),
             tooltip: 'খোঁজো',
           ),
+          // Import ZIP
+          _importing
+              ? const Padding(padding: EdgeInsets.all(12),
+                  child: SizedBox(width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2,
+                          color: AppTheme.accent)))
+              : IconButton(
+                  onPressed: _importProject,
+                  icon: const Icon(Icons.download_outlined, size: 22),
+                  tooltip: 'ZIP Import',
+                ),
+          // Drive
           IconButton(
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const BackupScreen())),
-            icon: const Icon(Icons.cloud_outlined, color: AppTheme.textSecondary),
+            icon: const Icon(Icons.cloud_outlined, size: 22),
             tooltip: 'Drive Backup',
           ),
+          // Settings
           IconButton(
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => SettingsScreen(
                     onThemeToggle: widget.onThemeToggle))),
-            icon: const Icon(Icons.settings_outlined, color: AppTheme.textSecondary),
+            icon: const Icon(Icons.settings_outlined, size: 22),
             tooltip: 'সেটিংস',
           ),
         ],
@@ -140,13 +188,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       const Text('এখনো কোনো প্রজেক্ট নেই', style: TextStyle(
           color: AppTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
       const SizedBox(height: 8),
-      const Text('নিচের + বাটনে চাপো',
+      const Text('+ বাটনে চাপো অথবা ZIP import করো',
           style: TextStyle(color: AppTheme.textMuted, fontSize: 14)),
+      const SizedBox(height: 20),
+      OutlinedButton.icon(
+        onPressed: _importProject,
+        icon: const Icon(Icons.download_outlined, color: AppTheme.accent),
+        label: const Text('ZIP থেকে Import করো',
+            style: TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w600)),
+        style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: AppTheme.accent),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
+      ),
     ]),
   );
 
   Widget _projectCard(Project p) {
-    final st = _stats[p.id] ?? {'total': 0, 'done': 0, 'doing': 0, 'todo': 0};
+    final st = _stats[p.id] ?? {'total':0,'done':0,'doing':0,'todo':0};
     final total = st['total']!;
     final done = st['done']!;
     final progress = total > 0 ? done / total : 0.0;
@@ -155,8 +213,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () async {
-          await Navigator.push(context, MaterialPageRoute(
-              builder: (_) => ProjectDetailScreen(project: p)));
+          await Navigator.push(context,
+              MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: p)));
           _load();
         },
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -166,12 +224,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           )),
           Padding(
             padding: const EdgeInsets.all(14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Expanded(child: Text(p.name, style: const TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontSize: 16, fontWeight: FontWeight.w700))),
+                    color: AppTheme.textPrimary, fontSize: 16,
+                    fontWeight: FontWeight.w700))),
                 _iconBtn(Icons.edit_outlined, () async {
                   await Navigator.push(context, MaterialPageRoute(
                       builder: (_) => ProjectFormScreen(project: p)));
@@ -189,11 +246,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
               if (p.tags.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                Wrap(spacing: 6, runSpacing: 4, children: p.tags.map((t) =>
-                    Container(
+                Wrap(spacing: 6, runSpacing: 4,
+                    children: p.tags.map((t) => Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                          color: AppTheme.bg3,
+                      decoration: BoxDecoration(color: AppTheme.bg3,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: AppTheme.border)),
                       child: Text(t, style: const TextStyle(
@@ -201,8 +257,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     )).toList()),
               ],
               const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
+              ClipRRect(borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
                   value: progress, minHeight: 5,
                   backgroundColor: AppTheme.bg3,
@@ -229,18 +284,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _iconBtn(IconData icon, VoidCallback onTap,
-      {Color color = AppTheme.textMuted}) =>
-      GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-              color: AppTheme.bg3, borderRadius: BorderRadius.circular(8)),
-          child: Icon(icon, size: 16, color: color),
-        ),
-      );
+      {Color color = AppTheme.textMuted}) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(color: AppTheme.bg3,
+          borderRadius: BorderRadius.circular(8)),
+      child: Icon(icon, size: 16, color: color),
+    ),
+  );
 
-  Widget _statChip(String text, Color color) =>
-      Text(text, style: TextStyle(
-          color: color, fontSize: 12, fontWeight: FontWeight.w600));
+  Widget _statChip(String text, Color color) => Text(text,
+      style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600));
 }
