@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/settings_service.dart';
 import '../widgets/app_theme.dart';
-import 'pin_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final VoidCallback onThemeToggle;
@@ -11,45 +10,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _isDark = SettingsService.isDark;
-  bool _pinEnabled = SettingsService.pinEnabled;
-
-  Future<void> _togglePin() async {
-    if (_pinEnabled) {
-      // Disable PIN
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (_) => AlertDialog(
-          backgroundColor: AppTheme.bg3,
-          title: const Text('PIN বন্ধ করবে?',
-              style: TextStyle(color: AppTheme.textPrimary)),
-          content: const Text('PIN lock বন্ধ হবে।',
-              style: TextStyle(color: AppTheme.textSecondary)),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false),
-                child: const Text('বাতিল')),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.red),
-              child: const Text('বন্ধ করো'),
-            ),
-          ],
-        ),
-      );
-      if (confirm == true) {
-        await SettingsService.disablePin();
-        setState(() => _pinEnabled = false);
-      }
-    } else {
-      // Enable PIN
-      await Navigator.push(context, MaterialPageRoute(
-        builder: (_) => PinScreen(
-          isSetup: true,
-          onSuccess: () => setState(() => _pinEnabled = true),
-        ),
-      ));
-      setState(() => _pinEnabled = SettingsService.pinEnabled);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +26,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _settingTile(
             icon: _isDark ? Icons.dark_mode : Icons.light_mode,
             iconColor: _isDark ? AppTheme.accent : AppTheme.yellow,
-            title: _isDark ? 'ডার্ক মোড' : 'লাইট মোড',
+            title: _isDark ? 'ডার্ক মোড চালু' : 'লাইট মোড চালু',
             subtitle: 'থিম পরিবর্তন করো',
             trailing: Switch(
               value: _isDark,
@@ -79,31 +39,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _sectionTitle('নিরাপত্তা'),
-          _settingTile(
-            icon: Icons.lock_outlined,
-            iconColor: _pinEnabled ? AppTheme.green : AppTheme.textMuted,
-            title: 'PIN Lock',
-            subtitle: _pinEnabled ? 'PIN চালু আছে ✅' : 'App খুলতে PIN লাগবে',
-            trailing: Switch(
-              value: _pinEnabled,
-              activeColor: AppTheme.green,
-              onChanged: (_) => _togglePin(),
-            ),
-          ),
-          const SizedBox(height: 16),
           _sectionTitle('অ্যাপ তথ্য'),
           _settingTile(
-            icon: Icons.info_outline,
+            icon: Icons.rocket_launch_outlined,
             iconColor: AppTheme.accent,
             title: 'My Manager',
-            subtitle: 'Version 3.0.0 • Phase 4',
+            subtitle: 'Version 4.0.0 — Phase 1 (New)',
           ),
           _settingTile(
             icon: Icons.code,
             iconColor: AppTheme.textSecondary,
             title: 'Package',
             subtitle: 'com.hanif.mymanager',
+          ),
+          _settingTile(
+            icon: Icons.storage_outlined,
+            iconColor: AppTheme.green,
+            title: 'Storage',
+            subtitle: 'SQLite Local Database',
           ),
         ],
       ),
@@ -121,20 +74,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       required String title, String? subtitle, Widget? trailing}) =>
       Container(
         margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-            color: AppTheme.bg2, borderRadius: BorderRadius.circular(12),
+        decoration: BoxDecoration(color: AppTheme.bg2,
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppTheme.border)),
         child: ListTile(
-          leading: Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.15),
+          leading: Container(width: 36, height: 36,
+            decoration: BoxDecoration(color: iconColor.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(8)),
-            child: Icon(icon, color: iconColor, size: 18),
-          ),
+            child: Icon(icon, color: iconColor, size: 18)),
           title: Text(title, style: const TextStyle(
-              color: AppTheme.textPrimary, fontSize: 14,
-              fontWeight: FontWeight.w600)),
+              color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
           subtitle: subtitle != null ? Text(subtitle,
               style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)) : null,
           trailing: trailing,
