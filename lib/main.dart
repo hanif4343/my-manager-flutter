@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'screens/dashboard_screen.dart';
-import 'screens/pin_screen.dart';
 import 'widgets/app_theme.dart';
 import 'services/notification_service.dart';
 import 'services/settings_service.dart';
@@ -28,18 +27,14 @@ class MyManagerApp extends StatefulWidget {
 
 class _MyManagerAppState extends State<MyManagerApp> {
   bool _isDark = true;
-  bool _unlocked = false;
 
   @override
   void initState() {
     super.initState();
     _isDark = SettingsService.isDark;
-    _unlocked = !SettingsService.pinEnabled;
   }
 
-  void toggleTheme() {
-    setState(() => _isDark = SettingsService.isDark);
-  }
+  void toggleTheme() => setState(() => _isDark = SettingsService.isDark);
 
   @override
   Widget build(BuildContext context) {
@@ -47,12 +42,7 @@ class _MyManagerAppState extends State<MyManagerApp> {
       title: 'My Manager',
       debugShowCheckedModeBanner: false,
       theme: _isDark ? AppTheme.dark : AppTheme.light,
-      home: SettingsService.pinEnabled && !_unlocked
-          ? PinScreen(
-              isSetup: false,
-              onSuccess: () => setState(() => _unlocked = true),
-            )
-          : DashboardScreen(onThemeToggle: toggleTheme),
+      home: DashboardScreen(onThemeToggle: toggleTheme),
     );
   }
 }
