@@ -8,6 +8,8 @@ import '../services/notification_service.dart';
 import '../services/export_service.dart';
 import 'idea_detail_screen.dart';
 import 'project_version_screen.dart';
+import 'file_grid_screen.dart';
+import 'file_grid_screen.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final Project project;
@@ -342,6 +344,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   icon: const Icon(Icons.upload_outlined, size: 20),
                   tooltip: 'ZIP Export',
                 ),
+          IconButton(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => FileGridScreen(project: widget.project))),
+            icon: const Icon(Icons.grid_view_outlined, size: 20),
+            tooltip: 'সব ফাইল',
+          ),
           IconButton(
             onPressed: () => Navigator.push(context, MaterialPageRoute(
                 builder: (_) => ProjectVersionScreen(project: widget.project))),
