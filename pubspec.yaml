@@ -25,6 +25,8 @@ dependencies:
   googleapis: ^11.4.0
   http: ^1.2.0
   shared_preferences: ^2.2.2
+  record: ^5.1.2
+  audioplayers: ^6.0.0
 
 dev_dependencies:
   flutter_test:
