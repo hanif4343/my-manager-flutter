@@ -6,7 +6,7 @@ import '../models/idea_file.dart';
 
 class DBHelper {
   static Database? _db;
-  static const _version = 3;
+  static const _version = 4;
 
   static Future<Database> get db async {
     _db ??= await _initDB();
@@ -29,6 +29,7 @@ class DBHelper {
         tags TEXT,
         status TEXT DEFAULT 'active',
         version INTEGER DEFAULT 1,
+        sort_order INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
@@ -94,23 +95,42 @@ class DBHelper {
         await db.execute('ALTER TABLE ideas ADD COLUMN is_archived INTEGER DEFAULT 0');
       } catch (_) {}
     }
+    if (oldV < 4) {
+      try {
+        await db.execute('ALTER TABLE projects ADD COLUMN sort_order INTEGER DEFAULT 0');
+        // Initialize sort_order based on current updated_at order
+        final rows = await db.query('projects', orderBy: 'updated_at DESC');
+        for (int i = 0; i < rows.length; i++) {
+          await db.update('projects', {'sort_order': i},
+              where: 'id=?', whereArgs: [rows[i]['id']]);
+        }
+      } catch (_) {}
+    }
   }
 
   // ── PROJECTS ──────────────────────────────────────────
   static Future<List<Project>> getProjects() async {
     final d = await db;
-    final rows = await d.query('projects', orderBy: 'updated_at DESC');
+    final rows = await d.query('projects', orderBy: 'sort_order ASC, updated_at DESC');
     return rows.map(Project.fromMap).toList();
   }
 
   static Future<int> insertProject(Project p) async {
     final d = await db;
-    return d.insert('projects', p.toMap());
+    // New project gets sort_order = 0 (top), shift everyone else down
+    await d.execute('UPDATE projects SET sort_order = sort_order + 1');
+    return d.insert('projects', {...p.toMap(), 'sort_order': 0});
   }
 
   static Future<void> updateProject(Project p) async {
     final d = await db;
     await d.update('projects', p.toMap(), where: 'id=?', whereArgs: [p.id]);
+  }
+
+  static Future<void> updateProjectOrder(int id, int order) async {
+    final d = await db;
+    await d.update('projects', {'sort_order': order},
+        where: 'id=?', whereArgs: [id]);
   }
 
   static Future<void> deleteProject(int id) async {
