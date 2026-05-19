@@ -523,8 +523,106 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Future<void> _updateStatus(Idea idea, String status) async {
-    await DBHelper.updateIdea(idea.copyWith(status: status, updatedAt: now()));
-    _load();
+    if (status == 'done') {
+      // Mark done then auto-archive after a brief moment so user sees the check
+      await DBHelper.updateIdea(idea.copyWith(status: 'done', updatedAt: now()));
+      _load();
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (idea.id != null) {
+        await DBHelper.archiveIdea(idea.id!);
+        _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('✅ Done! আর্কাইভে চলে গেছে'),
+            backgroundColor: AppTheme.green,
+            duration: Duration(seconds: 2),
+          ));
+        }
+      }
+    } else {
+      await DBHelper.updateIdea(idea.copyWith(status: status, updatedAt: now()));
+      _load();
+    }
+  }
+
+  Future<void> _showArchive() async {
+    if (widget.project.id == null) return;
+    final archived = await DBHelper.getArchivedIdeas(widget.project.id!);
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.bg2,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (ctx, scrollCtrl) => Column(children: [
+          const SizedBox(height: 8),
+          Container(width: 40, height: 4, decoration: BoxDecoration(
+              color: AppTheme.border, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(children: [
+              const Icon(Icons.archive_outlined, color: AppTheme.green, size: 20),
+              const SizedBox(width: 8),
+              Text('আর্কাইভ (${archived.length})', style: const TextStyle(
+                  color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: archived.isEmpty
+                ? const Center(child: Text('কোনো আর্কাইভ নেই', style: TextStyle(color: AppTheme.textMuted)))
+                : ListView.separated(
+                    controller: scrollCtrl,
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
+                    itemCount: archived.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                    itemBuilder: (_, i) {
+                      final idea = archived[i];
+                      return Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.check_circle_rounded,
+                              color: AppTheme.green, size: 22),
+                          title: Text(idea.title, style: const TextStyle(
+                              color: AppTheme.textMuted, fontSize: 13,
+                              decoration: TextDecoration.lineThrough)),
+                          subtitle: idea.description != null
+                              ? Text(idea.description!, style: const TextStyle(
+                                  color: AppTheme.textMuted, fontSize: 11), maxLines: 1)
+                              : null,
+                          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                            IconButton(
+                              icon: const Icon(Icons.restore, color: AppTheme.accent, size: 20),
+                              tooltip: 'পুনরুদ্ধার',
+                              onPressed: () async {
+                                await DBHelper.unarchiveIdea(idea.id!);
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                _load();
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: AppTheme.red, size: 20),
+                              tooltip: 'মুছো',
+                              onPressed: () async {
+                                await DBHelper.deleteIdea(idea.id!);
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                _load();
+                              },
+                            ),
+                          ]),
+                        ),
+                      );
+                    }),
+          ),
+        ]),
+      ),
+    );
   }
 
   Future<void> _delete(Idea idea) async {
@@ -590,6 +688,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 builder: (_) => FileGridScreen(project: widget.project))),
             icon: const Icon(Icons.grid_view_outlined, size: 20),
             tooltip: 'সব ফাইল',
+          ),
+          IconButton(
+            onPressed: _showArchive,
+            icon: const Icon(Icons.archive_outlined, size: 20),
+            tooltip: 'আর্কাইভ (Done)',
           ),
           IconButton(
             onPressed: () => Navigator.push(context, MaterialPageRoute(
@@ -735,13 +838,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         decoration: idea.status=='done'
                             ? TextDecoration.lineThrough : null),
                     maxLines: 2, overflow: TextOverflow.ellipsis)),
-                // Copy title + description
+                // Copy title + description — bigger, more tappable
                 GestureDetector(
                   onTap: () => _copyIdea(idea),
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 6),
-                    child: Icon(Icons.copy_outlined,
-                        size: 14, color: AppTheme.textMuted),
+                  child: Container(
+                    margin: const EdgeInsets.only(left: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.bg3,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: const Icon(Icons.copy_outlined,
+                        size: 18, color: AppTheme.textSecondary),
                   ),
                 ),
               ]),
