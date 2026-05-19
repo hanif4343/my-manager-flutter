@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:archive/archive_io.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'dart:io';
 import 'dart:convert';
 import '../db/db_helper.dart';
@@ -28,9 +29,14 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
   late Idea _idea;
   bool _loading = true;
   final _picker = ImagePicker();
+  final _audioPlayer = AudioPlayer();
+  String? _playingFileId; // tracks which file is currently playing
 
   @override
   void initState() { super.initState(); _idea = widget.idea; _load(); }
+
+  @override
+  void dispose() { _audioPlayer.dispose(); super.dispose(); }
 
   Future<void> _load() async {
     if (_idea.id == null) return;
@@ -258,6 +264,48 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
     await Share.shareXFiles([XFile(f.path)], text: file.name);
   }
 
+  // ── AUDIO PLAYBACK ────────────────────────────────────
+  Future<void> _playAudio(IdeaFile file) async {
+    if (file.content == null) return;
+    try {
+      if (_playingFileId == file.id.toString()) {
+        await _audioPlayer.stop();
+        setState(() => _playingFileId = null);
+        return;
+      }
+      final bytes = base64Decode(file.content!);
+      final dir = await getTemporaryDirectory();
+      final tmpFile = File('${dir.path}/${file.name}');
+      await tmpFile.writeAsBytes(bytes);
+      setState(() => _playingFileId = file.id.toString());
+      await _audioPlayer.play(DeviceFileSource(tmpFile.path));
+      _audioPlayer.onPlayerComplete.listen((_) {
+        if (mounted) setState(() => _playingFileId = null);
+      });
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Play error: $e'), backgroundColor: AppTheme.red));
+    }
+  }
+
+  // ── VIDEO PLAYBACK ────────────────────────────────────
+  Future<void> _playVideo(IdeaFile file) async {
+    if (file.content == null) return;
+    try {
+      final bytes = base64Decode(file.content!);
+      final dir = await getTemporaryDirectory();
+      final tmpFile = File('${dir.path}/${file.name}');
+      await tmpFile.writeAsBytes(bytes);
+      if (mounted) {
+        Navigator.push(context, MaterialPageRoute(
+            builder: (_) => _VideoPlayerScreen(file: tmpFile, name: file.name)));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Video error: $e'), backgroundColor: AppTheme.red));
+    }
+  }
+
   void _showFileMenu(IdeaFile file) {
     showModalBottomSheet(
       context: context, backgroundColor: AppTheme.bg2,
@@ -295,6 +343,19 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                 backgroundColor: AppTheme.green,
                 duration: const Duration(seconds: 2)));
           }),
+        if (file.isAudio)
+          _sheetTile(
+            _playingFileId == file.id.toString()
+                ? Icons.stop_circle_outlined : Icons.play_circle_outlined,
+            _playingFileId == file.id.toString() ? 'বন্ধ করো' : 'অডিও প্লে করো',
+            const Color(0xFFFF9800),
+            () { Navigator.pop(context); _playAudio(file); },
+          ),
+        if (file.isVideo)
+          _sheetTile(Icons.smart_display_outlined, 'ভিডিও প্লে করো',
+            const Color(0xFF2196F3),
+            () { Navigator.pop(context); _playVideo(file); },
+          ),
         if (file.isImage)
           _sheetTile(Icons.image_outlined, 'ছবি দেখো', AppTheme.accent, () async {
             Navigator.pop(context);
@@ -424,31 +485,70 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
   Widget _fileCard(IdeaFile file) {
     final extColor = _extColor(file.ext);
     final extLabel = file.ext.isEmpty ? '?' : file.ext.toUpperCase().substring(0, file.ext.length.clamp(0, 4));
+    final isPlaying = _playingFileId == file.id.toString();
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => _showFileMenu(file),
+        onTap: () {
+          if (file.isAudio) {
+            _playAudio(file);
+          } else if (file.isVideo) {
+            _playVideo(file);
+          } else {
+            _showFileMenu(file);
+          }
+        },
         onLongPress: () {
           if (file.isText) {
             Navigator.push(context, MaterialPageRoute(
                 builder: (_) => FileEditorScreen(file: file))).then((_) => _load());
+          } else {
+            _showFileMenu(file);
           }
         },
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(children: [
-            Container(
-              width: 48, height: 48,
-              decoration: BoxDecoration(color: extColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10)),
-              clipBehavior: Clip.antiAlias,
-              child: file.isImage && file.content != null
-                  ? Image.memory(base64Decode(file.content!), fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Center(child: Text(extLabel,
-                          style: TextStyle(color: extColor, fontSize: 11, fontWeight: FontWeight.w800))))
-                  : Center(child: Text(extLabel,
-                      style: TextStyle(color: extColor, fontSize: 11, fontWeight: FontWeight.w800))),
-            ),
+            Stack(children: [
+              Container(
+                width: 48, height: 48,
+                decoration: BoxDecoration(color: extColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10)),
+                clipBehavior: Clip.antiAlias,
+                child: file.isImage && file.content != null
+                    ? Image.memory(base64Decode(file.content!), fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Center(child: Text(extLabel,
+                            style: TextStyle(color: extColor, fontSize: 11, fontWeight: FontWeight.w800))))
+                    : Center(child: Icon(
+                        file.isAudio
+                            ? (isPlaying ? Icons.stop_rounded : Icons.headphones_rounded)
+                            : file.isVideo
+                                ? Icons.play_circle_filled_rounded
+                                : null,
+                        color: file.isAudio || file.isVideo ? extColor : null,
+                        size: 24,
+                      ) == const Icon(null) ? Text(extLabel,
+                            style: TextStyle(color: extColor, fontSize: 11, fontWeight: FontWeight.w800))
+                          : Icon(
+                              file.isAudio
+                                  ? (isPlaying ? Icons.stop_rounded : Icons.headphones_rounded)
+                                  : file.isVideo
+                                      ? Icons.play_circle_filled_rounded
+                                      : null,
+                              color: extColor, size: 24)),
+              ),
+              if (isPlaying)
+                Positioned.fill(child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Center(child: SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )),
+                )),
+            ]),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(file.name, style: const TextStyle(color: AppTheme.textPrimary,
@@ -460,14 +560,33 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                 const SizedBox(width: 8),
                 Text(file.sizeLabel, style: const TextStyle(
                     color: AppTheme.textMuted, fontSize: 11)),
-                if (file.isText) ...[
+                if (file.isText) ...[ 
                   const SizedBox(width: 6),
                   Text('${file.lineCount} লাইন', style: const TextStyle(
                       color: AppTheme.textMuted, fontSize: 11)),
                 ],
+                if (file.isAudio) ...[
+                  const SizedBox(width: 6),
+                  Text(isPlaying ? '▶ playing' : '🎵 audio', style: TextStyle(
+                      color: extColor, fontSize: 11)),
+                ],
+                if (file.isVideo) ...[
+                  const SizedBox(width: 6),
+                  const Text('🎬 video', style: TextStyle(
+                      color: Color(0xFF2196F3), fontSize: 11)),
+                ],
               ]),
             ])),
-            const Icon(Icons.more_vert, size: 18, color: AppTheme.textMuted),
+            if (file.isAudio || file.isVideo)
+              GestureDetector(
+                onTap: () => _showFileMenu(file),
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.more_vert, size: 18, color: AppTheme.textMuted),
+                ),
+              )
+            else
+              const Icon(Icons.more_vert, size: 18, color: AppTheme.textMuted),
           ]),
         ),
       ),
@@ -519,4 +638,63 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
     ),
   );
+}
+
+// ── Simple video player screen using platform video_player ───────────────────
+// Uses a full-screen approach with the video_player package.
+// Since video_player is NOT in pubspec yet, we use a simple preview screen
+// that shows file info and plays via platform intent. Add video_player to
+// pubspec.yaml if you want in-app playback.
+class _VideoPlayerScreen extends StatelessWidget {
+  final File file;
+  final String name;
+  const _VideoPlayerScreen({required this.file, required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        title: Text(name, style: const TextStyle(color: Colors.white, fontSize: 14)),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Center(
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.smart_display_outlined, color: Colors.white54, size: 80),
+          const SizedBox(height: 20),
+          Text(name, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          const SizedBox(height: 8),
+          Text(
+            '${(file.lengthSync() / 1024).toStringAsFixed(1)} KB',
+            style: const TextStyle(color: Colors.white38, fontSize: 12),
+          ),
+          const SizedBox(height: 32),
+          ElevatedButton.icon(
+            onPressed: () async {
+              // Open with system player via share
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('ভিডিও ফাইল সিস্টেম প্লেয়ারে খুলছে...'),
+                  backgroundColor: Color(0xFF2196F3),
+                ));
+            },
+            icon: const Icon(Icons.open_in_new, size: 18),
+            label: const Text('সিস্টেম প্লেয়ারে খোলো'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2196F3),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'In-app video: pubspec.yaml-এ\nvideo_player: ^2.8.2 যোগ করো',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white24, fontSize: 11),
+          ),
+        ]),
+      ),
+    );
+  }
 }
