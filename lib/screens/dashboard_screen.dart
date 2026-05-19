@@ -178,7 +178,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         label: const Text('নতুন প্রজেক্ট',
             style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
       ),
-      ),
     );
   }
 
