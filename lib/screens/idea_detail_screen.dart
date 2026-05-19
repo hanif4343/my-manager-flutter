@@ -486,6 +486,24 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
     final extColor = _extColor(file.ext);
     final extLabel = file.ext.isEmpty ? '?' : file.ext.toUpperCase().substring(0, file.ext.length.clamp(0, 4));
     final isPlaying = _playingFileId == file.id.toString();
+
+    Widget thumbChild;
+    if (file.isImage && file.content != null) {
+      thumbChild = Image.memory(base64Decode(file.content!), fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Center(child: Text(extLabel,
+              style: TextStyle(color: extColor, fontSize: 11, fontWeight: FontWeight.w800))));
+    } else if (file.isAudio) {
+      thumbChild = Center(child: Icon(
+          isPlaying ? Icons.stop_rounded : Icons.headphones_rounded,
+          color: extColor, size: 24));
+    } else if (file.isVideo) {
+      thumbChild = Center(child: Icon(
+          Icons.play_circle_filled_rounded, color: extColor, size: 24));
+    } else {
+      thumbChild = Center(child: Text(extLabel,
+          style: TextStyle(color: extColor, fontSize: 11, fontWeight: FontWeight.w800)));
+    }
+
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -515,27 +533,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                 decoration: BoxDecoration(color: extColor.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(10)),
                 clipBehavior: Clip.antiAlias,
-                child: file.isImage && file.content != null
-                    ? Image.memory(base64Decode(file.content!), fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Center(child: Text(extLabel,
-                            style: TextStyle(color: extColor, fontSize: 11, fontWeight: FontWeight.w800))))
-                    : Center(child: Icon(
-                        file.isAudio
-                            ? (isPlaying ? Icons.stop_rounded : Icons.headphones_rounded)
-                            : file.isVideo
-                                ? Icons.play_circle_filled_rounded
-                                : null,
-                        color: file.isAudio || file.isVideo ? extColor : null,
-                        size: 24,
-                      ) == const Icon(null) ? Text(extLabel,
-                            style: TextStyle(color: extColor, fontSize: 11, fontWeight: FontWeight.w800))
-                          : Icon(
-                              file.isAudio
-                                  ? (isPlaying ? Icons.stop_rounded : Icons.headphones_rounded)
-                                  : file.isVideo
-                                      ? Icons.play_circle_filled_rounded
-                                      : null,
-                              color: extColor, size: 24)),
+                child: thumbChild,
               ),
               if (isPlaying)
                 Positioned.fill(child: Container(
@@ -560,15 +558,15 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                 const SizedBox(width: 8),
                 Text(file.sizeLabel, style: const TextStyle(
                     color: AppTheme.textMuted, fontSize: 11)),
-                if (file.isText) ...[ 
+                if (file.isText) ...[
                   const SizedBox(width: 6),
                   Text('${file.lineCount} লাইন', style: const TextStyle(
                       color: AppTheme.textMuted, fontSize: 11)),
                 ],
                 if (file.isAudio) ...[
                   const SizedBox(width: 6),
-                  Text(isPlaying ? '▶ playing' : '🎵 audio', style: TextStyle(
-                      color: extColor, fontSize: 11)),
+                  Text(isPlaying ? '▶ playing' : '🎵 audio',
+                      style: TextStyle(color: extColor, fontSize: 11)),
                 ],
                 if (file.isVideo) ...[
                   const SizedBox(width: 6),
@@ -577,16 +575,13 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                 ],
               ]),
             ])),
-            if (file.isAudio || file.isVideo)
-              GestureDetector(
-                onTap: () => _showFileMenu(file),
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Icon(Icons.more_vert, size: 18, color: AppTheme.textMuted),
-                ),
-              )
-            else
-              const Icon(Icons.more_vert, size: 18, color: AppTheme.textMuted),
+            GestureDetector(
+              onTap: () => _showFileMenu(file),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.more_vert, size: 18, color: AppTheme.textMuted),
+              ),
+            ),
           ]),
         ),
       ),
