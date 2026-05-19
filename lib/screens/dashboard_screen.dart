@@ -158,13 +158,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
           : _projects.isEmpty ? _emptyState()
-              : RefreshIndicator(
-                  onRefresh: _load, color: AppTheme.accent,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _projects.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (_, i) => _projectCard(_projects[i]),
+              : ReorderableListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                  itemCount: _projects.length,
+                  proxyDecorator: (child, index, animation) => Material(
+                    color: Colors.transparent,
+                    elevation: 8,
+                    shadowColor: Colors.black45,
+                    borderRadius: BorderRadius.circular(12),
+                    child: child,
+                  ),
+                  onReorder: (oldIndex, newIndex) async {
+                    if (newIndex > oldIndex) newIndex--;
+                    setState(() {
+                      final item = _projects.removeAt(oldIndex);
+                      _projects.insert(newIndex, item);
+                    });
+                    for (int i = 0; i < _projects.length; i++) {
+                      await DBHelper.updateProjectOrder(_projects[i].id!, i);
+                    }
+                  },
+                  itemBuilder: (_, i) => Padding(
+                    key: ValueKey(_projects[i].id),
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _projectCard(_projects[i]),
                   ),
                 ),
       floatingActionButton: FloatingActionButton.extended(
