@@ -13,6 +13,7 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
   final _name = TextEditingController();
   final _desc = TextEditingController();
   final _tags = TextEditingController();
+  // Default color — not user-selectable in new project form
   int _colorValue = AppTheme.projectColors[0].value;
   bool _saving = false;
 
@@ -84,34 +85,6 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
           const SizedBox(height: 16),
           _label('ট্যাগ (কমা দিয়ে আলাদা করো)'),
           _field(_tags, 'Flutter, Firebase, API'),
-          const SizedBox(height: 20),
-          _label('রঙ বেছে নাও'),
-          const SizedBox(height: 10),
-          Wrap(spacing: 12, runSpacing: 12,
-            children: AppTheme.projectColors.map((c) {
-              final selected = _colorValue == c.value;
-              return GestureDetector(
-                onTap: () => setState(() => _colorValue = c.value),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: selected ? 50 : 44,
-                  height: selected ? 50 : 44,
-                  decoration: BoxDecoration(
-                    color: c, shape: BoxShape.circle,
-                    border: Border.all(
-                        color: selected ? Colors.white : Colors.transparent,
-                        width: 3),
-                    boxShadow: selected
-                        ? [BoxShadow(color: c.withOpacity(0.6),
-                            blurRadius: 12, spreadRadius: 2)]
-                        : [],
-                  ),
-                  child: selected
-                      ? const Icon(Icons.check, color: Colors.white, size: 20)
-                      : null,
-                ),
-              );
-            }).toList()),
           const SizedBox(height: 32),
           SizedBox(
             width: double.infinity,
