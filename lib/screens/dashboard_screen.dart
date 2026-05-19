@@ -9,7 +9,6 @@ import 'project_form_screen.dart';
 import 'backup_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
-import '../widgets/floating_bubble.dart';
 
 class DashboardScreen extends StatefulWidget {
   final VoidCallback onThemeToggle;
@@ -96,8 +95,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return FloatingBubble(
-      child: Scaffold(
+    return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
         backgroundColor: AppTheme.bg2,
@@ -282,7 +280,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ]),
           ),
         ]),
-      ),
     );
   }
 
