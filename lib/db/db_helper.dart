@@ -6,7 +6,7 @@ import '../models/idea_file.dart';
 
 class DBHelper {
   static Database? _db;
-  static const _version = 2;
+  static const _version = 3;
 
   static Future<Database> get db async {
     _db ??= await _initDB();
@@ -41,6 +41,7 @@ class DBHelper {
         description TEXT,
         status TEXT DEFAULT 'todo',
         priority TEXT DEFAULT 'medium',
+        is_archived INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         FOREIGN KEY(project_id) REFERENCES projects(id)
@@ -87,6 +88,11 @@ class DBHelper {
           FOREIGN KEY(project_id) REFERENCES projects(id)
         )
       ''');
+    }
+    if (oldV < 3) {
+      try {
+        await db.execute('ALTER TABLE ideas ADD COLUMN is_archived INTEGER DEFAULT 0');
+      } catch (_) {}
     }
   }
 
@@ -136,7 +142,6 @@ class DBHelper {
 
   static Future<void> saveProjectVersion(int projectId, int version, String note) async {
     final d = await db;
-    // snapshot: all ideas + files as JSON string
     final ideas = await d.query('ideas', where: 'project_id=?', whereArgs: [projectId]);
     final snapshot = ideas.toString();
     await d.insert('project_versions', {
@@ -151,10 +156,23 @@ class DBHelper {
   }
 
   // ── IDEAS ─────────────────────────────────────────────
-  static Future<List<Idea>> getIdeas(int projectId) async {
+  // Returns only non-archived ideas by default
+  static Future<List<Idea>> getIdeas(int projectId, {bool includeArchived = false}) async {
+    final d = await db;
+    final where = includeArchived
+        ? 'project_id=?'
+        : 'project_id=? AND (is_archived IS NULL OR is_archived=0)';
+    final rows = await d.query('ideas',
+        where: where, whereArgs: [projectId], orderBy: 'created_at DESC');
+    return rows.map(Idea.fromMap).toList();
+  }
+
+  // Returns only archived (done) ideas
+  static Future<List<Idea>> getArchivedIdeas(int projectId) async {
     final d = await db;
     final rows = await d.query('ideas',
-        where: 'project_id=?', whereArgs: [projectId], orderBy: 'created_at DESC');
+        where: 'project_id=? AND is_archived=1',
+        whereArgs: [projectId], orderBy: 'updated_at DESC');
     return rows.map(Idea.fromMap).toList();
   }
 
@@ -166,6 +184,20 @@ class DBHelper {
   static Future<void> updateIdea(Idea idea) async {
     final d = await db;
     await d.update('ideas', idea.toMap(), where: 'id=?', whereArgs: [idea.id]);
+  }
+
+  static Future<void> archiveIdea(int id) async {
+    final d = await db;
+    await d.update('ideas',
+        {'is_archived': 1, 'updated_at': DateTime.now().millisecondsSinceEpoch},
+        where: 'id=?', whereArgs: [id]);
+  }
+
+  static Future<void> unarchiveIdea(int id) async {
+    final d = await db;
+    await d.update('ideas',
+        {'is_archived': 0, 'status': 'todo', 'updated_at': DateTime.now().millisecondsSinceEpoch},
+        where: 'id=?', whereArgs: [id]);
   }
 
   static Future<void> deleteIdea(int id) async {
