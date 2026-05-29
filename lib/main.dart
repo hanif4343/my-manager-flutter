@@ -11,6 +11,8 @@ void main() async {
   tz.initializeTimeZones();
   await SettingsService.init();
   await NotificationService.init();
+  // Schedule daily digest every morning at 8:00 AM
+  await NotificationService.scheduleDailyDigest(hour: 8, minute: 0);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
