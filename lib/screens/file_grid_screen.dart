@@ -12,6 +12,8 @@ import '../widgets/app_theme.dart';
 import 'file_editor_screen.dart';
 import 'image_viewer_screen.dart';
 import 'copy_move_screen.dart';
+import 'pdf_viewer_screen.dart';
+import 'markdown_viewer_screen.dart';
 
 class FileGridScreen extends StatefulWidget {
   final Project project;
@@ -105,6 +107,18 @@ class _FileGridScreenState extends State<FileGridScreen> {
             Navigator.pop(context);
             await Navigator.push(context, MaterialPageRoute(
                 builder: (_) => ImageViewerScreen(file: file)));
+          }),
+        if (file.isPdf)
+          _tile(Icons.picture_as_pdf_outlined, 'PDF দেখো (In-App)', AppTheme.red, () async {
+            Navigator.pop(context);
+            await Navigator.push(context, MaterialPageRoute(
+                builder: (_) => PdfViewerScreen(file: file)));
+          }),
+        if (file.ext == 'md')
+          _tile(Icons.auto_awesome_outlined, 'Markdown Render করো', AppTheme.accent, () async {
+            Navigator.pop(context);
+            await Navigator.push(context, MaterialPageRoute(
+                builder: (_) => MarkdownViewerScreen(file: file)));
           }),
         _tile(Icons.copy_all_outlined, 'Copy To...', AppTheme.green, () async {
           Navigator.pop(context);
