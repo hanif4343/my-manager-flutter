@@ -44,6 +44,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   String _sort = 'priority';
   bool _loading = true;
   bool _exporting = false;
+  int _archivedCount = 0;
   final _picker = ImagePicker();
   final _recorder = AudioRecorder();
 
@@ -61,8 +62,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     if (widget.project.id == null) return;
     final ideas = await DBHelper.getIdeas(widget.project.id!);
     final stats = await DBHelper.getProjectStats(widget.project.id!);
+    final archived = await DBHelper.getArchivedIdeas(widget.project.id!);
     if (mounted) setState(() {
       _ideas = ideas; _stats = stats; _loading = false;
+      _archivedCount = archived.length;
       // clean up selected that no longer exist
       final ids = ideas.map((i) => i.id!).toSet();
       _selected.removeWhere((id) => !ids.contains(id));
@@ -702,35 +705,79 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 separatorBuilder: (_, __) => const SizedBox(height: 6),
                 itemBuilder: (_, i) {
                   final idea = archived[i];
-                  return Card(
+                  final doneDate = DateTime.fromMillisecondsSinceEpoch(idea.updatedAt);
+                  final dateStr = '\${doneDate.day}/\${doneDate.month}/\${doneDate.year}';
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: AppTheme.bg3,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.green.withOpacity(0.2)),
+                    ),
                     child: ListTile(
-                      leading: const Icon(Icons.check_circle_rounded,
-                          color: AppTheme.green, size: 22),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                      leading: Container(
+                        width: 36, height: 36,
+                        decoration: BoxDecoration(
+                          color: AppTheme.green.withOpacity(0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.check_circle_rounded,
+                            color: AppTheme.green, size: 20),
+                      ),
                       title: Text(idea.title, style: const TextStyle(
                           color: AppTheme.textMuted, fontSize: 13,
+                          fontWeight: FontWeight.w600,
                           decoration: TextDecoration.lineThrough)),
-                      subtitle: idea.description != null
-                          ? Text(idea.description!, style: const TextStyle(
-                          color: AppTheme.textMuted, fontSize: 11), maxLines: 1)
-                          : null,
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (idea.description != null && idea.description!.isNotEmpty)
+                            Text(idea.description!, style: const TextStyle(
+                                color: AppTheme.textMuted, fontSize: 11),
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                          const SizedBox(height: 2),
+                          Text('✅ Done: \$dateStr', style: const TextStyle(
+                              color: AppTheme.green, fontSize: 10, fontWeight: FontWeight.w500)),
+                        ],
+                      ),
                       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                        IconButton(
-                          icon: const Icon(Icons.restore, color: AppTheme.accent, size: 20),
-                          tooltip: 'পুনরুদ্ধার',
-                          onPressed: () async {
+                        GestureDetector(
+                          onTap: () async {
                             await DBHelper.unarchiveIdea(idea.id!);
                             if (ctx.mounted) Navigator.pop(ctx);
                             _load();
                           },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accent.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppTheme.accent.withOpacity(0.4)),
+                            ),
+                            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.restore, color: AppTheme.accent, size: 13),
+                              SizedBox(width: 3),
+                              Text('ফিরাও', style: TextStyle(
+                                  color: AppTheme.accent, fontSize: 11, fontWeight: FontWeight.w600)),
+                            ]),
+                          ),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, color: AppTheme.red, size: 20),
-                          tooltip: 'মুছো',
-                          onPressed: () async {
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () async {
                             await DBHelper.deleteIdea(idea.id!);
                             if (ctx.mounted) Navigator.pop(ctx);
                             _load();
                           },
+                          child: Container(
+                            width: 28, height: 28,
+                            decoration: BoxDecoration(
+                              color: AppTheme.red.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(7),
+                              border: Border.all(color: AppTheme.red.withOpacity(0.3)),
+                            ),
+                            child: const Icon(Icons.delete_outline, color: AppTheme.red, size: 14),
+                          ),
                         ),
                       ]),
                     ),
@@ -897,6 +944,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               _filterChipWithBadge('today', '📅 আজকের', AppTheme.accent, todayCount),
               // Overdue
               _filterChipWithBadge('overdue', '🔥 Overdue', AppTheme.red, overdueCount),
+              _archiveChip(),
             ]),
           ),
         ),
@@ -926,6 +974,42 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         backgroundColor: AppTheme.accent,
         icon: const Icon(Icons.lightbulb_outline, color: Colors.white),
         label: const Text('আইডিয়া', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
+      ),
+    );
+  }
+
+  Widget _archiveChip() {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onTap: _showArchive,
+        child: Stack(clipBehavior: Clip.none, children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.green.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppTheme.green.withOpacity(0.5)),
+            ),
+            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.archive_outlined, size: 13, color: AppTheme.green),
+              SizedBox(width: 5),
+              Text('📦 আর্কাইভ', style: TextStyle(
+                  color: AppTheme.green, fontSize: 12, fontWeight: FontWeight.w600)),
+            ]),
+          ),
+          if (_archivedCount > 0)
+            Positioned(
+              top: -6, right: -2,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                    color: AppTheme.green, borderRadius: BorderRadius.circular(10)),
+                child: Text('$_archivedCount', style: const TextStyle(
+                    color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+              ),
+            ),
+        ]),
       ),
     );
   }
