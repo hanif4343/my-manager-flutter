@@ -15,6 +15,8 @@ import '../models/idea_file.dart';
 import '../widgets/app_theme.dart';
 import 'file_editor_screen.dart';
 import 'image_viewer_screen.dart';
+import 'pdf_viewer_screen.dart';
+import 'markdown_viewer_screen.dart';
 import 'copy_move_screen.dart';
 
 class IdeaDetailScreen extends StatefulWidget {
@@ -361,6 +363,18 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
             Navigator.pop(context);
             await Navigator.push(context, MaterialPageRoute(
                 builder: (_) => ImageViewerScreen(file: file)));
+          }),
+        if (file.isPdf)
+          _sheetTile(Icons.picture_as_pdf_outlined, 'PDF দেখো (In-App)', AppTheme.red, () async {
+            Navigator.pop(context);
+            await Navigator.push(context, MaterialPageRoute(
+                builder: (_) => PdfViewerScreen(file: file)));
+          }),
+        if (file.ext == 'md')
+          _sheetTile(Icons.auto_awesome_outlined, 'Markdown Render করো', AppTheme.accent, () async {
+            Navigator.pop(context);
+            await Navigator.push(context, MaterialPageRoute(
+                builder: (_) => MarkdownViewerScreen(file: file)));
           }),
         _sheetTile(Icons.drive_file_rename_outline, 'রিনেম', AppTheme.yellow,
             () { Navigator.pop(context); _renameFile(file); }),
