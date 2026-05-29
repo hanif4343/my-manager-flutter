@@ -17,6 +17,20 @@ import 'idea_detail_screen.dart';
 import 'project_version_screen.dart';
 import 'file_grid_screen.dart';
 
+int now() => DateTime.now().millisecondsSinceEpoch;
+
+const statusConfig = {
+  'todo':  {'label': '⭕ বাকি',   'color': Color(0xFF94A3B8)},
+  'doing': {'label': '⏳ চলছে',   'color': Color(0xFFFBBF24)},
+  'done':  {'label': '✅ শেষ',    'color': Color(0xFF34D399)},
+};
+
+const priorityConfig = {
+  'high':   {'label': '🔴 হাই',    'color': Color(0xFFEF4444)},
+  'medium': {'label': '🟡 মিডিয়াম','color': Color(0xFFFBBF24)},
+  'low':    {'label': '🟢 লো',     'color': Color(0xFF34D399)},
+};
+
 class ProjectDetailScreen extends StatefulWidget {
   final Project project;
   const ProjectDetailScreen({super.key, required this.project});
@@ -33,6 +47,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   final _picker = ImagePicker();
   final _recorder = AudioRecorder();
 
+  // Multi-select state
+  bool _selectMode = false;
+  final Set<int> _selected = {};
+
   @override
   void initState() { super.initState(); _load(); }
 
@@ -43,19 +61,41 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     if (widget.project.id == null) return;
     final ideas = await DBHelper.getIdeas(widget.project.id!);
     final stats = await DBHelper.getProjectStats(widget.project.id!);
-    if (mounted) setState(() { _ideas = ideas; _stats = stats; _loading = false; });
+    if (mounted) setState(() {
+      _ideas = ideas; _stats = stats; _loading = false;
+      // clean up selected that no longer exist
+      final ids = ideas.map((i) => i.id!).toSet();
+      _selected.removeWhere((id) => !ids.contains(id));
+    });
   }
 
   List<Idea> get _sorted {
-    final list = _filter == 'all'
-        ? List<Idea>.from(_ideas)
-        : _ideas.where((i) => i.status == _filter).toList();
+    List<Idea> list;
+    if (_filter == 'all') {
+      list = List<Idea>.from(_ideas);
+    } else if (_filter == 'today') {
+      list = _ideas.where((i) => i.isDueToday && i.status != 'done').toList();
+    } else if (_filter == 'overdue') {
+      list = _ideas.where((i) => i.isOverdue).toList();
+    } else {
+      list = _ideas.where((i) => i.status == _filter).toList();
+    }
+
     if (_sort == 'priority') {
       const order = {'high':0,'medium':1,'low':2};
       list.sort((a,b) => (order[a.priority]??1).compareTo(order[b.priority]??1));
     } else if (_sort == 'status') {
       const order = {'doing':0,'todo':1,'done':2};
       list.sort((a,b) => (order[a.status]??1).compareTo(order[b.status]??1));
+    } else if (_sort == 'deadline') {
+      list.sort((a,b) {
+        if (a.deadline == null && b.deadline == null) return 0;
+        if (a.deadline == null) return 1;
+        if (b.deadline == null) return -1;
+        return a.deadline!.compareTo(b.deadline!);
+      });
+    } else if (_sort == 'created') {
+      list.sort((a,b) => b.createdAt.compareTo(a.createdAt));
     }
     return list;
   }
@@ -72,16 +112,133 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
   }
 
+  // ── BULK ACTIONS ─────────────────────────────────────
+  void _toggleSelectMode() {
+    setState(() {
+      _selectMode = !_selectMode;
+      if (!_selectMode) _selected.clear();
+    });
+  }
+
+  void _toggleSelect(Idea idea) {
+    setState(() {
+      if (_selected.contains(idea.id)) {
+        _selected.remove(idea.id);
+      } else {
+        _selected.add(idea.id!);
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      final visible = _sorted;
+      if (_selected.length == visible.length) {
+        _selected.clear();
+      } else {
+        _selected.addAll(visible.map((i) => i.id!));
+      }
+    });
+  }
+
+  Future<void> _bulkStatusChange() async {
+    final status = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.bg3,
+        title: const Text('Status পরিবর্তন করো', style: TextStyle(color: AppTheme.textPrimary)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: ['todo','doing','done'].map((s) {
+          final cfg = statusConfig[s]!;
+          return ListTile(
+            leading: Icon(Icons.circle, color: cfg['color'] as Color, size: 14),
+            title: Text(cfg['label'] as String, style: const TextStyle(color: AppTheme.textPrimary)),
+            onTap: () => Navigator.pop(context, s),
+          );
+        }).toList()),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('বাতিল'))],
+      ),
+    );
+    if (status == null) return;
+    await DBHelper.bulkUpdateStatus(_selected.toList(), status);
+    setState(() { _selected.clear(); _selectMode = false; });
+    _load();
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('✅ ${_selected.length} টা idea আপডেট হয়েছে'),
+      backgroundColor: AppTheme.green,
+    ));
+  }
+
+  Future<void> _bulkDelete() async {
+    final count = _selected.length;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.bg3,
+        title: Text('$count টা idea মুছবে?', style: const TextStyle(color: AppTheme.textPrimary)),
+        content: const Text('এই কাজ undo করা যাবে না।', style: TextStyle(color: AppTheme.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
+          TextButton(onPressed: () => Navigator.pop(context, true),
+              child: const Text('মুছো', style: TextStyle(color: AppTheme.red))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await DBHelper.bulkDelete(_selected.toList());
+    setState(() { _selected.clear(); _selectMode = false; });
+    _load();
+  }
+
+  Future<void> _bulkMove() async {
+    final projects = await DBHelper.getProjects();
+    final others = projects.where((p) => p.id != widget.project.id).toList();
+    if (others.isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('অন্য কোনো project নেই'),
+        backgroundColor: AppTheme.red,
+      ));
+      return;
+    }
+
+    final target = await showDialog<Project>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.bg3,
+        title: const Text('কোন project এ নিয়ে যাবে?', style: TextStyle(color: AppTheme.textPrimary)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(shrinkWrap: true, children: others.map((p) => ListTile(
+            leading: Container(width: 12, height: 12,
+                decoration: BoxDecoration(color: p.color, shape: BoxShape.circle)),
+            title: Text(p.name, style: const TextStyle(color: AppTheme.textPrimary)),
+            onTap: () => Navigator.pop(context, p),
+          )).toList()),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('বাতিল'))],
+      ),
+    );
+    if (target == null) return;
+    await DBHelper.bulkMoveToProject(_selected.toList(), target.id!);
+    setState(() { _selected.clear(); _selectMode = false; });
+    _load();
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('✅ "${target.name}" এ move হয়েছে'),
+      backgroundColor: AppTheme.green,
+    ));
+  }
+
   // ─────────────────────────────────────────────────────────
-  // IDEA FORM — with file/camera/voice attachment
+  // IDEA FORM — with deadline + file/camera/voice attachment
   // ─────────────────────────────────────────────────────────
   Future<void> _showIdeaForm({Idea? idea}) async {
     final nameCtrl = TextEditingController(text: idea?.title ?? '');
     final descCtrl = TextEditingController(text: idea?.description ?? '');
     String priority = idea?.priority ?? 'medium';
     DateTime? reminder;
+    DateTime? deadline = idea?.deadline != null
+        ? DateTime.fromMillisecondsSinceEpoch(idea!.deadline!)
+        : null;
 
-    // Attachments collected before saving
     final attachments = <_Attachment>[];
     bool isRecording = false;
     String? recordPath;
@@ -95,7 +252,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
 
-          // ── Voice recording helpers ──────────────────────
           Future<void> startRecording() async {
             final hasPermission = await _recorder.hasPermission();
             if (!hasPermission) return;
@@ -112,26 +268,21 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               final bytes = await File(path).readAsBytes();
               final b64 = base64Encode(bytes);
               final name = 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-              setS(() => attachments.add(_Attachment(
-                  name: name, type: 'audio', content: b64)));
+              setS(() => attachments.add(_Attachment(name: name, type: 'audio', content: b64)));
             }
           }
 
-          // ── Pick image ────────────────────────────────────
           Future<void> pickImage(ImageSource source) async {
-            final picked = await _picker.pickImage(
-                source: source, imageQuality: 85);
+            final picked = await _picker.pickImage(source: source, imageQuality: 85);
             if (picked == null) return;
             final bytes = await picked.readAsBytes();
             final b64 = base64Encode(bytes);
             final ext = picked.name.split('.').last.toLowerCase();
             final name = picked.name.toLowerCase().contains('icon')
                 ? picked.name : 'image_${attachments.length + 1}.$ext';
-            setS(() => attachments.add(
-                _Attachment(name: name, type: 'image', content: b64)));
+            setS(() => attachments.add(_Attachment(name: name, type: 'image', content: b64)));
           }
 
-          // ── Pick any file ─────────────────────────────────
           Future<void> pickFile() async {
             final result = await FilePicker.platform.pickFiles(
                 type: FileType.any, allowMultiple: true, withData: true);
@@ -147,9 +298,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ? utf8.decode(bytes, allowMalformed: true)
                   : base64Encode(bytes);
               setS(() => attachments.add(_Attachment(
-                  name: pf.name,
-                  type: isText ? 'text' : 'binary',
-                  content: content)));
+                  name: pf.name, type: isText ? 'text' : 'binary', content: content)));
             }
           }
 
@@ -162,13 +311,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Handle
                   Center(child: Container(width: 40, height: 4,
                       decoration: BoxDecoration(color: AppTheme.border,
                           borderRadius: BorderRadius.circular(2)))),
                   const SizedBox(height: 12),
 
-                  // Header
                   Row(children: [
                     Text(idea == null ? '💡 নতুন আইডিয়া' : '✏️ আইডিয়া এডিট',
                         style: const TextStyle(color: AppTheme.textPrimary,
@@ -177,49 +324,39 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     if (idea != null)
                       GestureDetector(
                         onTap: () {
-                          final text = [
-                            idea.title,
-                            if (idea.description != null &&
-                                idea.description!.isNotEmpty)
+                          final text = [idea.title,
+                            if (idea.description != null && idea.description!.isNotEmpty)
                               idea.description!,
                           ].join('\n\n');
                           Clipboard.setData(ClipboardData(text: text));
                           ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('টেক্সট কপি হয়েছে! ✅'),
+                              const SnackBar(content: Text('টেক্সট কপি হয়েছে! ✅'),
                                   backgroundColor: AppTheme.green,
                                   duration: Duration(seconds: 1)));
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(color: AppTheme.bg3,
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: AppTheme.border)),
                           child: const Row(children: [
-                            Icon(Icons.copy_outlined, size: 13,
-                                color: AppTheme.textSecondary),
+                            Icon(Icons.copy_outlined, size: 13, color: AppTheme.textSecondary),
                             SizedBox(width: 4),
-                            Text('কপি', style: TextStyle(
-                                color: AppTheme.textSecondary, fontSize: 12)),
+                            Text('কপি', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
                           ]),
                         ),
                       ),
                   ]),
                   const SizedBox(height: 14),
 
-                  // Title
                   _field(nameCtrl, 'আইডিয়ার শিরোনাম *'),
                   const SizedBox(height: 10),
-
-                  // Description
                   _field(descCtrl, 'বিবরণ (ঐচ্ছিক)...', maxLines: 3),
                   const SizedBox(height: 12),
 
                   // Priority
                   const Text('অগ্রাধিকার:', style: TextStyle(
-                      color: AppTheme.textSecondary, fontSize: 12,
-                      fontWeight: FontWeight.w600)),
+                      color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   Row(children: ['high','medium','low'].map((k) {
                     final cfg = priorityConfig[k]!;
@@ -232,20 +369,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           duration: const Duration(milliseconds: 150),
                           padding: const EdgeInsets.symmetric(vertical: 9),
                           decoration: BoxDecoration(
-                            color: sel
-                                ? (cfg['color'] as Color).withOpacity(0.15)
-                                : AppTheme.bg3,
+                            color: sel ? (cfg['color'] as Color).withOpacity(0.15) : AppTheme.bg3,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                                color: sel
-                                    ? cfg['color'] as Color
-                                    : AppTheme.border,
+                                color: sel ? cfg['color'] as Color : AppTheme.border,
                                 width: sel ? 2 : 1),
                           ),
                           child: Text(cfg['label'] as String,
                               textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  color: cfg['color'] as Color,
+                              style: TextStyle(color: cfg['color'] as Color,
                                   fontSize: 13, fontWeight: FontWeight.w600)),
                         ),
                       ),
@@ -253,10 +385,60 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   }).toList()),
                   const SizedBox(height: 12),
 
+                  // ── DEADLINE ────────────────────────────────
+                  const Text('Deadline:', style: TextStyle(
+                      color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () async {
+                      final d = await showDatePicker(
+                        context: ctx,
+                        initialDate: deadline ?? DateTime.now().add(const Duration(days: 1)),
+                        firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                        lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+                        builder: (c, child) => Theme(
+                          data: ThemeData.dark().copyWith(colorScheme:
+                          const ColorScheme.dark(primary: Color(0xFFEF4444), surface: AppTheme.bg3)),
+                          child: child!,
+                        ),
+                      );
+                      if (d != null) setS(() => deadline = d);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                      decoration: BoxDecoration(
+                        color: AppTheme.bg3,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: deadline != null ? const Color(0xFFEF4444) : AppTheme.border,
+                            width: deadline != null ? 1.5 : 1),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.event_outlined,
+                            color: deadline != null ? const Color(0xFFEF4444) : AppTheme.textMuted,
+                            size: 18),
+                        const SizedBox(width: 10),
+                        Text(
+                          deadline != null
+                              ? '${deadline!.day}/${deadline!.month}/${deadline!.year} (deadline)'
+                              : 'Deadline বেছে নাও (ঐচ্ছিক)',
+                          style: TextStyle(
+                              color: deadline != null ? AppTheme.textPrimary : AppTheme.textMuted,
+                              fontSize: 13),
+                        ),
+                        const Spacer(),
+                        if (deadline != null)
+                          GestureDetector(
+                              onTap: () => setS(() => deadline = null),
+                              child: const Icon(Icons.close, color: AppTheme.textMuted, size: 16)),
+                      ]),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
                   // Reminder
                   const Text('রিমাইন্ডার:', style: TextStyle(
-                      color: AppTheme.textSecondary, fontSize: 12,
-                      fontWeight: FontWeight.w600)),
+                      color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   GestureDetector(
                     onTap: () async {
@@ -267,8 +449,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         lastDate: DateTime.now().add(const Duration(days: 365)),
                         builder: (c, child) => Theme(
                           data: ThemeData.dark().copyWith(colorScheme:
-                          const ColorScheme.dark(primary: AppTheme.accent,
-                              surface: AppTheme.bg3)),
+                          const ColorScheme.dark(primary: AppTheme.accent, surface: AppTheme.bg3)),
                           child: child!,
                         ),
                       );
@@ -278,30 +459,25 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         initialTime: const TimeOfDay(hour: 9, minute: 0),
                         builder: (c, child) => Theme(
                           data: ThemeData.dark().copyWith(colorScheme:
-                          const ColorScheme.dark(primary: AppTheme.accent,
-                              surface: AppTheme.bg3)),
+                          const ColorScheme.dark(primary: AppTheme.accent, surface: AppTheme.bg3)),
                           child: child!,
                         ),
                       );
                       if (t == null) return;
-                      setS(() => reminder = DateTime(
-                          d.year, d.month, d.day, t.hour, t.minute));
+                      setS(() => reminder = DateTime(d.year, d.month, d.day, t.hour, t.minute));
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 11),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                       decoration: BoxDecoration(
                         color: AppTheme.bg3,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                            color: reminder != null
-                                ? AppTheme.accent : AppTheme.border,
+                            color: reminder != null ? AppTheme.accent : AppTheme.border,
                             width: reminder != null ? 1.5 : 1),
                       ),
                       child: Row(children: [
                         Icon(Icons.alarm,
-                            color: reminder != null
-                                ? AppTheme.accent : AppTheme.textMuted,
+                            color: reminder != null ? AppTheme.accent : AppTheme.textMuted,
                             size: 18),
                         const SizedBox(width: 10),
                         Text(
@@ -309,110 +485,71 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                               ? '${reminder!.day}/${reminder!.month}/${reminder!.year} ${reminder!.hour}:${reminder!.minute.toString().padLeft(2,'0')}'
                               : 'তারিখ ও সময় বেছে নাও',
                           style: TextStyle(
-                              color: reminder != null
-                                  ? AppTheme.textPrimary : AppTheme.textMuted,
+                              color: reminder != null ? AppTheme.textPrimary : AppTheme.textMuted,
                               fontSize: 13),
                         ),
                         const Spacer(),
                         if (reminder != null)
                           GestureDetector(
                               onTap: () => setS(() => reminder = null),
-                              child: const Icon(Icons.close,
-                                  color: AppTheme.textMuted, size: 16)),
+                              child: const Icon(Icons.close, color: AppTheme.textMuted, size: 16)),
                       ]),
                     ),
                   ),
                   const SizedBox(height: 14),
 
-                  // ── ATTACHMENTS SECTION ──────────────────
+                  // Attachments
                   const Text('ফাইল / ছবি / ভয়েস:', style: TextStyle(
-                      color: AppTheme.textSecondary, fontSize: 12,
-                      fontWeight: FontWeight.w600)),
+                      color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
-
-                  // Action buttons row
                   Row(children: [
-                    // File
-                    _attachBtn(
-                      icon: Icons.attach_file_outlined,
-                      label: 'ফাইল',
-                      color: AppTheme.accent,
-                      onTap: pickFile,
-                    ),
+                    _attachBtn(icon: Icons.attach_file_outlined, label: 'ফাইল',
+                        color: AppTheme.accent, onTap: pickFile),
                     const SizedBox(width: 8),
-                    // Gallery
-                    _attachBtn(
-                      icon: Icons.photo_library_outlined,
-                      label: 'গ্যালারি',
-                      color: AppTheme.green,
-                      onTap: () => pickImage(ImageSource.gallery),
-                    ),
+                    _attachBtn(icon: Icons.photo_library_outlined, label: 'গ্যালারি',
+                        color: AppTheme.green, onTap: () => pickImage(ImageSource.gallery)),
                     const SizedBox(width: 8),
-                    // Camera
-                    _attachBtn(
-                      icon: Icons.camera_alt_outlined,
-                      label: 'ক্যামেরা',
-                      color: AppTheme.yellow,
-                      onTap: () => pickImage(ImageSource.camera),
-                    ),
+                    _attachBtn(icon: Icons.camera_alt_outlined, label: 'ক্যামেরা',
+                        color: AppTheme.yellow, onTap: () => pickImage(ImageSource.camera)),
                     const SizedBox(width: 8),
-                    // Voice record
                     Expanded(child: GestureDetector(
-                      onTap: () => isRecording
-                          ? stopRecording()
-                          : startRecording(),
+                      onTap: () => isRecording ? stopRecording() : startRecording(),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         decoration: BoxDecoration(
-                          color: isRecording
-                              ? AppTheme.red.withOpacity(0.15)
-                              : AppTheme.bg3,
+                          color: isRecording ? AppTheme.red.withOpacity(0.15) : AppTheme.bg3,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                              color: isRecording
-                                  ? AppTheme.red : AppTheme.border,
+                              color: isRecording ? AppTheme.red : AppTheme.border,
                               width: isRecording ? 2 : 1),
                         ),
                         child: Column(children: [
-                          Icon(
-                            isRecording ? Icons.stop_circle : Icons.mic_outlined,
-                            color: isRecording ? AppTheme.red : AppTheme.textMuted,
-                            size: 20,
-                          ),
+                          Icon(isRecording ? Icons.stop_circle : Icons.mic_outlined,
+                              color: isRecording ? AppTheme.red : AppTheme.textMuted, size: 20),
                           const SizedBox(height: 3),
                           Text(isRecording ? 'Stop' : 'ভয়েস',
                               style: TextStyle(
-                                  color: isRecording
-                                      ? AppTheme.red : AppTheme.textMuted,
+                                  color: isRecording ? AppTheme.red : AppTheme.textMuted,
                                   fontSize: 10, fontWeight: FontWeight.w600)),
                         ]),
                       ),
                     )),
                   ]),
 
-                  // Attachment preview list
                   if (attachments.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     ...attachments.asMap().entries.map((entry) {
-                      final i = entry.key;
-                      final a = entry.value;
-                      final icon = a.type == 'image'
-                          ? Icons.image_outlined
-                          : a.type == 'audio'
-                              ? Icons.mic
-                              : Icons.insert_drive_file_outlined;
-                      final color = a.type == 'image'
-                          ? AppTheme.green
-                          : a.type == 'audio'
-                              ? AppTheme.red
-                              : AppTheme.accent;
+                      final i = entry.key; final a = entry.value;
+                      final icon = a.type == 'image' ? Icons.image_outlined
+                          : a.type == 'audio' ? Icons.mic
+                          : Icons.insert_drive_file_outlined;
+                      final color = a.type == 'image' ? AppTheme.green
+                          : a.type == 'audio' ? AppTheme.red : AppTheme.accent;
                       return Container(
                         margin: const EdgeInsets.only(bottom: 6),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                            color: AppTheme.bg3,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(color: AppTheme.bg3,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: color.withOpacity(0.3))),
                         child: Row(children: [
@@ -424,8 +561,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                               overflow: TextOverflow.ellipsis)),
                           GestureDetector(
                             onTap: () => setS(() => attachments.removeAt(i)),
-                            child: const Icon(Icons.close,
-                                color: AppTheme.textMuted, size: 16),
+                            child: const Icon(Icons.close, color: AppTheme.textMuted, size: 16),
                           ),
                         ]),
                       );
@@ -433,8 +569,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ],
 
                   const SizedBox(height: 14),
-
-                  // Save button
                   SizedBox(width: double.infinity, child: ElevatedButton.icon(
                     onPressed: () async {
                       if (nameCtrl.text.trim().isEmpty) return;
@@ -444,34 +578,32 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         ideaId = await DBHelper.insertIdea(Idea(
                           projectId: widget.project.id!,
                           title: nameCtrl.text.trim(),
-                          description: descCtrl.text.trim().isEmpty
-                              ? null : descCtrl.text.trim(),
-                          priority: priority, createdAt: n, updatedAt: n,
+                          description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+                          priority: priority,
+                          deadline: deadline?.millisecondsSinceEpoch,
+                          createdAt: n, updatedAt: n,
                         ));
                       } else {
                         ideaId = idea.id!;
                         await DBHelper.updateIdea(idea.copyWith(
                           title: nameCtrl.text.trim(),
-                          description: descCtrl.text.trim().isEmpty
-                              ? null : descCtrl.text.trim(),
-                          priority: priority, updatedAt: n,
+                          description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+                          priority: priority,
+                          deadline: deadline?.millisecondsSinceEpoch,
+                          updatedAt: n,
                         ));
                       }
 
-                      // Reminder
-                      if (reminder != null &&
-                          reminder!.isAfter(DateTime.now())) {
+                      if (reminder != null && reminder!.isAfter(DateTime.now())) {
                         await NotificationService.scheduleNotification(
                           ideaId + 1000, '💡 ${nameCtrl.text.trim()}',
                           'এই আইডিয়ার কাজ করার সময় হয়েছে!', reminder!,
                         );
                       }
 
-                      // Save attachments
                       for (final a in attachments) {
                         await DBHelper.insertFile(IdeaFile(
-                          ideaId: ideaId,
-                          projectId: widget.project.id!,
+                          ideaId: ideaId, projectId: widget.project.id!,
                           name: a.name, type: a.type,
                           content: a.content, createdAt: n, updatedAt: n,
                         ));
@@ -480,13 +612,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       if (ctx.mounted) Navigator.pop(ctx);
                       _load();
                     },
-                    icon: Icon(idea == null ? Icons.add : Icons.check,
-                        size: 18, color: Colors.white),
+                    icon: Icon(idea == null ? Icons.add : Icons.check, size: 18, color: Colors.white),
                     label: Text(
                       idea == null
-                          ? 'আইডিয়া যোগ করো'
-                              + (attachments.isNotEmpty
-                                  ? ' (${attachments.length} ফাইল)' : '')
+                          ? 'আইডিয়া যোগ করো' + (attachments.isNotEmpty ? ' (${attachments.length} ফাইল)' : '')
                           : 'আপডেট করো',
                       style: const TextStyle(color: Colors.white,
                           fontWeight: FontWeight.w700, fontSize: 15),
@@ -494,8 +623,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.accent,
                       padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                   )),
                   const SizedBox(height: 20),
@@ -508,36 +636,29 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     );
   }
 
-  // ── idea card copy: title + description ──────────────────
   void _copyIdea(Idea idea) {
     final text = [
       idea.title,
-      if (idea.description != null && idea.description!.isNotEmpty)
-        idea.description!,
+      if (idea.description != null && idea.description!.isNotEmpty) idea.description!,
     ].join('\n\n');
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('কপি হয়েছে! ✅'),
-            backgroundColor: AppTheme.green,
-            duration: Duration(seconds: 1)));
+            backgroundColor: AppTheme.green, duration: Duration(seconds: 1)));
   }
 
   Future<void> _updateStatus(Idea idea, String status) async {
     if (status == 'done') {
-      // Mark done then auto-archive after a brief moment so user sees the check
       await DBHelper.updateIdea(idea.copyWith(status: 'done', updatedAt: now()));
       _load();
       await Future.delayed(const Duration(milliseconds: 600));
       if (idea.id != null) {
         await DBHelper.archiveIdea(idea.id!);
         _load();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('✅ Done! আর্কাইভে চলে গেছে'),
-            backgroundColor: AppTheme.green,
-            duration: Duration(seconds: 2),
-          ));
-        }
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('✅ Done! আর্কাইভে চলে গেছে'),
+          backgroundColor: AppTheme.green, duration: Duration(seconds: 2),
+        ));
       }
     } else {
       await DBHelper.updateIdea(idea.copyWith(status: status, updatedAt: now()));
@@ -550,16 +671,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final archived = await DBHelper.getArchivedIdeas(widget.project.id!);
     if (!mounted) return;
     showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.bg2,
-      isScrollControlled: true,
+      context: context, backgroundColor: AppTheme.bg2, isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        minChildSize: 0.4,
-        maxChildSize: 0.9,
-        expand: false,
+        initialChildSize: 0.6, minChildSize: 0.4, maxChildSize: 0.9, expand: false,
         builder: (ctx, scrollCtrl) => Column(children: [
           const SizedBox(height: 8),
           Container(width: 40, height: 4, decoration: BoxDecoration(
@@ -577,48 +693,49 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           const SizedBox(height: 8),
           Expanded(
             child: archived.isEmpty
-                ? const Center(child: Text('কোনো আর্কাইভ নেই', style: TextStyle(color: AppTheme.textMuted)))
+                ? const Center(child: Text('কোনো আর্কাইভ নেই',
+                style: TextStyle(color: AppTheme.textMuted)))
                 : ListView.separated(
-                    controller: scrollCtrl,
-                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
-                    itemCount: archived.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 6),
-                    itemBuilder: (_, i) {
-                      final idea = archived[i];
-                      return Card(
-                        child: ListTile(
-                          leading: const Icon(Icons.check_circle_rounded,
-                              color: AppTheme.green, size: 22),
-                          title: Text(idea.title, style: const TextStyle(
-                              color: AppTheme.textMuted, fontSize: 13,
-                              decoration: TextDecoration.lineThrough)),
-                          subtitle: idea.description != null
-                              ? Text(idea.description!, style: const TextStyle(
-                                  color: AppTheme.textMuted, fontSize: 11), maxLines: 1)
-                              : null,
-                          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                            IconButton(
-                              icon: const Icon(Icons.restore, color: AppTheme.accent, size: 20),
-                              tooltip: 'পুনরুদ্ধার',
-                              onPressed: () async {
-                                await DBHelper.unarchiveIdea(idea.id!);
-                                if (ctx.mounted) Navigator.pop(ctx);
-                                _load();
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, color: AppTheme.red, size: 20),
-                              tooltip: 'মুছো',
-                              onPressed: () async {
-                                await DBHelper.deleteIdea(idea.id!);
-                                if (ctx.mounted) Navigator.pop(ctx);
-                                _load();
-                              },
-                            ),
-                          ]),
+                controller: scrollCtrl,
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
+                itemCount: archived.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 6),
+                itemBuilder: (_, i) {
+                  final idea = archived[i];
+                  return Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.check_circle_rounded,
+                          color: AppTheme.green, size: 22),
+                      title: Text(idea.title, style: const TextStyle(
+                          color: AppTheme.textMuted, fontSize: 13,
+                          decoration: TextDecoration.lineThrough)),
+                      subtitle: idea.description != null
+                          ? Text(idea.description!, style: const TextStyle(
+                          color: AppTheme.textMuted, fontSize: 11), maxLines: 1)
+                          : null,
+                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                        IconButton(
+                          icon: const Icon(Icons.restore, color: AppTheme.accent, size: 20),
+                          tooltip: 'পুনরুদ্ধার',
+                          onPressed: () async {
+                            await DBHelper.unarchiveIdea(idea.id!);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            _load();
+                          },
                         ),
-                      );
-                    }),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: AppTheme.red, size: 20),
+                          tooltip: 'মুছো',
+                          onPressed: () async {
+                            await DBHelper.deleteIdea(idea.id!);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            _load();
+                          },
+                        ),
+                      ]),
+                    ),
+                  );
+                }),
           ),
         ]),
       ),
@@ -630,16 +747,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final confirm = await showDialog<bool>(context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: const Text('মুছবে?',
-            style: TextStyle(color: AppTheme.textPrimary)),
+        title: const Text('মুছবে?', style: TextStyle(color: AppTheme.textPrimary)),
         content: Text('"${idea.title}" মুছে যাবে।',
             style: const TextStyle(color: AppTheme.textSecondary)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false),
-              child: const Text('বাতিল')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
           TextButton(onPressed: () => Navigator.pop(context, true),
-              child: const Text('মুছো',
-                  style: TextStyle(color: AppTheme.red))),
+              child: const Text('মুছো', style: TextStyle(color: AppTheme.red))),
         ],
       ),
     );
@@ -651,11 +765,17 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final total = _stats['total']!;
     final done = _stats['done']!;
     final progress = total > 0 ? done / total : 0.0;
+    final sorted = _sorted;
+    final overdueCount = _ideas.where((i) => i.isOverdue).length;
+    final todayCount = _ideas.where((i) => i.isDueToday && i.status != 'done').length;
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: Row(children: [
+        title: _selectMode
+            ? Text('${_selected.length} selected',
+            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700))
+            : Row(children: [
           Container(width: 10, height: 10, decoration: BoxDecoration(
               color: widget.project.color, shape: BoxShape.circle)),
           const SizedBox(width: 8),
@@ -664,7 +784,45 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   fontSize: 16, fontWeight: FontWeight.w700),
               overflow: TextOverflow.ellipsis)),
         ]),
-        actions: [
+        leading: _selectMode
+            ? IconButton(
+            icon: const Icon(Icons.close, color: AppTheme.textSecondary),
+            onPressed: _toggleSelectMode)
+            : null,
+        actions: _selectMode
+            ? [
+          IconButton(
+            onPressed: _selectAll,
+            icon: Icon(
+              _selected.length == sorted.length ? Icons.deselect : Icons.select_all,
+              color: AppTheme.accent, size: 22,
+            ),
+            tooltip: 'সব সিলেক্ট',
+          ),
+          if (_selected.isNotEmpty) ...[
+            IconButton(
+              onPressed: _bulkStatusChange,
+              icon: const Icon(Icons.swap_horiz, color: AppTheme.yellow, size: 22),
+              tooltip: 'Status পরিবর্তন',
+            ),
+            IconButton(
+              onPressed: _bulkMove,
+              icon: const Icon(Icons.drive_file_move_outlined, color: AppTheme.accent, size: 22),
+              tooltip: 'Move to project',
+            ),
+            IconButton(
+              onPressed: _bulkDelete,
+              icon: const Icon(Icons.delete_outline, color: AppTheme.red, size: 22),
+              tooltip: 'মুছো',
+            ),
+          ],
+        ]
+            : [
+          IconButton(
+            onPressed: _toggleSelectMode,
+            icon: const Icon(Icons.checklist_outlined, size: 22),
+            tooltip: 'Multi-select',
+          ),
           PopupMenuButton<String>(
             color: AppTheme.bg3,
             icon: const Icon(Icons.sort, color: AppTheme.textSecondary, size: 20),
@@ -672,28 +830,23 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             itemBuilder: (_) => [
               _menuItem('priority', Icons.flag_outlined, 'Priority অনুযায়ী'),
               _menuItem('status', Icons.timelapse, 'Status অনুযায়ী'),
+              _menuItem('deadline', Icons.event_outlined, 'Deadline অনুযায়ী'),
               _menuItem('created', Icons.access_time, 'তারিখ অনুযায়ী'),
             ],
           ),
           _exporting
               ? const Padding(padding: EdgeInsets.all(12),
-                  child: SizedBox(width: 20, height: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: AppTheme.accent)))
+              child: SizedBox(width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accent)))
               : IconButton(onPressed: _export,
-                  icon: const Icon(Icons.upload_outlined, size: 20),
-                  tooltip: 'ZIP Export'),
+              icon: const Icon(Icons.upload_outlined, size: 20), tooltip: 'ZIP Export'),
           IconButton(
             onPressed: () => Navigator.push(context, MaterialPageRoute(
                 builder: (_) => FileGridScreen(project: widget.project))),
-            icon: const Icon(Icons.grid_view_outlined, size: 20),
-            tooltip: 'সব ফাইল',
+            icon: const Icon(Icons.grid_view_outlined, size: 20), tooltip: 'সব ফাইল',
           ),
-          IconButton(
-            onPressed: _showArchive,
-            icon: const Icon(Icons.archive_outlined, size: 20),
-            tooltip: 'আর্কাইভ (Done)',
-          ),
+          IconButton(onPressed: _showArchive,
+              icon: const Icon(Icons.archive_outlined, size: 20), tooltip: 'আর্কাইভ'),
           IconButton(
             onPressed: () => Navigator.push(context, MaterialPageRoute(
                 builder: (_) => ProjectVersionScreen(project: widget.project))),
@@ -704,88 +857,129 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
           : Column(children: [
-              Container(
-                padding: const EdgeInsets.fromLTRB(12,12,12,10),
-                color: AppTheme.bg2,
-                child: Column(children: [
-                  Row(children: [
-                    _statBox('মোট', total.toString(), AppTheme.textSecondary),
-                    _statBox('বাকি', _stats['todo'].toString(), AppTheme.textMuted),
-                    _statBox('চলছে', _stats['doing'].toString(), AppTheme.yellow),
-                    _statBox('শেষ', done.toString(), AppTheme.green),
-                  ]),
-                  const SizedBox(height: 10),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                    const Text('অগ্রগতি', style: TextStyle(
-                        color: AppTheme.textSecondary, fontSize: 12)),
-                    Text('${(progress*100).round()}%', style: const TextStyle(
-                        color: AppTheme.textSecondary, fontSize: 12,
-                        fontWeight: FontWeight.w700)),
-                  ]),
-                  const SizedBox(height: 4),
-                  ClipRRect(borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(value: progress, minHeight: 6,
-                      backgroundColor: AppTheme.bg3,
-                      valueColor: AlwaysStoppedAnimation(widget.project.color)),
-                  ),
-                ]),
-              ),
-              Container(
-                color: AppTheme.bg2,
-                padding: const EdgeInsets.fromLTRB(12,0,12,10),
-                child: SingleChildScrollView(scrollDirection: Axis.horizontal,
-                  child: Row(children: ['all','todo','doing','done'].map((f) {
-                    final label = f=='all' ? 'সব'
-                        : statusConfig[f]!['label'] as String;
-                    final sel = _filter == f;
-                    final color = f=='all' ? AppTheme.accent
-                        : statusConfig[f]!['color'] as Color;
-                    return Padding(padding: const EdgeInsets.only(right: 8),
-                      child: GestureDetector(
-                        onTap: () => setState(() => _filter = f),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: sel ? color.withOpacity(0.15) : AppTheme.bg3,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                                color: sel ? color : AppTheme.border),
-                          ),
-                          child: Text(label, style: TextStyle(
-                              color: sel ? color : AppTheme.textSecondary,
-                              fontSize: 12, fontWeight: FontWeight.w600)),
-                        ),
-                      ),
-                    );
-                  }).toList()),
-                ),
-              ),
-              const Divider(height: 1, color: AppTheme.border),
-              Expanded(
-                child: _sorted.isEmpty
-                    ? Center(child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text('💡', style: TextStyle(fontSize: 40)),
-                          const SizedBox(height: 10),
-                          const Text('কোনো আইডিয়া নেই', style: TextStyle(
-                              color: AppTheme.textSecondary, fontSize: 15)),
-                        ]))
-                    : ListView.separated(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: _sorted.length,
-                        separatorBuilder: (_,__) => const SizedBox(height: 8),
-                        itemBuilder: (_,i) => _ideaCard(_sorted[i]),
-                      ),
-              ),
+        // Stats
+        Container(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+          color: AppTheme.bg2,
+          child: Column(children: [
+            Row(children: [
+              _statBox('মোট', total.toString(), AppTheme.textSecondary),
+              _statBox('বাকি', _stats['todo'].toString(), AppTheme.textMuted),
+              _statBox('চলছে', _stats['doing'].toString(), AppTheme.yellow),
+              _statBox('শেষ', done.toString(), AppTheme.green),
             ]),
-      floatingActionButton: FloatingActionButton.extended(
+            const SizedBox(height: 10),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('অগ্রগতি', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+              Text('${(progress*100).round()}%', style: const TextStyle(
+                  color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w700)),
+            ]),
+            const SizedBox(height: 4),
+            ClipRRect(borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(value: progress, minHeight: 6,
+                backgroundColor: AppTheme.bg3,
+                valueColor: AlwaysStoppedAnimation(widget.project.color)),
+            ),
+          ]),
+        ),
+        // Filter chips
+        Container(
+          color: AppTheme.bg2,
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              _filterChip('all', 'সব', AppTheme.accent),
+              _filterChip('todo', '⭕ বাকি', const Color(0xFF94A3B8)),
+              _filterChip('doing', '⏳ চলছে', AppTheme.yellow),
+              _filterChip('done', '✅ শেষ', AppTheme.green),
+              // Today's tasks
+              _filterChipWithBadge('today', '📅 আজকের', AppTheme.accent, todayCount),
+              // Overdue
+              _filterChipWithBadge('overdue', '🔥 Overdue', AppTheme.red, overdueCount),
+            ]),
+          ),
+        ),
+        const Divider(height: 1, color: AppTheme.border),
+        Expanded(
+          child: sorted.isEmpty
+              ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Text('💡', style: TextStyle(fontSize: 40)),
+            const SizedBox(height: 10),
+            Text(
+              _filter == 'today' ? 'আজকে কোনো deadline নেই 🎉'
+                  : _filter == 'overdue' ? 'কোনো overdue নেই 🎉'
+                  : 'কোনো আইডিয়া নেই',
+              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 15),
+            ),
+          ]))
+              : ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: sorted.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (_, i) => _ideaCard(sorted[i]),
+          ),
+        ),
+      ]),
+      floatingActionButton: _selectMode ? null : FloatingActionButton.extended(
         onPressed: () => _showIdeaForm(),
         backgroundColor: AppTheme.accent,
         icon: const Icon(Icons.lightbulb_outline, color: Colors.white),
-        label: const Text('আইডিয়া', style: TextStyle(
-            fontWeight: FontWeight.w700, color: Colors.white)),
+        label: const Text('আইডিয়া', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
+      ),
+    );
+  }
+
+  Widget _filterChip(String value, String label, Color color) {
+    final sel = _filter == value;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onTap: () => setState(() => _filter = value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: sel ? color.withOpacity(0.15) : AppTheme.bg3,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: sel ? color : AppTheme.border),
+          ),
+          child: Text(label, style: TextStyle(
+              color: sel ? color : AppTheme.textSecondary,
+              fontSize: 12, fontWeight: FontWeight.w600)),
+        ),
+      ),
+    );
+  }
+
+  Widget _filterChipWithBadge(String value, String label, Color color, int count) {
+    final sel = _filter == value;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onTap: () => setState(() => _filter = value),
+        child: Stack(clipBehavior: Clip.none, children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: sel ? color.withOpacity(0.15) : AppTheme.bg3,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: sel ? color : (count > 0 ? color.withOpacity(0.5) : AppTheme.border)),
+            ),
+            child: Text(label, style: TextStyle(
+                color: sel ? color : (count > 0 ? color : AppTheme.textSecondary),
+                fontSize: 12, fontWeight: FontWeight.w600)),
+          ),
+          if (count > 0)
+            Positioned(
+              top: -6, right: -2,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
+                child: Text('$count', style: const TextStyle(
+                    color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+              ),
+            ),
+        ]),
       ),
     );
   }
@@ -793,92 +987,171 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Widget _ideaCard(Idea idea) {
     final sc = statusConfig[idea.status]!;
     final pc = priorityConfig[idea.priority]!;
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () async {
-          await Navigator.push(context, MaterialPageRoute(
-              builder: (_) => IdeaDetailScreen(
-                  idea: idea, project: widget.project)));
-          _load();
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(children: [
-            GestureDetector(
-              onTap: () {
-                const next = {'todo':'doing','doing':'done','done':'todo'};
-                _updateStatus(idea, next[idea.status]!);
-              },
-              child: Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  color: (sc['color'] as Color).withOpacity(0.12),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: sc['color'] as Color, width: 2),
-                ),
-                child: Icon(
-                  idea.status=='done' ? Icons.check_rounded
-                      : idea.status=='doing'
-                          ? Icons.timelapse_rounded
-                          : Icons.radio_button_unchecked_rounded,
-                  size: 18, color: sc['color'] as Color,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Expanded(child: Text(idea.title,
-                    style: TextStyle(
-                        color: idea.status=='done'
-                            ? AppTheme.textMuted : AppTheme.textPrimary,
-                        fontSize: 14, fontWeight: FontWeight.w600,
-                        decoration: idea.status=='done'
-                            ? TextDecoration.lineThrough : null),
-                    maxLines: 2, overflow: TextOverflow.ellipsis)),
-                // Copy title + description — bigger, more tappable
+    final isSelected = _selected.contains(idea.id);
+    final isOverdue = idea.isOverdue;
+    final isDueToday = idea.isDueToday;
+
+    return GestureDetector(
+      onLongPress: () {
+        if (!_selectMode) {
+          setState(() => _selectMode = true);
+          _toggleSelect(idea);
+        }
+      },
+      child: Card(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: isSelected
+                ? AppTheme.accent
+                : isOverdue
+                    ? AppTheme.red.withOpacity(0.6)
+                    : AppTheme.border,
+            width: isSelected || isOverdue ? 2 : 1,
+          ),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () async {
+            if (_selectMode) {
+              _toggleSelect(idea);
+              return;
+            }
+            await Navigator.push(context, MaterialPageRoute(
+                builder: (_) => IdeaDetailScreen(idea: idea, project: widget.project)));
+            _load();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(children: [
+              // Select checkbox OR status circle
+              if (_selectMode)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppTheme.accent.withOpacity(0.2) : AppTheme.bg3,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color: isSelected ? AppTheme.accent : AppTheme.border, width: 2),
+                  ),
+                  child: isSelected
+                      ? const Icon(Icons.check, size: 18, color: AppTheme.accent)
+                      : null,
+                )
+              else
                 GestureDetector(
-                  onTap: () => _copyIdea(idea),
+                  onTap: () {
+                    const next = {'todo':'doing','doing':'done','done':'todo'};
+                    _updateStatus(idea, next[idea.status]!);
+                  },
                   child: Container(
-                    margin: const EdgeInsets.only(left: 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    width: 36, height: 36,
                     decoration: BoxDecoration(
-                      color: AppTheme.bg3,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppTheme.border),
+                      color: (sc['color'] as Color).withOpacity(0.12),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: sc['color'] as Color, width: 2),
                     ),
-                    child: const Icon(Icons.copy_outlined,
-                        size: 18, color: AppTheme.textSecondary),
+                    child: Icon(
+                      idea.status=='done' ? Icons.check_rounded
+                          : idea.status=='doing' ? Icons.timelapse_rounded
+                          : Icons.radio_button_unchecked_rounded,
+                      size: 18, color: sc['color'] as Color,
+                    ),
                   ),
                 ),
-              ]),
-              if (idea.description != null &&
-                  idea.description!.isNotEmpty) ...[
-                const SizedBox(height: 3),
-                Text(idea.description!, style: const TextStyle(
-                    color: AppTheme.textSecondary, fontSize: 12),
-                    maxLines: 2, overflow: TextOverflow.ellipsis),
+              const SizedBox(width: 10),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Expanded(child: Text(idea.title,
+                        style: TextStyle(
+                            color: idea.status=='done' ? AppTheme.textMuted : AppTheme.textPrimary,
+                            fontSize: 14, fontWeight: FontWeight.w600,
+                            decoration: idea.status=='done' ? TextDecoration.lineThrough : null),
+                        maxLines: 2, overflow: TextOverflow.ellipsis)),
+                    if (!_selectMode)
+                      GestureDetector(
+                        onTap: () => _copyIdea(idea),
+                        child: Container(
+                          margin: const EdgeInsets.only(left: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(color: AppTheme.bg3,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppTheme.border)),
+                          child: const Icon(Icons.copy_outlined,
+                              size: 18, color: AppTheme.textSecondary),
+                        ),
+                      ),
+                  ]),
+                  if (idea.description != null && idea.description!.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(idea.description!, style: const TextStyle(
+                        color: AppTheme.textSecondary, fontSize: 12),
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                  ],
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 6, runSpacing: 4, children: [
+                    _badge(pc['label'] as String, pc['color'] as Color),
+                    _badge(sc['label'] as String, sc['color'] as Color),
+                    // Deadline badge
+                    if (idea.deadline != null)
+                      _deadlineBadge(idea),
+                  ]),
+                ],
+              )),
+              if (!_selectMode) ...[
+                const SizedBox(width: 8),
+                Column(children: [
+                  _actionBtn(Icons.edit_outlined, AppTheme.accent,
+                          () => _showIdeaForm(idea: idea)),
+                  const SizedBox(height: 6),
+                  _actionBtn(Icons.delete_outline, AppTheme.red, () => _delete(idea)),
+                ]),
               ],
-              const SizedBox(height: 6),
-              Row(children: [
-                _badge(pc['label'] as String, pc['color'] as Color),
-                const SizedBox(width: 6),
-                _badge(sc['label'] as String, sc['color'] as Color),
-              ]),
-            ])),
-            const SizedBox(width: 8),
-            Column(children: [
-              _actionBtn(Icons.edit_outlined, AppTheme.accent,
-                      () => _showIdeaForm(idea: idea)),
-              const SizedBox(height: 6),
-              _actionBtn(Icons.delete_outline, AppTheme.red,
-                      () => _delete(idea)),
             ]),
-          ]),
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _deadlineBadge(Idea idea) {
+    final d = DateTime.fromMillisecondsSinceEpoch(idea.deadline!);
+    final label = '📅 ${d.day}/${d.month}/${d.year}';
+    if (idea.isOverdue) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+            color: AppTheme.red.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppTheme.red.withOpacity(0.5))),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.warning_amber_rounded, size: 11, color: AppTheme.red),
+          const SizedBox(width: 3),
+          Text('OVERDUE · $label', style: const TextStyle(
+              color: AppTheme.red, fontSize: 10, fontWeight: FontWeight.w700)),
+        ]),
+      );
+    }
+    if (idea.isDueToday) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+            color: AppTheme.yellow.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppTheme.yellow.withOpacity(0.5))),
+        child: Text('আজকে deadline!', style: const TextStyle(
+            color: AppTheme.yellow, fontSize: 10, fontWeight: FontWeight.w700)),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+          color: AppTheme.bg3, borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppTheme.border)),
+      child: Text(label, style: const TextStyle(
+          color: AppTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
     );
   }
 
@@ -889,16 +1162,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: AppTheme.bg3,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppTheme.border),
-          ),
+          decoration: BoxDecoration(color: AppTheme.bg3,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.border)),
           child: Column(children: [
             Icon(icon, color: color, size: 20),
             const SizedBox(height: 3),
-            Text(label, style: TextStyle(
-                color: color, fontSize: 10, fontWeight: FontWeight.w600)),
+            Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600)),
           ]),
         ),
       ));
@@ -906,11 +1176,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   PopupMenuItem<String> _menuItem(String val, IconData icon, String label) =>
       PopupMenuItem(value: val,
         child: Row(children: [
-          Icon(icon, size: 16,
-              color: _sort==val ? AppTheme.accent : AppTheme.textSecondary),
+          Icon(icon, size: 16, color: _sort==val ? AppTheme.accent : AppTheme.textSecondary),
           const SizedBox(width: 8),
-          Text(label, style: TextStyle(
-              color: _sort==val ? AppTheme.accent : AppTheme.textPrimary)),
+          Text(label, style: TextStyle(color: _sort==val ? AppTheme.accent : AppTheme.textPrimary)),
         ]),
       );
 
@@ -918,8 +1186,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       GestureDetector(onTap: onTap,
         child: Container(
           width: 34, height: 34,
-          decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+          decoration: BoxDecoration(color: color.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: color.withOpacity(0.3))),
           child: Icon(icon, size: 16, color: color),
@@ -934,11 +1201,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: AppTheme.border)),
       child: Column(children: [
-        Text(val, style: TextStyle(
-            color: color, fontSize: 20, fontWeight: FontWeight.w700)),
+        Text(val, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.w700)),
         const SizedBox(height: 2),
-        Text(label, style: const TextStyle(
-            color: AppTheme.textMuted, fontSize: 11)),
+        Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
       ]),
     ),
   );
@@ -947,12 +1212,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
     decoration: BoxDecoration(color: color.withOpacity(0.15),
         borderRadius: BorderRadius.circular(20)),
-    child: Text(label, style: TextStyle(
-        color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+    child: Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
   );
 
-  Widget _field(TextEditingController ctrl, String hint,
-      {int maxLines=1}) => TextField(
+  Widget _field(TextEditingController ctrl, String hint, {int maxLines=1}) => TextField(
     controller: ctrl, maxLines: maxLines,
     style: const TextStyle(color: AppTheme.textPrimary),
     decoration: InputDecoration(
