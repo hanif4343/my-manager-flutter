@@ -20,15 +20,15 @@ import 'file_grid_screen.dart';
 int now() => DateTime.now().millisecondsSinceEpoch;
 
 const statusConfig = {
-  'todo':  {'label': '⭕ বাকি',   'color': Color(0xFF94A3B8)},
-  'doing': {'label': '⏳ চলছে',   'color': Color(0xFFFBBF24)},
-  'done':  {'label': '✅ শেষ',    'color': Color(0xFF34D399)},
+  'todo':  {'label': '⭕ বাকি',   'color': Color(0xFF9C8B6E)},
+  'doing': {'label': '⏳ চলছে',   'color': Color(0xFFD69F2E)},
+  'done':  {'label': '✅ শেষ',    'color': Color(0xFF5C7A4F)},
 };
 
 const priorityConfig = {
-  'high':   {'label': '🔴 হাই',    'color': Color(0xFFEF4444)},
-  'medium': {'label': '🟡 মিডিয়াম','color': Color(0xFFFBBF24)},
-  'low':    {'label': '🟢 লো',     'color': Color(0xFF34D399)},
+  'high':   {'label': '🔴 হাই',    'color': Color(0xFFC1443A)},
+  'medium': {'label': '🟡 মিডিয়াম','color': Color(0xFFD69F2E)},
+  'low':    {'label': '🟢 লো',     'color': Color(0xFF5C7A4F)},
 };
 
 class ProjectDetailScreen extends StatefulWidget {
@@ -827,8 +827,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               color: widget.project.color, shape: BoxShape.circle)),
           const SizedBox(width: 8),
           Expanded(child: Text(widget.project.name,
-              style: const TextStyle(color: AppTheme.textPrimary,
-                  fontSize: 16, fontWeight: FontWeight.w700),
+              style: AppTheme.display(size: 16),
               overflow: TextOverflow.ellipsis)),
         ]),
         leading: _selectMode
@@ -973,7 +972,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         onPressed: () => _showIdeaForm(),
         backgroundColor: AppTheme.accent,
         icon: const Icon(Icons.lightbulb_outline, color: Colors.white),
-        label: const Text('আইডিয়া', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
+        label: const Text('💡 আইডিয়া', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
       ),
     );
   }
