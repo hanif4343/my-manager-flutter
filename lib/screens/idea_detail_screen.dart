@@ -412,8 +412,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
               color: widget.project.color, shape: BoxShape.circle)),
           const SizedBox(width: 8),
           Expanded(child: Text(_idea.title,
-              style: const TextStyle(color: AppTheme.textPrimary,
-                  fontSize: 15, fontWeight: FontWeight.w700),
+              style: AppTheme.display(size: 16),
               overflow: TextOverflow.ellipsis)),
         ]),
         actions: [
@@ -450,7 +449,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                   child: Row(children: [
-                    const Icon(Icons.folder_outlined, size: 16, color: AppTheme.textSecondary),
+                    const Text('🗂️', style: TextStyle(fontSize: 15)),
                     const SizedBox(width: 6),
                     Text('ফাইলসমূহ (${_files.length})',
                         style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13,
@@ -463,7 +462,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                         decoration: BoxDecoration(color: AppTheme.accent,
                             borderRadius: BorderRadius.circular(8)),
                         child: const Row(children: [
-                          Icon(Icons.add, size: 14, color: Colors.white),
+                          Text('➕', style: TextStyle(fontSize: 12)),
                           SizedBox(width: 4),
                           Text('যোগ করো', style: TextStyle(color: Colors.white,
                               fontSize: 12, fontWeight: FontWeight.w700)),
