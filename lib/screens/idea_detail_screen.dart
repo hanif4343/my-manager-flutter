@@ -438,55 +438,67 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
-          : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          : CustomScrollView(slivers: [
               if (_idea.description != null && _idea.description!.isNotEmpty)
-                Container(width: double.infinity, padding: const EdgeInsets.all(14),
-                    color: AppTheme.bg2,
-                    child: Text(_idea.description!, style: const TextStyle(
-                        color: AppTheme.textSecondary, fontSize: 13, height: 1.5))),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-                child: Row(children: [
-                  const Icon(Icons.folder_outlined, size: 16, color: AppTheme.textSecondary),
-                  const SizedBox(width: 6),
-                  Text('ফাইলসমূহ (${_files.length})',
-                      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13,
-                          fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: _showAddOptions,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(color: AppTheme.accent,
-                          borderRadius: BorderRadius.circular(8)),
-                      child: const Row(children: [
-                        Icon(Icons.add, size: 14, color: Colors.white),
-                        SizedBox(width: 4),
-                        Text('যোগ করো', style: TextStyle(color: Colors.white,
-                            fontSize: 12, fontWeight: FontWeight.w700)),
-                      ]),
+                SliverToBoxAdapter(
+                  child: Container(width: double.infinity, padding: const EdgeInsets.all(14),
+                      color: AppTheme.bg2,
+                      child: Text(_idea.description!, style: const TextStyle(
+                          color: AppTheme.textSecondary, fontSize: 13, height: 1.5))),
+                ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                  child: Row(children: [
+                    const Icon(Icons.folder_outlined, size: 16, color: AppTheme.textSecondary),
+                    const SizedBox(width: 6),
+                    Text('ফাইলসমূহ (${_files.length})',
+                        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13,
+                            fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: _showAddOptions,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(color: AppTheme.accent,
+                            borderRadius: BorderRadius.circular(8)),
+                        child: const Row(children: [
+                          Icon(Icons.add, size: 14, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text('যোগ করো', style: TextStyle(color: Colors.white,
+                              fontSize: 12, fontWeight: FontWeight.w700)),
+                        ]),
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+              if (_files.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    const Text('📄', style: TextStyle(fontSize: 40)),
+                    const SizedBox(height: 12),
+                    const Text('কোনো ফাইল নেই', style: TextStyle(
+                        color: AppTheme.textSecondary, fontSize: 15)),
+                    const SizedBox(height: 6),
+                    const Text('+ যোগ করো বাটনে চাপো', style: TextStyle(
+                        color: AppTheme.textMuted, fontSize: 13)),
+                  ])),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (_, i) => Padding(
+                        padding: EdgeInsets.only(bottom: i == _files.length - 1 ? 0 : 8),
+                        child: _fileCard(_files[i]),
+                      ),
+                      childCount: _files.length,
                     ),
                   ),
-                ]),
-              ),
-              Expanded(
-                child: _files.isEmpty
-                    ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        const Text('📄', style: TextStyle(fontSize: 40)),
-                        const SizedBox(height: 12),
-                        const Text('কোনো ফাইল নেই', style: TextStyle(
-                            color: AppTheme.textSecondary, fontSize: 15)),
-                        const SizedBox(height: 6),
-                        const Text('+ যোগ করো বাটনে চাপো', style: TextStyle(
-                            color: AppTheme.textMuted, fontSize: 13)),
-                      ]))
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
-                        itemCount: _files.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (_, i) => _fileCard(_files[i]),
-                      ),
-              ),
+                ),
             ]),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddOptions,
