@@ -4,6 +4,7 @@ import '../db/db_helper.dart';
 import '../models/project.dart';
 import '../widgets/app_theme.dart';
 import '../services/export_service.dart';
+import '../services/drive_service.dart';
 import 'project_detail_screen.dart';
 import 'project_form_screen.dart';
 import 'backup_screen.dart';
@@ -21,9 +22,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<int, Map<String, int>> _stats = {};
   bool _loading = true;
   bool _importing = false;
+  bool _cloudConnected = false;
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() { super.initState(); _load(); _checkCloud(); }
+
+  Future<void> _checkCloud() async {
+    // reflects real Drive connection: filled green cloud = সিংক্‌ড, empty = অফলাইন
+    bool ok = DriveService.instance.isSignedIn;
+    if (!ok) ok = await DriveService.instance.signInSilently();
+    if (mounted) setState(() => _cloudConnected = ok);
+  }
 
   Future<void> _load() async {
     final projects = await DBHelper.getProjects();
@@ -100,17 +109,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       appBar: AppBar(
         backgroundColor: AppTheme.bg2,
         title: Row(children: [
-          const Text('🚀', style: TextStyle(fontSize: 20)),
+          const Text('📓', style: TextStyle(fontSize: 20)),
           const SizedBox(width: 8),
-          const Text('My Manager', style: TextStyle(
-              color: AppTheme.textPrimary, fontWeight: FontWeight.w800)),
+          Text('My Manager', style: AppTheme.display(size: 18)),
           const Spacer(),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(color: AppTheme.bg3,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: AppTheme.border)),
-            child: Text('${_projects.length} প্রজেক্ট',
+            child: Text('📁 ${_projects.length} প্রজেক্ট',
                 style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
           ),
         ]),
@@ -134,12 +142,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: const Icon(Icons.download_outlined, size: 22),
                   tooltip: 'ZIP Import',
                 ),
-          // Drive
+          // Drive — ভরাট সবুজ = সিংক্‌ড, ফাঁকা = অফলাইন
           IconButton(
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const BackupScreen())),
-            icon: const Icon(Icons.cloud_outlined, size: 22),
-            tooltip: 'Drive Backup',
+            onPressed: () async {
+              await Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const BackupScreen()));
+              _checkCloud();
+            },
+            icon: Icon(
+              _cloudConnected ? Icons.cloud_rounded : Icons.cloud_outlined,
+              size: 22,
+              color: _cloudConnected ? AppTheme.green : AppTheme.textMuted,
+            ),
+            tooltip: _cloudConnected ? '☁️ সিংক্‌ড' : '☁️ অফলাইন — ট্যাপ করে কানেক্ট করো',
           ),
           // Settings
           IconButton(
@@ -192,7 +207,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         },
         backgroundColor: AppTheme.accent,
         icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('নতুন প্রজেক্ট',
+        label: const Text('✨ নতুন প্রজেক্ট',
             style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
       ),
     );
@@ -200,10 +215,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _emptyState() => Center(
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      const Text('🚀', style: TextStyle(fontSize: 56)),
+      const Text('📓', style: TextStyle(fontSize: 56)),
       const SizedBox(height: 16),
-      const Text('এখনো কোনো প্রজেক্ট নেই', style: TextStyle(
-          color: AppTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
+      Text('এখনো কোনো প্রজেক্ট নেই', style: AppTheme.display(size: 18)),
       const SizedBox(height: 8),
       const Text('+ বাটনে চাপো অথবা ZIP import করো',
           style: TextStyle(color: AppTheme.textMuted, fontSize: 14)),
@@ -243,9 +257,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                Expanded(child: Text(p.name, style: const TextStyle(
-                    color: AppTheme.textPrimary, fontSize: 16,
-                    fontWeight: FontWeight.w700))),
+                Expanded(child: Text(p.name, style: AppTheme.display(size: 16))),
                 _iconBtn(Icons.edit_outlined, () async {
                   await Navigator.push(context, MaterialPageRoute(
                       builder: (_) => ProjectFormScreen(project: p)));
