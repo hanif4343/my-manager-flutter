@@ -1,86 +1,104 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
+/// ── "খাতা" (Notebook) design system ─────────────────────────────
+/// A warm, tactile paper palette: cream backgrounds, ink text,
+/// coral accents, moss green for success, mustard for in-progress.
 class AppTheme {
-  static const bg = Color(0xFF0B0F1A);
-  static const bg2 = Color(0xFF111827);
-  static const bg3 = Color(0xFF1E2535);
-  static const bg4 = Color(0xFF252D3D);
-  static const border = Color(0xFF2A3347);
-  static const textPrimary = Color(0xFFE2E8F0);
-  static const textSecondary = Color(0xFF94A3B8);
-  static const textMuted = Color(0xFF64748B);
-  static const accent = Color(0xFF6366F1);
-  static const green = Color(0xFF10B981);
-  static const yellow = Color(0xFFF59E0B);
-  static const red = Color(0xFFEF4444);
+  static const bg = Color(0xFFF4ECD8);       // paper
+  static const bg2 = Color(0xFFFBF6E9);      // card / surface
+  static const bg3 = Color(0xFFEFE4CB);      // inputs, chips, track
+  static const bg4 = Color(0xFFE7DCC2);      // pressed / deeper surface
+  static const border = Color(0xFFD9C9A3);
+  static const textPrimary = Color(0xFF3A2E22);   // ink
+  static const textSecondary = Color(0xFF7A6A52);  // ink2
+  static const textMuted = Color(0xFF9C8B6E);
+  static const accent = Color(0xFFE2683F);   // coral
+  static const green = Color(0xFF5C7A4F);    // moss
+  static const yellow = Color(0xFFD69F2E);   // mustard
+  static const red = Color(0xFFC1443A);      // brick red
+  static const tape = Color(0xFFF2C6C0);     // washi-tape pink, for decorative accents
 
   static const projectColors = [
-    Color(0xFF6366F1), Color(0xFFEC4899), Color(0xFFF59E0B),
-    Color(0xFF10B981), Color(0xFF3B82F6), Color(0xFF8B5CF6),
-    Color(0xFFEF4444), Color(0xFF14B8A6),
+    Color(0xFFE2683F), Color(0xFF5C7A4F), Color(0xFFD69F2E),
+    Color(0xFF3A6EA5), Color(0xFF8B5CF6), Color(0xFFC1447F),
+    Color(0xFF2F9E8F), Color(0xFF9C6B3E),
   ];
 
+  static TextTheme _textTheme(Brightness b) =>
+      GoogleFonts.hindSiliguriTextTheme(
+        b == Brightness.dark
+            ? ThemeData.dark().textTheme
+            : ThemeData.light().textTheme,
+      );
+
   static ThemeData get dark => ThemeData(
-        brightness: Brightness.dark,
+        brightness: Brightness.light,
         scaffoldBackgroundColor: bg,
-        colorScheme: const ColorScheme.dark(
+        colorScheme: const ColorScheme.light(
           primary: accent, surface: bg2, background: bg,
         ),
-        appBarTheme: const AppBarTheme(
+        appBarTheme: AppBarTheme(
           backgroundColor: bg2, elevation: 0,
-          titleTextStyle: TextStyle(color: textPrimary,
-              fontSize: 17, fontWeight: FontWeight.w700),
-          iconTheme: IconThemeData(color: textSecondary),
+          titleTextStyle: GoogleFonts.hindSiliguri(
+              color: textPrimary, fontSize: 18, fontWeight: FontWeight.w700),
+          iconTheme: const IconThemeData(color: textSecondary),
         ),
         cardTheme: CardTheme(
           color: bg2,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             side: const BorderSide(color: border),
           ),
           margin: EdgeInsets.zero,
         ),
         dividerColor: border,
-        fontFamily: 'Roboto',
+        textTheme: _textTheme(Brightness.light),
+        fontFamily: GoogleFonts.hindSiliguri().fontFamily,
       );
 
   static ThemeData get light => ThemeData(
         brightness: Brightness.light,
-        scaffoldBackgroundColor: const Color(0xFFF1F5F9),
+        scaffoldBackgroundColor: bg,
         colorScheme: const ColorScheme.light(
           primary: accent,
-          surface: Colors.white,
-          background: Color(0xFFF1F5F9),
+          surface: bg2,
+          background: bg,
         ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white, elevation: 0,
-          titleTextStyle: TextStyle(color: Color(0xFF1E293B),
-              fontSize: 17, fontWeight: FontWeight.w700),
-          iconTheme: IconThemeData(color: Color(0xFF64748B)),
+        appBarTheme: AppBarTheme(
+          backgroundColor: bg2, elevation: 0,
+          titleTextStyle: GoogleFonts.hindSiliguri(
+              color: textPrimary, fontSize: 18, fontWeight: FontWeight.w700),
+          iconTheme: const IconThemeData(color: textSecondary),
         ),
         cardTheme: CardTheme(
-          color: Colors.white,
+          color: bg2,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: Color(0xFFE2E8F0)),
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: border),
           ),
           margin: EdgeInsets.zero,
         ),
-        dividerColor: const Color(0xFFE2E8F0),
-        fontFamily: 'Roboto',
+        dividerColor: border,
+        textTheme: _textTheme(Brightness.light),
+        fontFamily: GoogleFonts.hindSiliguri().fontFamily,
       );
+
+  /// Playful rounded display font for titles / headings — use sparingly.
+  static TextStyle display({double size = 20, FontWeight weight = FontWeight.w800, Color color = textPrimary}) =>
+      GoogleFonts.hindSiliguri(fontSize: size, fontWeight: weight, color: color);
 }
 
 const statusConfig = {
-  'todo':  {'label': 'বাকি',  'color': Color(0xFF94A3B8)},
-  'doing': {'label': 'চলছে', 'color': Color(0xFFF59E0B)},
-  'done':  {'label': 'শেষ',  'color': Color(0xFF10B981)},
+  'todo':  {'label': '⭕ বাকি',  'color': AppTheme.textSecondary},
+  'doing': {'label': '⏳ চলছে', 'color': AppTheme.yellow},
+  'done':  {'label': '✅ শেষ',  'color': AppTheme.green},
 };
 
 const priorityConfig = {
-  'low':    {'label': 'কম',    'color': Color(0xFF64748B)},
-  'medium': {'label': 'মধ্যম', 'color': Color(0xFFF59E0B)},
-  'high':   {'label': 'জরুরি', 'color': Color(0xFFEF4444)},
+  'low':    {'label': '🟢 কম',    'color': AppTheme.green},
+  'medium': {'label': '🟡 মধ্যম', 'color': AppTheme.yellow},
+  'high':   {'label': '🔴 জরুরি', 'color': AppTheme.red},
 };
 
 int now() => DateTime.now().millisecondsSinceEpoch;
