@@ -8,12 +8,13 @@ import '../services/drive_service.dart';
 import 'project_detail_screen.dart';
 import 'project_form_screen.dart';
 import 'backup_screen.dart';
-import 'search_screen.dart';
-import 'settings_screen.dart';
 
+/// Dashboard tab — shows the project list. Search and Settings now live
+/// in the bottom navigation, so this AppBar only keeps what's needed at
+/// a glance (cloud sync status) plus a small overflow menu for the
+/// less-frequent "Import ZIP" action.
 class DashboardScreen extends StatefulWidget {
-  final VoidCallback onThemeToggle;
-  const DashboardScreen({super.key, required this.onThemeToggle});
+  const DashboardScreen({super.key});
   @override State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
@@ -102,6 +103,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  Future<void> _duplicate(Project p) async {
+    if (p.id == null) return;
+    final newId = await DBHelper.duplicateProject(p.id!);
+    if (mounted && newId != null) {
+      _load();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('✅ প্রজেক্ট কপি হয়েছে'),
+        backgroundColor: AppTheme.green,
+        duration: Duration(seconds: 2),
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -124,25 +138,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ]),
         automaticallyImplyLeading: false,
         actions: [
-          // Search
-          IconButton(
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const SearchScreen())),
-            icon: const Icon(Icons.search, size: 22),
-            tooltip: 'খোঁজো',
-          ),
-          // Import ZIP
-          _importing
-              ? const Padding(padding: EdgeInsets.all(12),
-                  child: SizedBox(width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2,
-                          color: AppTheme.accent)))
-              : IconButton(
-                  onPressed: _importProject,
-                  icon: const Icon(Icons.download_outlined, size: 22),
-                  tooltip: 'ZIP Import',
-                ),
-          // Drive — ভরাট সবুজ = সিংক্‌ড, ফাঁকা = অফলাইন
+          // Drive — glanceable status, kept visible (ভরাট সবুজ = সিংক্‌ড, ফাঁকা = অফলাইন)
           IconButton(
             onPressed: () async {
               await Navigator.push(context,
@@ -156,14 +152,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             tooltip: _cloudConnected ? '☁️ সিংক্‌ড' : '☁️ অফলাইন — ট্যাপ করে কানেক্ট করো',
           ),
-          // Settings
-          IconButton(
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => SettingsScreen(
-                    onThemeToggle: widget.onThemeToggle))),
-            icon: const Icon(Icons.settings_outlined, size: 22),
-            tooltip: 'সেটিংস',
-          ),
+          // Everything else (Search & Settings now live in the bottom nav,
+          // so only the occasional "Import ZIP" action needs a home here)
+          _importing
+              ? const Padding(padding: EdgeInsets.all(16),
+                  child: SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2,
+                          color: AppTheme.accent)))
+              : PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, size: 22),
+                  color: AppTheme.bg2,
+                  onSelected: (v) { if (v == 'import') _importProject(); },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'import', child: Row(children: [
+                      Icon(Icons.download_outlined, size: 18, color: AppTheme.textSecondary),
+                      SizedBox(width: 10),
+                      Text('ZIP ইম্পোর্ট করো'),
+                    ])),
+                  ],
+                ),
         ],
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(1),
@@ -258,32 +265,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Expanded(child: Text(p.name, style: AppTheme.display(size: 16))),
+                // Edit & Copy — the two most-used actions, kept visible.
                 _iconBtn(Icons.edit_outlined, () async {
                   await Navigator.push(context, MaterialPageRoute(
                       builder: (_) => ProjectFormScreen(project: p)));
                   _load();
-                }),
+                }, tooltip: 'এডিট'),
                 const SizedBox(width: 4),
-                _iconBtn(Icons.delete_outline, () => _delete(p),
-                    color: AppTheme.red),
+                _iconBtn(Icons.copy_outlined, () => _duplicate(p),
+                    tooltip: 'কপি'),
+                const SizedBox(width: 4),
+                // Delete — tucked into a menu so it can't be tapped by accident.
+                PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  icon: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(color: AppTheme.bg3,
+                        borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(Icons.more_vert, size: 16, color: AppTheme.textMuted),
+                  ),
+                  color: AppTheme.bg2,
+                  onSelected: (v) { if (v == 'delete') _delete(p); },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'delete', child: Row(children: [
+                      Icon(Icons.delete_outline, size: 18, color: AppTheme.red),
+                      SizedBox(width: 10),
+                      Text('মুছে ফেলো', style: TextStyle(color: AppTheme.red)),
+                    ])),
+                  ],
+                ),
               ]),
               if (p.description != null && p.description!.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(p.description!, style: const TextStyle(
                     color: AppTheme.textSecondary, fontSize: 13),
                     maxLines: 2, overflow: TextOverflow.ellipsis),
-              ],
-              if (p.tags.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Wrap(spacing: 6, runSpacing: 4,
-                    children: p.tags.map((t) => Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: AppTheme.bg3,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: AppTheme.border)),
-                      child: Text(t, style: const TextStyle(
-                          color: AppTheme.textSecondary, fontSize: 11)),
-                    )).toList()),
               ],
               const SizedBox(height: 10),
               ClipRRect(borderRadius: BorderRadius.circular(4),
@@ -313,13 +329,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _iconBtn(IconData icon, VoidCallback onTap,
-      {Color color = AppTheme.textMuted}) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(color: AppTheme.bg3,
-          borderRadius: BorderRadius.circular(8)),
-      child: Icon(icon, size: 16, color: color),
+      {Color color = AppTheme.textMuted, String? tooltip}) => Tooltip(
+    message: tooltip ?? '',
+    child: GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(color: AppTheme.bg3,
+            borderRadius: BorderRadius.circular(8)),
+        child: Icon(icon, size: 16, color: color),
+      ),
     ),
   );
 
