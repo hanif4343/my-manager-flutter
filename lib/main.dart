@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:timezone/data/latest.dart' as tz;
-import 'screens/dashboard_screen.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+import 'screens/home_shell.dart';
 import 'widgets/app_theme.dart';
+import 'widgets/overlay_bubble.dart';
 import 'services/notification_service.dart';
 import 'services/settings_service.dart';
 
@@ -17,7 +19,34 @@ void main() async {
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
   ));
+  // If the floating bubble was left on last time and the overlay permission
+  // is still granted, bring it back so it survives an app restart. If the
+  // permission was revoked meanwhile, this just does nothing.
+  final bubbleWanted = SettingsService.getBool('bubble_enabled', defaultValue: false);
+  if (bubbleWanted) {
+    final granted = await FlutterOverlayWindow.isPermissionGranted();
+    if (granted) {
+      await FlutterOverlayWindow.showOverlay(
+        height: 60, width: 60,
+        alignment: OverlayAlignment.centerRight,
+        flag: OverlayFlag.defaultFlag,
+        enableDrag: true,
+        positionGravity: PositionGravity.auto,
+        overlayTitle: 'My Manager',
+        overlayContent: 'কুইক-অ্যাড বাবল চলছে',
+      );
+    }
+  }
   runApp(const MyManagerApp());
+}
+
+/// Entry point for the system-wide overlay window (the floating chat-head).
+/// This runs in its own separate Flutter engine, started by the native
+/// Android side — completely independent of the app's normal UI tree.
+@pragma('vm:entry-point')
+void overlayMain() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const OverlayBubble());
 }
 
 class MyManagerApp extends StatefulWidget {
@@ -44,7 +73,7 @@ class _MyManagerAppState extends State<MyManagerApp> {
       title: 'My Manager',
       debugShowCheckedModeBanner: false,
       theme: _isDark ? AppTheme.dark : AppTheme.light,
-      home: DashboardScreen(onThemeToggle: toggleTheme),
+      home: HomeShell(onThemeToggle: toggleTheme),
     );
   }
 }
