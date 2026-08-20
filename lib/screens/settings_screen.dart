@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import '../services/settings_service.dart';
 import '../services/notification_service.dart';
 import '../widgets/app_theme.dart';
@@ -11,6 +12,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _isDark = SettingsService.isDark;
+  bool _bubbleEnabled = SettingsService.getBool('bubble_enabled', defaultValue: false);
+  bool _bubbleBusy = false;
   bool _digestEnabled = true;
   int _digestHour = 8;
   int _digestMinute = 0;
@@ -61,6 +64,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _pad(int v) => v.toString().padLeft(2, '0');
 
+  Future<void> _onBubbleToggle(bool val) async {
+    if (_bubbleBusy) return;
+    setState(() => _bubbleBusy = true);
+    try {
+      if (val) {
+        var granted = await FlutterOverlayWindow.isPermissionGranted();
+        if (!granted) {
+          // This opens Android's "Draw over other apps" settings page for
+          // this app and returns once the user grants or denies it there.
+          granted = await FlutterOverlayWindow.requestPermission() ?? false;
+        }
+        if (!granted) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('পারমিশন ছাড়া বাবল চালু করা যাবে না'),
+            backgroundColor: AppTheme.red,
+          ));
+          setState(() => _bubbleBusy = false);
+          return;
+        }
+        await FlutterOverlayWindow.showOverlay(
+          height: 60, width: 60,
+          alignment: OverlayAlignment.centerRight,
+          flag: OverlayFlag.defaultFlag,
+          enableDrag: true,
+          positionGravity: PositionGravity.auto,
+          overlayTitle: 'My Manager',
+          overlayContent: 'কুইক-অ্যাড বাবল চলছে',
+        );
+      } else {
+        await FlutterOverlayWindow.closeOverlay();
+      }
+      await SettingsService.setBool('bubble_enabled', val);
+      if (mounted) setState(() { _bubbleEnabled = val; _bubbleBusy = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _bubbleBusy = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('বাবল চালু করা যায়নি: $e'),
+          backgroundColor: AppTheme.red,
+        ));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -86,6 +133,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 widget.onThemeToggle();
               },
             ),
+          ),
+          const SizedBox(height: 16),
+
+          _sectionTitle('Quick Access'),
+          _settingTile(
+            icon: Icons.lightbulb_outline,
+            iconColor: AppTheme.accent,
+            title: 'ফ্লোটিং বাবল',
+            subtitle: 'হোম স্ক্রিন ও অন্য অ্যাপের উপরেও ভাসবে (Messenger-এর মতো) — '
+                'সিস্টেম পারমিশন লাগবে',
+            trailing: _bubbleBusy
+                ? const SizedBox(width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accent))
+                : Switch(
+                    value: _bubbleEnabled,
+                    activeColor: AppTheme.accent,
+                    onChanged: _onBubbleToggle,
+                  ),
           ),
           const SizedBox(height: 16),
 
