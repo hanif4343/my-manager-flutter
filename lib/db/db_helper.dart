@@ -137,6 +137,37 @@ class DBHelper {
         where: 'id=?', whereArgs: [id]);
   }
 
+  /// Duplicate a project along with its ideas and files.
+  /// Returns the new project's id, or null if the source project doesn't exist.
+  static Future<int?> duplicateProject(int projectId) async {
+    final d = await db;
+    final rows = await d.query('projects', where: 'id=?', whereArgs: [projectId]);
+    if (rows.isEmpty) return null;
+    final src = Project.fromMap(rows.first);
+    final n = DateTime.now().millisecondsSinceEpoch;
+
+    final newProjectId = await insertProject(src.copyWith(
+      id: null, name: '${src.name} (কপি)', createdAt: n, updatedAt: n,
+    ));
+
+    final ideas = await getIdeas(projectId, includeArchived: true);
+    for (final idea in ideas) {
+      final newIdeaId = await insertIdea(idea.copyWith(
+        id: null, projectId: newProjectId, createdAt: n, updatedAt: n,
+      ));
+      final files = await getFiles(idea.id!);
+      for (final f in files) {
+        await d.insert('idea_files', {
+          ...f.copyWith(
+            id: null, ideaId: newIdeaId, projectId: newProjectId,
+            createdAt: n, updatedAt: n,
+          ).toMap(),
+        });
+      }
+    }
+    return newProjectId;
+  }
+
   static Future<void> deleteProject(int id) async {
     final d = await db;
     final ideas = await d.query('ideas', where: 'project_id=?', whereArgs: [id]);
