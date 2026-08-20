@@ -53,7 +53,7 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   }
 
   Future<void> _expand() async {
-    await FlutterOverlayWindow.resizeOverlay(expandedWidth, expandedHeight);
+    await FlutterOverlayWindow.resizeOverlay(expandedWidth, expandedHeight, true);
     // focusPointer lets the TextField actually receive the keyboard.
     await FlutterOverlayWindow.updateFlag(OverlayFlag.focusPointer);
     setState(() => _expanded = true);
@@ -61,7 +61,7 @@ class _OverlayBubbleState extends State<OverlayBubble> {
 
   Future<void> _collapse() async {
     await FlutterOverlayWindow.updateFlag(OverlayFlag.defaultFlag);
-    await FlutterOverlayWindow.resizeOverlay(collapsedSize, collapsedSize);
+    await FlutterOverlayWindow.resizeOverlay(collapsedSize, collapsedSize, true);
     _ctrl.clear();
     setState(() => _expanded = false);
   }
