@@ -12,7 +12,6 @@ class ProjectFormScreen extends StatefulWidget {
 class _ProjectFormScreenState extends State<ProjectFormScreen> {
   final _name = TextEditingController();
   final _desc = TextEditingController();
-  final _tags = TextEditingController();
   // Default color — not user-selectable in new project form
   int _colorValue = AppTheme.projectColors[0].value;
   bool _saving = false;
@@ -24,7 +23,6 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
       final p = widget.project!;
       _name.text = p.name;
       _desc.text = p.description ?? '';
-      _tags.text = p.tags.join(', ');
       _colorValue = p.colorValue;
     }
   }
@@ -37,19 +35,17 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
     }
     setState(() => _saving = true);
     final n = now();
-    final tags = _tags.text.split(',')
-        .map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
     if (widget.project == null) {
       await DBHelper.insertProject(Project(
         name: _name.text.trim(),
         description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
-        colorValue: _colorValue, tags: tags, createdAt: n, updatedAt: n,
+        colorValue: _colorValue, createdAt: n, updatedAt: n,
       ));
     } else {
       await DBHelper.updateProject(widget.project!.copyWith(
         name: _name.text.trim(),
         description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
-        colorValue: _colorValue, tags: tags, updatedAt: n,
+        colorValue: _colorValue, updatedAt: n,
       ));
     }
     if (mounted) Navigator.pop(context);
@@ -62,15 +58,21 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
         title: Text(isEdit ? 'প্রজেক্ট এডিট' : 'নতুন প্রজেক্ট'),
+        // Save/Update lives here at the top — always visible, never hidden
+        // by the keyboard the way a bottom button would be.
         actions: [
-          TextButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(width: 18, height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accent))
-                : const Text('সেভ',
-                    style: TextStyle(color: AppTheme.accent,
-                        fontWeight: FontWeight.w700, fontSize: 16)),
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: TextButton.icon(
+              onPressed: _saving ? null : _save,
+              icon: _saving
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accent))
+                  : const Icon(Icons.check, size: 18, color: AppTheme.accent),
+              label: Text(isEdit ? 'আপডেট' : 'সেভ',
+                  style: const TextStyle(color: AppTheme.accent,
+                      fontWeight: FontWeight.w700, fontSize: 15)),
+            ),
           ),
         ],
       ),
@@ -82,25 +84,6 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
           const SizedBox(height: 16),
           _label('বিবরণ (ঐচ্ছিক)'),
           _field(_desc, 'প্রজেক্ট সম্পর্কে কিছু লিখো...', maxLines: 3),
-          const SizedBox(height: 16),
-          _label('ট্যাগ (কমা দিয়ে আলাদা করো)'),
-          _field(_tags, 'Flutter, Firebase, API'),
-          const SizedBox(height: 32),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _saving ? null : _save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(_colorValue),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: Text(isEdit ? 'আপডেট করো' : 'তৈরি করো',
-                  style: const TextStyle(fontSize: 16,
-                      fontWeight: FontWeight.w700, color: Colors.white)),
-            ),
-          ),
         ]),
       ),
     );
