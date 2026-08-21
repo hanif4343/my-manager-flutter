@@ -30,8 +30,8 @@ void main() async {
         height: 60, width: 60,
         alignment: OverlayAlignment.centerRight,
         flag: OverlayFlag.defaultFlag,
-        enableDrag: true,
-        positionGravity: PositionGravity.auto,
+        enableDrag: false,
+        positionGravity: PositionGravity.none,
         overlayTitle: 'My Manager',
         overlayContent: 'কুইক-অ্যাড বাবল চলছে',
       );
@@ -73,6 +73,9 @@ class _MyManagerAppState extends State<MyManagerApp> {
       title: 'My Manager',
       debugShowCheckedModeBanner: false,
       theme: _isDark ? AppTheme.dark : AppTheme.light,
+      // Makes any text in the app long-press/drag-selectable and copyable,
+      // without having to switch every Text widget to SelectableText.
+      builder: (context, child) => SelectionArea(child: child!),
       home: HomeShell(onThemeToggle: toggleTheme),
     );
   }
