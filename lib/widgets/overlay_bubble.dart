@@ -142,8 +142,7 @@ class _OverlayBubbleState extends State<OverlayBubble> {
       _showDeleteHint = _dragCumulativeDy >= _deleteThreshold;
     });
     try {
-      await FlutterOverlayWindow.moveOverlay(
-          OverlayPosition(next.dx.round(), next.dy.round()));
+      await FlutterOverlayWindow.moveOverlay(OverlayPosition(next.dx, next.dy));
     } catch (_) {/* best-effort */}
   }
 
