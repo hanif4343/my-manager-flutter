@@ -33,7 +33,8 @@ class _BackupScreenState extends State<BackupScreen> {
       _lastBackup = await DriveService.instance.getLastBackupTime();
       _setStatus('Google Account যুক্ত হয়েছে!', false);
     } else {
-      _setStatus('Sign in ব্যর্থ হয়েছে।', true);
+      final detail = DriveService.instance.lastError;
+      _setStatus('Sign in ব্যর্থ হয়েছে।${detail != null ? '\n$detail' : ''}', true);
     }
     setState(() => _loading = false);
   }
@@ -41,6 +42,7 @@ class _BackupScreenState extends State<BackupScreen> {
   Future<void> _backup() async {
     setState(() { _loading = true; _status = null; });
     final result = await DriveService.instance.backupDatabase();
+    final detail = DriveService.instance.lastError;
     switch (result) {
       case DriveBackupResult.success:
         _lastBackup = DateTime.now();
@@ -50,10 +52,10 @@ class _BackupScreenState extends State<BackupScreen> {
         _setStatus('Google Account দিয়ে সাইন ইন করো।', true);
         break;
       case DriveBackupResult.failed:
-        _setStatus('Backup ব্যর্থ! Internet আছে কিনা দেখো।', true);
+        _setStatus('Backup ব্যর্থ!${detail != null ? '\n$detail' : ' Internet আছে কিনা দেখো।'}', true);
         break;
       default:
-        _setStatus('কিছু একটা হয়নি।', true);
+        _setStatus('কিছু একটা হয়নি।${detail != null ? '\n$detail' : ''}', true);
     }
     setState(() => _loading = false);
   }
@@ -79,6 +81,7 @@ class _BackupScreenState extends State<BackupScreen> {
     if (confirm != true) return;
     setState(() { _loading = true; _status = null; });
     final result = await DriveService.instance.restoreFromDrive();
+    final detail = DriveService.instance.lastError;
     switch (result) {
       case DriveBackupResult.success:
         _setStatus('✅ Restore সফল! App restart করো।', false);
@@ -90,7 +93,7 @@ class _BackupScreenState extends State<BackupScreen> {
         _setStatus('Google Account দিয়ে সাইন ইন করো।', true);
         break;
       default:
-        _setStatus('Restore ব্যর্থ!', true);
+        _setStatus('Restore ব্যর্থ!${detail != null ? '\n$detail' : ''}', true);
     }
     setState(() => _loading = false);
   }
