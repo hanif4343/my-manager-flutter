@@ -87,8 +87,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           height: 60, width: 60,
           alignment: OverlayAlignment.centerRight,
           flag: OverlayFlag.defaultFlag,
-          enableDrag: true,
-          positionGravity: PositionGravity.auto,
+          enableDrag: false,
+          positionGravity: PositionGravity.none,
           overlayTitle: 'My Manager',
           overlayContent: 'কুইক-অ্যাড বাবল চলছে',
         );
