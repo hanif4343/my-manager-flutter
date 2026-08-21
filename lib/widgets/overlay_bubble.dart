@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag.dart';
 import 'app_theme.dart';
 import '../db/db_helper.dart';
 import '../models/idea.dart';
@@ -11,12 +13,21 @@ import '../models/project.dart';
 /// `overlayMain()` in main.dart — completely separate from the main app
 /// UI, which is why it has its own tiny widget tree here.
 ///
-/// Two states:
-///  - Collapsed: a small round bubble. The plugin handles dragging;
-///    tapping it asks the native side to grow the window and switches
-///    to the expanded state.
-///  - Expanded: a compact "quick add idea" panel. Saving or closing
-///    shrinks the window back down to the bubble.
+/// Design notes (read before changing the drag logic):
+///  - The plugin's own native `enableDrag` is kept OFF everywhere. When it
+///    was on, dragging inside the *expanded* quick-add panel (e.g. tapping
+///    a project chip) was being captured as a window-drag instead of a
+///    button tap. Instead, dragging is done entirely in Flutter via a
+///    small dedicated handle + `moveOverlay()`, which only exists on the
+///    collapsed bubble — so it can never interfere with the form.
+///  - "Drag down to remove" is approximated using the *cumulative distance
+///    dragged downward from where the drag started*, not the bubble's
+///    actual position on the screen. The overlay's own Flutter engine only
+///    knows the size of its own tiny window (60x60 / 320x?), not the full
+///    device screen, so there's no reliable way to detect "you're now near
+///    the bottom of the screen" from in here. This is a practical
+///    approximation, not pixel-perfect Messenger behavior — worth testing
+///    on your device and tweaking `_deleteThreshold` if it feels off.
 class OverlayBubble extends StatefulWidget {
   const OverlayBubble({super.key});
   @override State<OverlayBubble> createState() => _OverlayBubbleState();
@@ -25,7 +36,8 @@ class OverlayBubble extends StatefulWidget {
 class _OverlayBubbleState extends State<OverlayBubble> {
   static const collapsedSize = 60;
   static const expandedWidth = 300;
-  static const expandedHeight = 360;
+  static const expandedHeight = 320;
+  static const _deleteThreshold = 380.0; // px of cumulative downward drag
 
   bool _expanded = false;
   bool _loading = true;
@@ -33,10 +45,26 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   int? _selectedProjectId;
   final _ctrl = TextEditingController();
 
+  // Custom drag state (collapsed bubble only)
+  Offset? _pos;
+  double _dragCumulativeDy = 0;
+  bool _showDeleteHint = false;
+
   @override
   void initState() {
     super.initState();
     _loadProjects();
+    _syncPosition();
+  }
+
+  Future<void> _syncPosition() async {
+    try {
+      final p = await FlutterOverlayWindow.getOverlayPosition();
+      if (mounted) setState(() => _pos = Offset(p.x.toDouble(), p.y.toDouble()));
+    } catch (_) {
+      // Not fatal — we just won't have an initial position to drag from
+      // until the first successful call.
+    }
   }
 
   Future<void> _loadProjects() async {
@@ -53,7 +81,7 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   }
 
   Future<void> _expand() async {
-    await FlutterOverlayWindow.resizeOverlay(expandedWidth, expandedHeight, true);
+    await FlutterOverlayWindow.resizeOverlay(expandedWidth, expandedHeight, false);
     // focusPointer lets the TextField actually receive the keyboard.
     await FlutterOverlayWindow.updateFlag(OverlayFlag.focusPointer);
     setState(() => _expanded = true);
@@ -61,7 +89,7 @@ class _OverlayBubbleState extends State<OverlayBubble> {
 
   Future<void> _collapse() async {
     await FlutterOverlayWindow.updateFlag(OverlayFlag.defaultFlag);
-    await FlutterOverlayWindow.resizeOverlay(collapsedSize, collapsedSize, true);
+    await FlutterOverlayWindow.resizeOverlay(collapsedSize, collapsedSize, false);
     _ctrl.clear();
     setState(() => _expanded = false);
   }
@@ -80,6 +108,55 @@ class _OverlayBubbleState extends State<OverlayBubble> {
     await _collapse();
   }
 
+  /// Brings the host app (My Manager itself) to the foreground.
+  Future<void> _openMainApp() async {
+    try {
+      const intent = AndroidIntent(
+        action: 'android.intent.action.MAIN',
+        package: 'com.hanif.mymanager',
+        componentName: 'com.hanif.mymanager.MainActivity',
+        flags: [
+          Flag.FLAG_ACTIVITY_NEW_TASK,
+          Flag.FLAG_ACTIVITY_REORDER_TO_FRONT,
+        ],
+      );
+      await intent.launch();
+    } catch (_) {
+      // If this fails on some device/launcher combo, at worst nothing
+      // happens — the bubble itself keeps working either way.
+    }
+  }
+
+  // ── Custom drag (collapsed bubble's handle only) ─────────────────
+  void _onHandlePanStart(DragStartDetails d) {
+    setState(() { _dragCumulativeDy = 0; _showDeleteHint = false; });
+  }
+
+  Future<void> _onHandlePanUpdate(DragUpdateDetails d) async {
+    if (_pos == null) return;
+    final next = _pos! + d.delta;
+    setState(() {
+      _pos = next;
+      _dragCumulativeDy = (_dragCumulativeDy + d.delta.dy)
+          .clamp(0.0, _deleteThreshold + 100);
+      _showDeleteHint = _dragCumulativeDy >= _deleteThreshold;
+    });
+    try {
+      await FlutterOverlayWindow.moveOverlay(
+          OverlayPosition(next.dx.round(), next.dy.round()));
+    } catch (_) {/* best-effort */}
+  }
+
+  Future<void> _onHandlePanEnd(DragEndDetails d) async {
+    final shouldDelete = _showDeleteHint;
+    setState(() { _dragCumulativeDy = 0; _showDeleteHint = false; });
+    if (shouldDelete) {
+      // Session-only close: doesn't touch the persisted "bubble_enabled"
+      // setting, so the bubble comes back next time the app is opened.
+      await FlutterOverlayWindow.closeOverlay();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -91,25 +168,51 @@ class _OverlayBubbleState extends State<OverlayBubble> {
     );
   }
 
-  Widget _collapsedBubble() => GestureDetector(
-    onTap: _expand,
-    child: Container(
-      width: collapsedSize.toDouble(),
-      height: collapsedSize.toDouble(),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft, end: Alignment.bottomRight,
-          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+  Widget _collapsedBubble() => Stack(children: [
+    GestureDetector(
+      onTap: _expand,
+      child: Container(
+        width: collapsedSize.toDouble(),
+        height: collapsedSize.toDouble(),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft, end: Alignment.bottomRight,
+            colors: _showDeleteHint
+                ? [AppTheme.red, const Color(0xFFB91C1C)]
+                : const [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+          ),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.35),
+                blurRadius: 10, offset: const Offset(0, 3)),
+          ],
         ),
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.35),
-              blurRadius: 10, offset: const Offset(0, 3)),
-        ],
+        child: Icon(
+          _showDeleteHint ? Icons.delete_outline : Icons.lightbulb_outline,
+          color: Colors.white, size: 26,
+        ),
       ),
-      child: const Icon(Icons.lightbulb_outline, color: Colors.white, size: 26),
     ),
-  );
+    // Small drag handle — this is the *only* part of the collapsed bubble
+    // that moves the window. Tapping the rest of the circle expands it.
+    Positioned(
+      right: 0, bottom: 0,
+      child: GestureDetector(
+        onPanStart: _onHandlePanStart,
+        onPanUpdate: _onHandlePanUpdate,
+        onPanEnd: _onHandlePanEnd,
+        child: Container(
+          width: 20, height: 20,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.35),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withOpacity(0.6), width: 1),
+          ),
+          child: const Icon(Icons.open_with, size: 12, color: Colors.white),
+        ),
+      ),
+    ),
+  ]);
 
   Widget _expandedPanel() => Center(
     child: Container(
@@ -128,16 +231,19 @@ class _OverlayBubbleState extends State<OverlayBubble> {
       child: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
           : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // Header — Save lives here, at the top, so the on-screen
+              // keyboard can never cover it.
               Row(children: [
                 const Text('⚡', style: TextStyle(fontSize: 18)),
                 const SizedBox(width: 6),
                 const Expanded(child: Text('Quick Idea',
                     style: TextStyle(color: AppTheme.textPrimary,
                         fontSize: 16, fontWeight: FontWeight.w700))),
-                GestureDetector(
-                  onTap: _collapse,
-                  child: const Icon(Icons.close, size: 20, color: AppTheme.textMuted),
-                ),
+                _headerIcon(Icons.open_in_full, 'পুরো অ্যাপ খোলো', _openMainApp),
+                const SizedBox(width: 6),
+                _headerIcon(Icons.check_circle, 'সেভ করো', _save, color: AppTheme.green),
+                const SizedBox(width: 6),
+                _headerIcon(Icons.close, 'বন্ধ করো', _collapse),
               ]),
               const SizedBox(height: 12),
               if (_projects.isEmpty)
@@ -175,34 +281,38 @@ class _OverlayBubbleState extends State<OverlayBubble> {
                   }).toList()),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: _ctrl, autofocus: true, maxLines: 3, minLines: 1,
-                  style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: 'আইডিয়া লিখো...',
-                    hintStyle: const TextStyle(color: AppTheme.textMuted),
-                    filled: true, fillColor: AppTheme.bg3,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: AppTheme.border)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl, autofocus: true, maxLines: null,
+                    expands: true, textAlignVertical: TextAlignVertical.top,
+                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'আইডিয়া লিখো...',
+                      hintStyle: const TextStyle(color: AppTheme.textMuted),
+                      filled: true, fillColor: AppTheme.bg3,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppTheme.border)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
+                      contentPadding: const EdgeInsets.all(12),
+                    ),
+                    onSubmitted: (_) => _save(),
                   ),
                 ),
-                const Spacer(),
-                SizedBox(width: double.infinity, child: ElevatedButton.icon(
-                  onPressed: _save,
-                  icon: const Icon(Icons.add, color: Colors.white, size: 16),
-                  label: const Text('যোগ করো', style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w700)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.accent,
-                    padding: const EdgeInsets.symmetric(vertical: 11),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                )),
               ],
             ]),
     ),
   );
+
+  Widget _headerIcon(IconData icon, String tooltip, VoidCallback onTap, {Color? color}) =>
+      Tooltip(
+        message: tooltip,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(icon, size: 20, color: color ?? AppTheme.textMuted),
+          ),
+        ),
+      );
 }
