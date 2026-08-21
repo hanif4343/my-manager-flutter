@@ -26,6 +26,10 @@ class DriveService {
   static DriveService get instance => _instance ??= DriveService._();
   DriveService._();
 
+  /// The real exception message from the last failed operation, so the UI
+  /// can show something more useful than a generic "failed" message.
+  String? lastError;
+
   final _googleSignIn = GoogleSignIn(scopes: [drive.DriveApi.driveFileScope]);
   drive.DriveApi? _driveApi;
   GoogleSignInAccount? _account;
@@ -37,11 +41,16 @@ class DriveService {
   // ── SIGN IN ────────────────────────────────────────────
   Future<bool> signIn() async {
     try {
+      lastError = null;
       _account = await _googleSignIn.signIn();
-      if (_account == null) return false;
+      if (_account == null) {
+        lastError = 'সাইন-ইন বাতিল করা হয়েছে';
+        return false;
+      }
       await _initApi();
       return true;
     } catch (e) {
+      lastError = e.toString();
       debugPrint('DriveService signIn error: $e');
       return false;
     }
@@ -97,14 +106,21 @@ class DriveService {
   Future<DriveBackupResult> backupDatabase() async {
     if (!isSignedIn) return DriveBackupResult.notSignedIn;
     try {
+      lastError = null;
       // Refresh auth
       await _initApi();
       _backupFolderId ??= await _ensureFolder();
-      if (_backupFolderId == null) return DriveBackupResult.failed;
+      if (_backupFolderId == null) {
+        lastError = 'Backup ফোল্ডার তৈরি/খুঁজে পাওয়া যায়নি';
+        return DriveBackupResult.failed;
+      }
 
       final dbPath = p.join(await getDatabasesPath(), 'mymanager.db');
       final dbFile = File(dbPath);
-      if (!await dbFile.exists()) return DriveBackupResult.failed;
+      if (!await dbFile.exists()) {
+        lastError = 'লোকাল ডেটাবেজ ফাইল খুঁজে পাওয়া যায়নি';
+        return DriveBackupResult.failed;
+      }
 
       // Export all data as JSON
       final jsonData = await _exportAllDataAsJson();
@@ -135,6 +151,7 @@ class DriveService {
       }
       return DriveBackupResult.success;
     } catch (e) {
+      lastError = e.toString();
       debugPrint('DriveService backup error: $e');
       return DriveBackupResult.failed;
     }
@@ -144,6 +161,7 @@ class DriveService {
   Future<DriveBackupResult> restoreFromDrive() async {
     if (!isSignedIn) return DriveBackupResult.notSignedIn;
     try {
+      lastError = null;
       await _initApi();
       _backupFolderId ??= await _ensureFolder();
       if (_backupFolderId == null) return DriveBackupResult.failed;
@@ -163,6 +181,7 @@ class DriveService {
       await _importFromJson(jsonData);
       return DriveBackupResult.success;
     } catch (e) {
+      lastError = e.toString();
       debugPrint('DriveService restore error: $e');
       return DriveBackupResult.failed;
     }
