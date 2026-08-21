@@ -188,12 +188,26 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
 
   // ── ZIP EXPORT ────────────────────────────────────────
   Future<void> _exportZip() async {
-    if (_files.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('কোনো ফাইল নেই!'), backgroundColor: AppTheme.red));
-      return;
-    }
     final archive = Archive();
+
+    // The note itself — title, description, status, priority — so the
+    // zip is a complete package, not just the attachments.
+    final statusLabel = {'todo': 'করা হয়নি', 'doing': 'চলছে', 'done': 'শেষ'}[_idea.status] ?? _idea.status;
+    final priorityLabel = {'low': 'কম', 'medium': 'মাঝারি', 'high': 'বেশি'}[_idea.priority] ?? _idea.priority;
+    final noteText = StringBuffer()
+      ..writeln(_idea.title)
+      ..writeln('=' * _idea.title.length)
+      ..writeln()
+      ..writeln('স্ট্যাটাস: $statusLabel')
+      ..writeln('প্রায়োরিটি: $priorityLabel')
+      ..writeln('তৈরি: ${DateTime.fromMillisecondsSinceEpoch(_idea.createdAt)}')
+      ..writeln();
+    if (_idea.description != null && _idea.description!.trim().isNotEmpty) {
+      noteText..writeln('— নোট —')..writeln(_idea.description);
+    }
+    final noteBytes = utf8.encode(noteText.toString());
+    archive.addFile(ArchiveFile('note.txt', noteBytes.length, noteBytes));
+
     for (final f in _files) {
       if (f.content == null) continue;
       List<int> bytes;
@@ -418,7 +432,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
         actions: [
           IconButton(onPressed: _exportZip,
               icon: const Icon(Icons.folder_zip_outlined, size: 20),
-              tooltip: 'ZIP'),
+              tooltip: 'নোট + সব ফাইল ZIP করে শেয়ার করো'),
           GestureDetector(
             onTap: _cycleStatus,
             child: Container(
