@@ -26,7 +26,7 @@ class _MarkdownViewerScreenState extends State<MarkdownViewerScreen> {
           const Icon(Icons.description_outlined, color: AppTheme.accent, size: 18),
           const SizedBox(width: 8),
           Expanded(child: Text(widget.file.name,
-              style: const TextStyle(color: AppTheme.textPrimary,
+              style:  TextStyle(color: AppTheme.textPrimary,
                   fontSize: 14, fontWeight: FontWeight.w700, fontFamily: 'monospace'),
               overflow: TextOverflow.ellipsis)),
         ]),
@@ -58,7 +58,7 @@ class _MarkdownViewerScreenState extends State<MarkdownViewerScreen> {
               padding: const EdgeInsets.all(16),
               child: SelectableText(
                 content,
-                style: const TextStyle(
+                style:  TextStyle(
                     color: AppTheme.textPrimary, fontSize: 13,
                     fontFamily: 'monospace', height: 1.6),
               ),
@@ -68,23 +68,23 @@ class _MarkdownViewerScreenState extends State<MarkdownViewerScreen> {
               selectable: true,
               padding: const EdgeInsets.all(16),
               styleSheet: MarkdownStyleSheet(
-                h1: const TextStyle(
+                h1:  TextStyle(
                     color: AppTheme.textPrimary, fontSize: 24,
                     fontWeight: FontWeight.w800, height: 1.4),
-                h2: const TextStyle(
+                h2:  TextStyle(
                     color: AppTheme.textPrimary, fontSize: 20,
                     fontWeight: FontWeight.w700, height: 1.4),
-                h3: const TextStyle(
+                h3:  TextStyle(
                     color: AppTheme.textPrimary, fontSize: 17,
                     fontWeight: FontWeight.w600, height: 1.4),
-                h4: const TextStyle(
+                h4:  TextStyle(
                     color: AppTheme.textSecondary, fontSize: 15,
                     fontWeight: FontWeight.w600),
-                p: const TextStyle(
+                p:  TextStyle(
                     color: AppTheme.textSecondary, fontSize: 14, height: 1.6),
-                strong: const TextStyle(
+                strong:  TextStyle(
                     color: AppTheme.textPrimary, fontWeight: FontWeight.w700),
-                em: const TextStyle(
+                em:  TextStyle(
                     color: AppTheme.textPrimary, fontStyle: FontStyle.italic),
                 code: const TextStyle(
                     color: AppTheme.accent, fontSize: 13,
@@ -98,15 +98,15 @@ class _MarkdownViewerScreenState extends State<MarkdownViewerScreen> {
                     borderRadius: BorderRadius.circular(4),
                     border: const Border(
                         left: BorderSide(color: AppTheme.accent, width: 3))),
-                blockquote: const TextStyle(
+                blockquote:  TextStyle(
                     color: AppTheme.textSecondary, fontSize: 14,
                     fontStyle: FontStyle.italic),
                 listBullet: const TextStyle(color: AppTheme.accent, fontSize: 14),
-                tableHead: const TextStyle(
+                tableHead:  TextStyle(
                     color: AppTheme.textPrimary, fontWeight: FontWeight.w700),
-                tableBody: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                tableBody:  TextStyle(color: AppTheme.textSecondary, fontSize: 13),
                 tableBorder: TableBorder.all(color: AppTheme.border, width: 1),
-                horizontalRuleDecoration: const BoxDecoration(
+                horizontalRuleDecoration:  BoxDecoration(
                     border: Border(bottom: BorderSide(color: AppTheme.border))),
                 a: const TextStyle(color: AppTheme.accent,
                     decoration: TextDecoration.underline),
