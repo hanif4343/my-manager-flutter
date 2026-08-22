@@ -91,7 +91,7 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
 
   Widget _label(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 6),
-    child: Text(text, style: const TextStyle(
+    child: Text(text, style:  TextStyle(
         color: AppTheme.textSecondary, fontSize: 13,
         fontWeight: FontWeight.w600)),
   );
@@ -99,16 +99,16 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
   Widget _field(TextEditingController ctrl, String hint,
       {int maxLines = 1}) => TextField(
     controller: ctrl, maxLines: maxLines,
-    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 15),
+    style:  TextStyle(color: AppTheme.textPrimary, fontSize: 15),
     decoration: InputDecoration(
-      hintText: hint, hintStyle: const TextStyle(color: AppTheme.textMuted),
+      hintText: hint, hintStyle:  TextStyle(color: AppTheme.textMuted),
       filled: true, fillColor: AppTheme.bg3,
       border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppTheme.border)),
+          borderSide:  BorderSide(color: AppTheme.border)),
       enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppTheme.border)),
+          borderSide:  BorderSide(color: AppTheme.border)),
       focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
