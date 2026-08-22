@@ -60,8 +60,8 @@ class _SearchScreenState extends State<SearchScreen> {
         title: TextField(
           controller: _ctrl,
           autofocus: true,
-          style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16),
-          decoration: const InputDecoration(
+          style:  TextStyle(color: AppTheme.textPrimary, fontSize: 16),
+          decoration:  InputDecoration(
             hintText: 'প্রজেক্ট, আইডিয়া, ফাইল খোঁজো...',
             hintStyle: TextStyle(color: AppTheme.textMuted),
             border: InputBorder.none,
@@ -86,7 +86,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     Text(_ctrl.text.isEmpty
                         ? 'কী খুঁজছো লিখো...'
                         : 'কিছু পাওয়া যায়নি',
-                        style: const TextStyle(color: AppTheme.textSecondary,
+                        style:  TextStyle(color: AppTheme.textSecondary,
                             fontSize: 15)),
                   ]))
               : ListView.separated(
@@ -111,11 +111,11 @@ class _SearchScreenState extends State<SearchScreen> {
                           ),
                         ),
                         title: Text(r.title,
-                            style: const TextStyle(
+                            style:  TextStyle(
                                 color: AppTheme.textPrimary, fontSize: 14,
                                 fontWeight: FontWeight.w600)),
                         subtitle: Text(r.subtitle,
-                            style: const TextStyle(
+                            style:  TextStyle(
                                 color: AppTheme.textMuted, fontSize: 12)),
                         trailing: Text(
                           r.type == 'project' ? 'প্রজেক্ট'
