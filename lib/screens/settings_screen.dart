@@ -49,7 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       initialTime: TimeOfDay(hour: _digestHour, minute: _digestMinute),
       builder: (c, child) => Theme(
         data: ThemeData.dark().copyWith(colorScheme:
-        const ColorScheme.dark(primary: AppTheme.accent, surface: AppTheme.bg3)),
+         ColorScheme.dark(primary: AppTheme.accent, surface: AppTheme.bg3)),
         child: child!,
       ),
     );
@@ -76,7 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           granted = await FlutterOverlayWindow.requestPermission() ?? false;
         }
         if (!granted) {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar( SnackBar(
             content: Text('পারমিশন ছাড়া বাবল চালু করা যাবে না'),
             backgroundColor: AppTheme.red,
           ));
@@ -113,7 +113,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: const Text('সেটিংস', style: TextStyle(color: AppTheme.textPrimary)),
+        title:  Text('সেটিংস', style: TextStyle(color: AppTheme.textPrimary)),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -197,7 +197,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: AppTheme.border)),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Row(children: [
+               Row(children: [
                 Icon(Icons.info_outline, color: AppTheme.textMuted, size: 14),
                 SizedBox(width: 6),
                 Text('Digest এ কী থাকবে:', style: TextStyle(
@@ -208,7 +208,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 '📅 আজকে ও কালকের deadline',
                 '⚠️ Overdue task এর সংখ্যা'].map((s) => Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text('• $s', style: const TextStyle(
+                child: Text('• $s', style:  TextStyle(
                     color: AppTheme.textMuted, fontSize: 12)),
               )),
             ]),
@@ -235,7 +235,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _sectionTitle(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
-    child: Text(text.toUpperCase(), style: const TextStyle(
+    child: Text(text.toUpperCase(), style:  TextStyle(
         color: AppTheme.textMuted, fontSize: 11,
         fontWeight: FontWeight.w700, letterSpacing: 1)),
   );
@@ -252,10 +252,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             decoration: BoxDecoration(color: iconColor.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(8)),
             child: Icon(icon, color: iconColor, size: 18)),
-          title: Text(title, style: const TextStyle(
+          title: Text(title, style:  TextStyle(
               color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
           subtitle: subtitle != null ? Text(subtitle,
-              style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)) : null,
+              style:  TextStyle(color: AppTheme.textMuted, fontSize: 12)) : null,
           trailing: trailing,
         ),
       );
