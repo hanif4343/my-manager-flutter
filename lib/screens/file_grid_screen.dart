@@ -82,10 +82,10 @@ class _FileGridScreenState extends State<FileGridScreen> {
             color: AppTheme.border, borderRadius: BorderRadius.circular(2))),
         Padding(padding: const EdgeInsets.all(16), child: Column(
             crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(file.name, style: const TextStyle(color: AppTheme.textPrimary,
+          Text(file.name, style:  TextStyle(color: AppTheme.textPrimary,
               fontWeight: FontWeight.w700, fontFamily: 'monospace', fontSize: 14)),
           Text('${idea.title} • ${file.sizeLabel}',
-              style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+              style:  TextStyle(color: AppTheme.textMuted, fontSize: 12)),
         ])),
         if (file.isText)
           _tile(Icons.edit_outlined, 'এডিট করো', AppTheme.accent, () async {
@@ -98,7 +98,7 @@ class _FileGridScreenState extends State<FileGridScreen> {
           _tile(Icons.copy_outlined, 'কোড কপি', AppTheme.textSecondary, () {
             Navigator.pop(context);
             Clipboard.setData(ClipboardData(text: file.content ?? ''));
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            ScaffoldMessenger.of(context).showSnackBar( SnackBar(
                 content: Text('কপি হয়েছে!'), backgroundColor: AppTheme.green,
                 duration: Duration(seconds: 2)));
           }),
@@ -134,11 +134,11 @@ class _FileGridScreenState extends State<FileGridScreen> {
           final confirm = await showDialog<bool>(context: context,
             builder: (_) => AlertDialog(
               backgroundColor: AppTheme.bg3,
-              title: const Text('মুছবে?', style: TextStyle(color: AppTheme.textPrimary)),
+              title:  Text('মুছবে?', style: TextStyle(color: AppTheme.textPrimary)),
               actions: [
                 TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
                 TextButton(onPressed: () => Navigator.pop(context, true),
-                    child: const Text('মুছো', style: TextStyle(color: AppTheme.red))),
+                    child:  Text('মুছো', style: TextStyle(color: AppTheme.red))),
               ],
             ),
           );
@@ -159,9 +159,9 @@ class _FileGridScreenState extends State<FileGridScreen> {
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('সব ফাইল', style: TextStyle(
+           Text('সব ফাইল', style: TextStyle(
               color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
-          Text(widget.project.name, style: const TextStyle(
+          Text(widget.project.name, style:  TextStyle(
               color: AppTheme.textSecondary, fontSize: 12)),
         ]),
         actions: [
@@ -182,7 +182,7 @@ class _FileGridScreenState extends State<FileGridScreen> {
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
                 child: Row(children: [
                   Text('${filtered.length} ফাইল',
-                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                      style:  TextStyle(color: AppTheme.textMuted, fontSize: 12)),
                   const Spacer(),
                   ...['all','image','code','other'].map((f) {
                     final labels = {'all':'সব','image':'ছবি','code':'কোড','other':'অন্য'};
@@ -207,13 +207,13 @@ class _FileGridScreenState extends State<FileGridScreen> {
                   }),
                 ]),
               ),
-              const Divider(height: 1, color: AppTheme.border),
+               Divider(height: 1, color: AppTheme.border),
               Expanded(
                 child: filtered.isEmpty
                     ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                         const Text('📂', style: TextStyle(fontSize: 40)),
                         const SizedBox(height: 12),
-                        const Text('কোনো ফাইল নেই', style: TextStyle(
+                         Text('কোনো ফাইল নেই', style: TextStyle(
                             color: AppTheme.textSecondary, fontSize: 15)),
                       ]))
                     : _isGrid ? _buildGrid(filtered) : _buildList(filtered),
@@ -252,13 +252,13 @@ class _FileGridScreenState extends State<FileGridScreen> {
             ),
             Container(
               width: double.infinity, padding: const EdgeInsets.all(6),
-              decoration: const BoxDecoration(
+              decoration:  BoxDecoration(
                   border: Border(top: BorderSide(color: AppTheme.border))),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(f.name, style: const TextStyle(color: AppTheme.textPrimary,
+                Text(f.name, style:  TextStyle(color: AppTheme.textPrimary,
                     fontSize: 10, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
                     maxLines: 1, overflow: TextOverflow.ellipsis),
-                Text(f.sizeLabel, style: const TextStyle(
+                Text(f.sizeLabel, style:  TextStyle(
                     color: AppTheme.textMuted, fontSize: 9)),
               ]),
             ),
@@ -295,16 +295,16 @@ class _FileGridScreenState extends State<FileGridScreen> {
             ),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(f.name, style: const TextStyle(color: AppTheme.textPrimary,
+              Text(f.name, style:  TextStyle(color: AppTheme.textPrimary,
                   fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
                   overflow: TextOverflow.ellipsis),
               const SizedBox(height: 2),
               Text('${idea.title} • ${f.sizeLabel}',
-                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                  style:  TextStyle(color: AppTheme.textMuted, fontSize: 11)),
             ])),
             _vBadge('v${f.version}'),
             const SizedBox(width: 6),
-            const Icon(Icons.more_vert, size: 16, color: AppTheme.textMuted),
+             Icon(Icons.more_vert, size: 16, color: AppTheme.textMuted),
           ]),
         ),
       );
