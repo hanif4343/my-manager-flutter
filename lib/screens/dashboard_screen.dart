@@ -86,14 +86,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: const Text('মুছে ফেলবে?', style: TextStyle(color: AppTheme.textPrimary)),
+        title:  Text('মুছে ফেলবে?', style: TextStyle(color: AppTheme.textPrimary)),
         content: Text('"${p.name}" এবং সব ডেটা মুছে যাবে।',
-            style: const TextStyle(color: AppTheme.textSecondary)),
+            style:  TextStyle(color: AppTheme.textSecondary)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false),
               child: const Text('বাতিল')),
           TextButton(onPressed: () => Navigator.pop(context, true),
-              child: const Text('মুছো', style: TextStyle(color: AppTheme.red))),
+              child:  Text('মুছো', style: TextStyle(color: AppTheme.red))),
         ],
       ),
     );
@@ -108,7 +108,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final newId = await DBHelper.duplicateProject(p.id!);
     if (mounted && newId != null) {
       _load();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar( SnackBar(
         content: Text('✅ প্রজেক্ট কপি হয়েছে'),
         backgroundColor: AppTheme.green,
         duration: Duration(seconds: 2),
@@ -133,7 +133,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: AppTheme.border)),
             child: Text('📁 ${_projects.length} প্রজেক্ট',
-                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                style:  TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
           ),
         ]),
         automaticallyImplyLeading: false,
@@ -172,7 +172,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
         ],
-        bottom: const PreferredSize(
+        bottom:  PreferredSize(
           preferredSize: Size.fromHeight(1),
           child: Divider(height: 1, color: AppTheme.border),
         ),
@@ -226,7 +226,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       const SizedBox(height: 16),
       Text('এখনো কোনো প্রজেক্ট নেই', style: AppTheme.display(size: 18)),
       const SizedBox(height: 8),
-      const Text('+ বাটনে চাপো অথবা ZIP import করো',
+       Text('+ বাটনে চাপো অথবা ZIP import করো',
           style: TextStyle(color: AppTheme.textMuted, fontSize: 14)),
       const SizedBox(height: 20),
       OutlinedButton.icon(
@@ -282,7 +282,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(color: AppTheme.bg3,
                         borderRadius: BorderRadius.circular(8)),
-                    child: const Icon(Icons.more_vert, size: 16, color: AppTheme.textMuted),
+                    child:  Icon(Icons.more_vert, size: 16, color: AppTheme.textMuted),
                   ),
                   color: AppTheme.bg2,
                   onSelected: (v) { if (v == 'delete') _delete(p); },
@@ -297,7 +297,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ]),
               if (p.description != null && p.description!.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text(p.description!, style: const TextStyle(
+                Text(p.description!, style:  TextStyle(
                     color: AppTheme.textSecondary, fontSize: 13),
                     maxLines: 2, overflow: TextOverflow.ellipsis),
               ],
@@ -317,7 +317,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(width: 10),
                 _statChip('✅ ${st['done']}', AppTheme.green),
                 const Spacer(),
-                Text('${(progress * 100).round()}%', style: const TextStyle(
+                Text('${(progress * 100).round()}%', style:  TextStyle(
                     color: AppTheme.textSecondary, fontSize: 13,
                     fontWeight: FontWeight.w700)),
               ]),
