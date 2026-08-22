@@ -53,24 +53,24 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         backgroundColor: AppTheme.bg2,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(widget.file.name,
-              style: const TextStyle(color: AppTheme.textPrimary,
+              style:  TextStyle(color: AppTheme.textPrimary,
                   fontSize: 14, fontWeight: FontWeight.w700,
                   fontFamily: 'monospace'),
               overflow: TextOverflow.ellipsis),
           if (_totalPages > 0)
             Text('পৃষ্ঠা ${_currentPage + 1} / $_totalPages',
-                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                style:  TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
         ]),
         actions: [
           if (_controller != null && _totalPages > 1) ...[
             IconButton(
-              icon: const Icon(Icons.keyboard_arrow_up, color: AppTheme.textSecondary),
+              icon:  Icon(Icons.keyboard_arrow_up, color: AppTheme.textSecondary),
               onPressed: _currentPage > 0
                   ? () => _controller!.setPage(_currentPage - 1)
                   : null,
             ),
             IconButton(
-              icon: const Icon(Icons.keyboard_arrow_down, color: AppTheme.textSecondary),
+              icon:  Icon(Icons.keyboard_arrow_down, color: AppTheme.textSecondary),
               onPressed: _currentPage < _totalPages - 1
                   ? () => _controller!.setPage(_currentPage + 1)
                   : null,
@@ -79,7 +79,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: Column(
+          ?  Center(child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 CircularProgressIndicator(color: AppTheme.accent),
@@ -91,10 +91,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
               ? Center(child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    const Icon(Icons.picture_as_pdf_outlined,
+                     Icon(Icons.picture_as_pdf_outlined,
                         color: AppTheme.red, size: 56),
                     const SizedBox(height: 16),
-                    Text(_error!, style: const TextStyle(
+                    Text(_error!, style:  TextStyle(
                         color: AppTheme.textSecondary), textAlign: TextAlign.center),
                   ]),
                 ))
