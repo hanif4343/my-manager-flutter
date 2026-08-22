@@ -163,7 +163,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: const Icon(Icons.more_vert, size: 22),
                   color: AppTheme.bg2,
                   onSelected: (v) { if (v == 'import') _importProject(); },
-                  itemBuilder: (_) => const [
+                  itemBuilder: (_) => [
                     PopupMenuItem(value: 'import', child: Row(children: [
                       Icon(Icons.download_outlined, size: 18, color: AppTheme.textSecondary),
                       SizedBox(width: 10),
@@ -286,7 +286,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   color: AppTheme.bg2,
                   onSelected: (v) { if (v == 'delete') _delete(p); },
-                  itemBuilder: (_) => const [
+                  itemBuilder: (_) => [
                     PopupMenuItem(value: 'delete', child: Row(children: [
                       Icon(Icons.delete_outline, size: 18, color: AppTheme.red),
                       SizedBox(width: 10),
@@ -329,7 +329,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _iconBtn(IconData icon, VoidCallback onTap,
-      {Color color = AppTheme.textMuted, String? tooltip}) => Tooltip(
+      {Color? color, String? tooltip}) => Tooltip(
     message: tooltip ?? '',
     child: GestureDetector(
       onTap: onTap,
@@ -337,7 +337,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(color: AppTheme.bg3,
             borderRadius: BorderRadius.circular(8)),
-        child: Icon(icon, size: 16, color: color),
+        child: Icon(icon, size: 16, color: color ?? AppTheme.textMuted),
       ),
     ),
   );
