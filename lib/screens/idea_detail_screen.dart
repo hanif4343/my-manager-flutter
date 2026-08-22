@@ -64,7 +64,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
         Container(width: 40, height: 4, decoration: BoxDecoration(
             color: AppTheme.border, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 12),
-        const Text('ফাইল যোগ করো', style: TextStyle(color: AppTheme.textPrimary,
+         Text('ফাইল যোগ করো', style: TextStyle(color: AppTheme.textPrimary,
             fontSize: 15, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         _sheetTile(Icons.code_outlined, 'কোড / টেক্সট ফাইল', AppTheme.accent,
@@ -92,7 +92,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
         padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom,
             left: 16, right: 16, top: 20),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('নতুন টেক্সট/কোড ফাইল', style: TextStyle(
+           Text('নতুন টেক্সট/কোড ফাইল', style: TextStyle(
               color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           _field(nameCtrl, 'ফাইলের নাম: index.js, style.css, README.md'),
@@ -230,12 +230,12 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
     final result = await showDialog<String>(context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: const Text('রিনেম', style: TextStyle(color: AppTheme.textPrimary)),
+        title:  Text('রিনেম', style: TextStyle(color: AppTheme.textPrimary)),
         content: TextField(controller: ctrl, autofocus: true,
-          style: const TextStyle(color: AppTheme.textPrimary, fontFamily: 'monospace'),
+          style:  TextStyle(color: AppTheme.textPrimary, fontFamily: 'monospace'),
           decoration: InputDecoration(filled: true, fillColor: AppTheme.bg4,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AppTheme.border)),
+                borderSide:  BorderSide(color: AppTheme.border)),
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
                 borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
           ),
@@ -258,13 +258,13 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
     final confirm = await showDialog<bool>(context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: const Text('মুছবে?', style: TextStyle(color: AppTheme.textPrimary)),
+        title:  Text('মুছবে?', style: TextStyle(color: AppTheme.textPrimary)),
         content: Text('"${file.name}" মুছে যাবে।',
-            style: const TextStyle(color: AppTheme.textSecondary)),
+            style:  TextStyle(color: AppTheme.textSecondary)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
           TextButton(onPressed: () => Navigator.pop(context, true),
-              child: const Text('মুছো', style: TextStyle(color: AppTheme.red))),
+              child:  Text('মুছো', style: TextStyle(color: AppTheme.red))),
         ],
       ),
     );
@@ -334,12 +334,12 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
         Padding(
           padding: const EdgeInsets.all(16),
           child: Row(children: [
-            Text(file.name, style: const TextStyle(color: AppTheme.textPrimary,
+            Text(file.name, style:  TextStyle(color: AppTheme.textPrimary,
                 fontWeight: FontWeight.w700, fontFamily: 'monospace')),
             const SizedBox(width: 8),
             _vBadge('v${file.version}'),
             const SizedBox(width: 6),
-            Text(file.sizeLabel, style: const TextStyle(
+            Text(file.sizeLabel, style:  TextStyle(
                 color: AppTheme.textMuted, fontSize: 11)),
           ]),
         ),
@@ -456,7 +456,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                 SliverToBoxAdapter(
                   child: Container(width: double.infinity, padding: const EdgeInsets.all(14),
                       color: AppTheme.bg2,
-                      child: Text(_idea.description!, style: const TextStyle(
+                      child: Text(_idea.description!, style:  TextStyle(
                           color: AppTheme.textSecondary, fontSize: 13, height: 1.5))),
                 ),
               SliverToBoxAdapter(
@@ -466,7 +466,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                     const Text('🗂️', style: TextStyle(fontSize: 15)),
                     const SizedBox(width: 6),
                     Text('ফাইলসমূহ (${_files.length})',
-                        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13,
+                        style:  TextStyle(color: AppTheme.textSecondary, fontSize: 13,
                             fontWeight: FontWeight.w600)),
                     const Spacer(),
                     GestureDetector(
@@ -492,10 +492,10 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
                   child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                     const Text('📄', style: TextStyle(fontSize: 40)),
                     const SizedBox(height: 12),
-                    const Text('কোনো ফাইল নেই', style: TextStyle(
+                     Text('কোনো ফাইল নেই', style: TextStyle(
                         color: AppTheme.textSecondary, fontSize: 15)),
                     const SizedBox(height: 6),
-                    const Text('+ যোগ করো বাটনে চাপো', style: TextStyle(
+                     Text('+ যোগ করো বাটনে চাপো', style: TextStyle(
                         color: AppTheme.textMuted, fontSize: 13)),
                   ])),
                 )
@@ -588,18 +588,18 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
             ]),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(file.name, style: const TextStyle(color: AppTheme.textPrimary,
+              Text(file.name, style:  TextStyle(color: AppTheme.textPrimary,
                   fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
                   overflow: TextOverflow.ellipsis),
               const SizedBox(height: 3),
               Row(children: [
                 _vBadge('v${file.version}'),
                 const SizedBox(width: 8),
-                Text(file.sizeLabel, style: const TextStyle(
+                Text(file.sizeLabel, style:  TextStyle(
                     color: AppTheme.textMuted, fontSize: 11)),
                 if (file.isText) ...[
                   const SizedBox(width: 6),
-                  Text('${file.lineCount} লাইন', style: const TextStyle(
+                  Text('${file.lineCount} লাইন', style:  TextStyle(
                       color: AppTheme.textMuted, fontSize: 11)),
                 ],
                 if (file.isAudio) ...[
@@ -616,7 +616,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
             ])),
             GestureDetector(
               onTap: () => _showFileMenu(file),
-              child: const Padding(
+              child:  Padding(
                 padding: EdgeInsets.all(4),
                 child: Icon(Icons.more_vert, size: 18, color: AppTheme.textMuted),
               ),
@@ -661,12 +661,12 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
     style: TextStyle(color: AppTheme.textPrimary,
         fontFamily: mono ? 'monospace' : null, fontSize: 13),
     decoration: InputDecoration(
-      hintText: hint, hintStyle: const TextStyle(color: AppTheme.textMuted),
+      hintText: hint, hintStyle:  TextStyle(color: AppTheme.textMuted),
       filled: true, fillColor: AppTheme.bg3,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppTheme.border)),
+          borderSide:  BorderSide(color: AppTheme.border)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppTheme.border)),
+          borderSide:  BorderSide(color: AppTheme.border)),
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
