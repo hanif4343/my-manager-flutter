@@ -77,7 +77,7 @@ class _CopyMoveScreenState extends State<CopyMoveScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
           : _projects.isEmpty
-              ? const Center(child: Text('কোনো প্রজেক্ট নেই', style: TextStyle(color: AppTheme.textSecondary)))
+              ?  Center(child: Text('কোনো প্রজেক্ট নেই', style: TextStyle(color: AppTheme.textSecondary)))
               : ListView.builder(
                   padding: const EdgeInsets.all(12),
                   itemCount: _projects.length,
@@ -89,7 +89,7 @@ class _CopyMoveScreenState extends State<CopyMoveScreen> {
                       child: ExpansionTile(
                         leading: Container(width: 12, height: 12,
                             decoration: BoxDecoration(color: p.color, shape: BoxShape.circle)),
-                        title: Text(p.name, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
+                        title: Text(p.name, style:  TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
                         iconColor: AppTheme.textSecondary,
                         collapsedIconColor: AppTheme.textMuted,
                         children: ideas.map((idea) {
@@ -105,7 +105,7 @@ class _CopyMoveScreenState extends State<CopyMoveScreen> {
                                 style: TextStyle(
                                     color: isSame ? AppTheme.textMuted : AppTheme.textPrimary,
                                     fontSize: 13)),
-                            subtitle: isSame ? const Text('(বর্তমান)', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)) : null,
+                            subtitle: isSame ?  Text('(বর্তমান)', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)) : null,
                             onTap: isSame ? null : () => setState(() {
                               _selectedIdeaId = idea.id;
                               _selectedProjectId = p.id;
