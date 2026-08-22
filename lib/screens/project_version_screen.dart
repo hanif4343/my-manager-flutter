@@ -29,15 +29,15 @@ class _ProjectVersionScreenState extends State<ProjectVersionScreen> {
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
         title: Text('Version v$nextVersion সেভ করো',
-            style: const TextStyle(color: AppTheme.textPrimary)),
+            style:  TextStyle(color: AppTheme.textPrimary)),
         content: TextField(
           controller: noteCtrl, autofocus: true,
-          style: const TextStyle(color: AppTheme.textPrimary),
+          style:  TextStyle(color: AppTheme.textPrimary),
           decoration: InputDecoration(
             hintText: 'এই version-এ কী যোগ হলো?',
-            hintStyle: const TextStyle(color: AppTheme.textMuted),
+            hintStyle:  TextStyle(color: AppTheme.textMuted),
             filled: true, fillColor: AppTheme.bg4,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.border)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide:  BorderSide(color: AppTheme.border)),
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
           ),
         ),
@@ -64,9 +64,9 @@ class _ProjectVersionScreenState extends State<ProjectVersionScreen> {
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Version History', style: TextStyle(color: AppTheme.textPrimary, fontSize: 16)),
+           Text('Version History', style: TextStyle(color: AppTheme.textPrimary, fontSize: 16)),
           Text(widget.project.name,
-              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+              style:  TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
         ]),
       ),
       body: _loading
@@ -81,7 +81,7 @@ class _ProjectVersionScreenState extends State<ProjectVersionScreen> {
                       decoration: BoxDecoration(color: widget.project.color, shape: BoxShape.circle)),
                   const SizedBox(width: 10),
                   Text('বর্তমান version: ',
-                      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                      style:  TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
                   Text('v${widget.project.version}',
                       style: TextStyle(color: widget.project.color, fontSize: 15, fontWeight: FontWeight.w800)),
                   const Spacer(),
@@ -99,16 +99,16 @@ class _ProjectVersionScreenState extends State<ProjectVersionScreen> {
                   ),
                 ]),
               ),
-              const Divider(height: 1, color: AppTheme.border),
+               Divider(height: 1, color: AppTheme.border),
               Expanded(
                 child: _versions.isEmpty
                     ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                         const Text('📋', style: TextStyle(fontSize: 40)),
                         const SizedBox(height: 12),
-                        const Text('কোনো version history নেই',
+                         Text('কোনো version history নেই',
                             style: TextStyle(color: AppTheme.textSecondary, fontSize: 15)),
                         const SizedBox(height: 6),
-                        const Text('উপরের "নতুন Version" বাটনে চাপো',
+                         Text('উপরের "নতুন Version" বাটনে চাপো',
                             style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
                       ]))
                     : ListView.separated(
@@ -139,7 +139,7 @@ class _ProjectVersionScreenState extends State<ProjectVersionScreen> {
                                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Row(children: [
                                     Text('Version ${v['version']}',
-                                        style: const TextStyle(color: AppTheme.textPrimary,
+                                        style:  TextStyle(color: AppTheme.textPrimary,
                                             fontSize: 14, fontWeight: FontWeight.w600)),
                                     if (isLatest) ...[
                                       const SizedBox(width: 8),
@@ -147,17 +147,17 @@ class _ProjectVersionScreenState extends State<ProjectVersionScreen> {
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(color: AppTheme.green.withOpacity(0.2),
                                             borderRadius: BorderRadius.circular(4)),
-                                        child: const Text('Latest', style: TextStyle(color: AppTheme.green, fontSize: 10, fontWeight: FontWeight.w700)),
+                                        child:  Text('Latest', style: TextStyle(color: AppTheme.green, fontSize: 10, fontWeight: FontWeight.w700)),
                                       ),
                                     ],
                                   ]),
                                   if (v['note'] != null && v['note'].toString().isNotEmpty) ...[
                                     const SizedBox(height: 3),
-                                    Text(v['note'], style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                                    Text(v['note'], style:  TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
                                   ],
                                   const SizedBox(height: 4),
                                   Text('${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}',
-                                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                                      style:  TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                                 ])),
                               ]),
                             ),
