@@ -65,8 +65,8 @@ class _BackupScreenState extends State<BackupScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: const Text('Restore করবে?', style: TextStyle(color: AppTheme.textPrimary)),
-        content: const Text('Drive-এর backup দিয়ে সব local data replace হবে।\nএই কাজ undo করা যাবে না!',
+        title:  Text('Restore করবে?', style: TextStyle(color: AppTheme.textPrimary)),
+        content:  Text('Drive-এর backup দিয়ে সব local data replace হবে।\nএই কাজ undo করা যাবে না!',
             style: TextStyle(color: AppTheme.textSecondary)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
@@ -112,7 +112,7 @@ class _BackupScreenState extends State<BackupScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: const Text('Google Drive Backup',
+        title:  Text('Google Drive Backup',
             style: TextStyle(color: AppTheme.textPrimary)),
       ),
       body: _checking
@@ -175,11 +175,11 @@ class _BackupScreenState extends State<BackupScreen> {
                                 await DriveService.instance.signOut();
                                 setState(() {});
                               },
-                              icon: const Icon(Icons.logout, size: 16, color: AppTheme.red),
-                              label: const Text('Sign Out',
+                              icon:  Icon(Icons.logout, size: 16, color: AppTheme.red),
+                              label:  Text('Sign Out',
                                   style: TextStyle(color: AppTheme.red, fontWeight: FontWeight.w600)),
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: AppTheme.red),
+                                side:  BorderSide(color: AppTheme.red),
                                 padding: const EdgeInsets.symmetric(vertical: 10),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                               ),
@@ -215,13 +215,13 @@ class _BackupScreenState extends State<BackupScreen> {
                       border: Border.all(color: AppTheme.green.withOpacity(0.25)),
                     ),
                     child: Row(children: [
-                      const Icon(Icons.cloud_done_outlined, color: AppTheme.green, size: 18),
+                       Icon(Icons.cloud_done_outlined, color: AppTheme.green, size: 18),
                       const SizedBox(width: 10),
                       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        const Text('সর্বশেষ Backup',
+                         Text('সর্বশেষ Backup',
                             style: TextStyle(color: AppTheme.green, fontSize: 11, fontWeight: FontWeight.w600)),
                         Text(_formatDate(_lastBackup!),
-                            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                            style:  TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
                       ]),
                     ]),
                   ),
@@ -259,7 +259,7 @@ class _BackupScreenState extends State<BackupScreen> {
                     border: Border.all(color: AppTheme.border),
                   ),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('ℹ️ কীভাবে কাজ করে',
+                     Text('ℹ️ কীভাবে কাজ করে',
                         style: TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 10),
                     _infoRow('📤 Backup', 'সব project, idea, file → JSON → Drive/"MyManager_Backup"'),
@@ -321,7 +321,7 @@ class _BackupScreenState extends State<BackupScreen> {
                   color: enabled ? color : AppTheme.textMuted,
                   fontSize: 14, fontWeight: FontWeight.w700)),
               Text(sublabel,
-                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                  style:  TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
             ])),
             Icon(Icons.arrow_forward_ios, size: 14,
                 color: enabled ? color : AppTheme.textMuted),
@@ -336,7 +336,7 @@ class _BackupScreenState extends State<BackupScreen> {
           color: AppTheme.accent, fontSize: 12, fontWeight: FontWeight.w600)),
       const SizedBox(width: 8),
       Expanded(child: Text(desc,
-          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12))),
+          style:  TextStyle(color: AppTheme.textSecondary, fontSize: 12))),
     ]),
   );
 }
