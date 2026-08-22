@@ -51,14 +51,14 @@ class _FileEditorScreenState extends State<FileEditorScreen> {
         final result = await showDialog<bool>(context: context,
           builder: (_) => AlertDialog(
             backgroundColor: AppTheme.bg3,
-            title: const Text('সেভ করবে?', style: TextStyle(color: AppTheme.textPrimary)),
-            content: const Text('পরিবর্তন হারিয়ে যাবে।',
+            title:  Text('সেভ করবে?', style: TextStyle(color: AppTheme.textPrimary)),
+            content:  Text('পরিবর্তন হারিয়ে যাবে।',
                 style: TextStyle(color: AppTheme.textSecondary)),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context, false),
                   child: const Text('বাতিল')),
               TextButton(onPressed: () => Navigator.pop(context, true),
-                  child: const Text('সেভ না করে বেরাই',
+                  child:  Text('সেভ না করে বেরাই',
                       style: TextStyle(color: AppTheme.red))),
               ElevatedButton(
                 onPressed: () async { await _save(); if (context.mounted) Navigator.pop(context, true); },
@@ -75,7 +75,7 @@ class _FileEditorScreenState extends State<FileEditorScreen> {
         appBar: AppBar(
           backgroundColor: const Color(0xFF161B22),
           title: Row(children: [
-            Text(widget.file.name, style: const TextStyle(
+            Text(widget.file.name, style:  TextStyle(
                 fontFamily: 'monospace', fontSize: 13, color: AppTheme.textPrimary)),
             const SizedBox(width: 8),
             Container(
@@ -88,7 +88,7 @@ class _FileEditorScreenState extends State<FileEditorScreen> {
             ),
             if (_modified) ...[
               const SizedBox(width: 8),
-              Container(width: 8, height: 8, decoration: const BoxDecoration(
+              Container(width: 8, height: 8, decoration:  BoxDecoration(
                   color: AppTheme.yellow, shape: BoxShape.circle)),
             ],
           ]),
@@ -104,7 +104,7 @@ class _FileEditorScreenState extends State<FileEditorScreen> {
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(text: _ctrl.text));
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('কপি হয়েছে!'),
+                     SnackBar(content: Text('কপি হয়েছে!'),
                         backgroundColor: AppTheme.green, duration: Duration(seconds: 2)));
               },
               icon: const Icon(Icons.copy_outlined, size: 18),
@@ -125,17 +125,17 @@ class _FileEditorScreenState extends State<FileEditorScreen> {
               color: const Color(0xFF161B22),
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Row(children: [
-                Text('$_lineCount লাইন', style: const TextStyle(
+                Text('$_lineCount লাইন', style:  TextStyle(
                     color: AppTheme.textMuted, fontSize: 11, fontFamily: 'monospace')),
                 const SizedBox(width: 12),
-                Text('${_ctrl.text.length} chars', style: const TextStyle(
+                Text('${_ctrl.text.length} chars', style:  TextStyle(
                     color: AppTheme.textMuted, fontSize: 11, fontFamily: 'monospace')),
                 const Spacer(),
                 if (_previewMode)
                   const Text('PREVIEW', style: TextStyle(
                       color: AppTheme.accent, fontSize: 10, fontWeight: FontWeight.w700))
                 else
-                  Text(widget.file.ext.toUpperCase(), style: const TextStyle(
+                  Text(widget.file.ext.toUpperCase(), style:  TextStyle(
                       color: AppTheme.textSecondary, fontSize: 11, fontFamily: 'monospace')),
               ]),
             ),
@@ -156,7 +156,7 @@ class _FileEditorScreenState extends State<FileEditorScreen> {
                 textAlignVertical: TextAlignVertical.top,
                 style: const TextStyle(fontFamily: 'monospace', fontSize: 13.5,
                     color: Color(0xFFC9D1D9), height: 1.7),
-                decoration: const InputDecoration(
+                decoration:  InputDecoration(
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.all(16),
                   hintText: 'এখানে কোড বা টেক্সট লিখো...',
