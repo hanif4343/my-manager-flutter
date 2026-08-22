@@ -149,12 +149,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: const Text('Status পরিবর্তন করো', style: TextStyle(color: AppTheme.textPrimary)),
+        title:  Text('Status পরিবর্তন করো', style: TextStyle(color: AppTheme.textPrimary)),
         content: Column(mainAxisSize: MainAxisSize.min, children: ['todo','doing','done'].map((s) {
           final cfg = statusConfig[s]!;
           return ListTile(
             leading: Icon(Icons.circle, color: cfg['color'] as Color, size: 14),
-            title: Text(cfg['label'] as String, style: const TextStyle(color: AppTheme.textPrimary)),
+            title: Text(cfg['label'] as String, style:  TextStyle(color: AppTheme.textPrimary)),
             onTap: () => Navigator.pop(context, s),
           );
         }).toList()),
@@ -177,12 +177,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: Text('$count টা idea মুছবে?', style: const TextStyle(color: AppTheme.textPrimary)),
-        content: const Text('এই কাজ undo করা যাবে না।', style: TextStyle(color: AppTheme.textSecondary)),
+        title: Text('$count টা idea মুছবে?', style:  TextStyle(color: AppTheme.textPrimary)),
+        content:  Text('এই কাজ undo করা যাবে না।', style: TextStyle(color: AppTheme.textSecondary)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
           TextButton(onPressed: () => Navigator.pop(context, true),
-              child: const Text('মুছো', style: TextStyle(color: AppTheme.red))),
+              child:  Text('মুছো', style: TextStyle(color: AppTheme.red))),
         ],
       ),
     );
@@ -196,7 +196,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final projects = await DBHelper.getProjects();
     final others = projects.where((p) => p.id != widget.project.id).toList();
     if (others.isEmpty) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar( SnackBar(
         content: Text('অন্য কোনো project নেই'),
         backgroundColor: AppTheme.red,
       ));
@@ -207,13 +207,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: const Text('কোন project এ নিয়ে যাবে?', style: TextStyle(color: AppTheme.textPrimary)),
+        title:  Text('কোন project এ নিয়ে যাবে?', style: TextStyle(color: AppTheme.textPrimary)),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView(shrinkWrap: true, children: others.map((p) => ListTile(
             leading: Container(width: 12, height: 12,
                 decoration: BoxDecoration(color: p.color, shape: BoxShape.circle)),
-            title: Text(p.name, style: const TextStyle(color: AppTheme.textPrimary)),
+            title: Text(p.name, style:  TextStyle(color: AppTheme.textPrimary)),
             onTap: () => Navigator.pop(context, p),
           )).toList()),
         ),
@@ -321,7 +321,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
                   Row(children: [
                     Text(idea == null ? '💡 নতুন আইডিয়া' : '✏️ আইডিয়া এডিট',
-                        style: const TextStyle(color: AppTheme.textPrimary,
+                        style:  TextStyle(color: AppTheme.textPrimary,
                             fontSize: 17, fontWeight: FontWeight.w700)),
                     const Spacer(),
                     if (idea != null)
@@ -333,7 +333,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           ].join('\n\n');
                           Clipboard.setData(ClipboardData(text: text));
                           ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('টেক্সট কপি হয়েছে! ✅'),
+                               SnackBar(content: Text('টেক্সট কপি হয়েছে! ✅'),
                                   backgroundColor: AppTheme.green,
                                   duration: Duration(seconds: 1)));
                         },
@@ -342,7 +342,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           decoration: BoxDecoration(color: AppTheme.bg3,
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: AppTheme.border)),
-                          child: const Row(children: [
+                          child:  Row(children: [
                             Icon(Icons.copy_outlined, size: 13, color: AppTheme.textSecondary),
                             SizedBox(width: 4),
                             Text('কপি', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
@@ -358,7 +358,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   const SizedBox(height: 12),
 
                   // Priority
-                  const Text('অগ্রাধিকার:', style: TextStyle(
+                   Text('অগ্রাধিকার:', style: TextStyle(
                       color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   Row(children: ['high','medium','low'].map((k) {
@@ -389,7 +389,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   const SizedBox(height: 12),
 
                   // ── DEADLINE ────────────────────────────────
-                  const Text('Deadline:', style: TextStyle(
+                   Text('Deadline:', style: TextStyle(
                       color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   GestureDetector(
@@ -401,7 +401,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
                         builder: (c, child) => Theme(
                           data: ThemeData.dark().copyWith(colorScheme:
-                          const ColorScheme.dark(primary: Color(0xFFEF4444), surface: AppTheme.bg3)),
+                           ColorScheme.dark(primary: Color(0xFFEF4444), surface: AppTheme.bg3)),
                           child: child!,
                         ),
                       );
@@ -433,14 +433,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         if (deadline != null)
                           GestureDetector(
                               onTap: () => setS(() => deadline = null),
-                              child: const Icon(Icons.close, color: AppTheme.textMuted, size: 16)),
+                              child:  Icon(Icons.close, color: AppTheme.textMuted, size: 16)),
                       ]),
                     ),
                   ),
                   const SizedBox(height: 12),
 
                   // Reminder
-                  const Text('রিমাইন্ডার:', style: TextStyle(
+                   Text('রিমাইন্ডার:', style: TextStyle(
                       color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   GestureDetector(
@@ -452,7 +452,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         lastDate: DateTime.now().add(const Duration(days: 365)),
                         builder: (c, child) => Theme(
                           data: ThemeData.dark().copyWith(colorScheme:
-                          const ColorScheme.dark(primary: AppTheme.accent, surface: AppTheme.bg3)),
+                           ColorScheme.dark(primary: AppTheme.accent, surface: AppTheme.bg3)),
                           child: child!,
                         ),
                       );
@@ -462,7 +462,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         initialTime: const TimeOfDay(hour: 9, minute: 0),
                         builder: (c, child) => Theme(
                           data: ThemeData.dark().copyWith(colorScheme:
-                          const ColorScheme.dark(primary: AppTheme.accent, surface: AppTheme.bg3)),
+                           ColorScheme.dark(primary: AppTheme.accent, surface: AppTheme.bg3)),
                           child: child!,
                         ),
                       );
@@ -495,14 +495,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         if (reminder != null)
                           GestureDetector(
                               onTap: () => setS(() => reminder = null),
-                              child: const Icon(Icons.close, color: AppTheme.textMuted, size: 16)),
+                              child:  Icon(Icons.close, color: AppTheme.textMuted, size: 16)),
                       ]),
                     ),
                   ),
                   const SizedBox(height: 14),
 
                   // Attachments
-                  const Text('ফাইল / ছবি / ভয়েস:', style: TextStyle(
+                   Text('ফাইল / ছবি / ভয়েস:', style: TextStyle(
                       color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   Row(children: [
@@ -559,12 +559,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           Icon(icon, color: color, size: 16),
                           const SizedBox(width: 8),
                           Expanded(child: Text(a.name,
-                              style: const TextStyle(color: AppTheme.textPrimary,
+                              style:  TextStyle(color: AppTheme.textPrimary,
                                   fontSize: 12, fontFamily: 'monospace'),
                               overflow: TextOverflow.ellipsis)),
                           GestureDetector(
                             onTap: () => setS(() => attachments.removeAt(i)),
-                            child: const Icon(Icons.close, color: AppTheme.textMuted, size: 16),
+                            child:  Icon(Icons.close, color: AppTheme.textMuted, size: 16),
                           ),
                         ]),
                       );
@@ -646,7 +646,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     ].join('\n\n');
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('কপি হয়েছে! ✅'),
+         SnackBar(content: Text('কপি হয়েছে! ✅'),
             backgroundColor: AppTheme.green, duration: Duration(seconds: 1)));
   }
 
@@ -658,7 +658,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       if (idea.id != null) {
         await DBHelper.archiveIdea(idea.id!);
         _load();
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar( SnackBar(
           content: Text('✅ Done! আর্কাইভে চলে গেছে'),
           backgroundColor: AppTheme.green, duration: Duration(seconds: 2),
         ));
@@ -687,16 +687,16 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(children: [
-              const Icon(Icons.archive_outlined, color: AppTheme.green, size: 20),
+               Icon(Icons.archive_outlined, color: AppTheme.green, size: 20),
               const SizedBox(width: 8),
-              Text('আর্কাইভ (${archived.length})', style: const TextStyle(
+              Text('আর্কাইভ (${archived.length})', style:  TextStyle(
                   color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
             ]),
           ),
           const SizedBox(height: 8),
           Expanded(
             child: archived.isEmpty
-                ? const Center(child: Text('কোনো আর্কাইভ নেই',
+                ?  Center(child: Text('কোনো আর্কাইভ নেই',
                 style: TextStyle(color: AppTheme.textMuted)))
                 : ListView.separated(
                 controller: scrollCtrl,
@@ -721,10 +721,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           color: AppTheme.green.withOpacity(0.12),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.check_circle_rounded,
+                        child:  Icon(Icons.check_circle_rounded,
                             color: AppTheme.green, size: 20),
                       ),
-                      title: Text(idea.title, style: const TextStyle(
+                      title: Text(idea.title, style:  TextStyle(
                           color: AppTheme.textMuted, fontSize: 13,
                           fontWeight: FontWeight.w600,
                           decoration: TextDecoration.lineThrough)),
@@ -732,11 +732,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (idea.description != null && idea.description!.isNotEmpty)
-                            Text(idea.description!, style: const TextStyle(
+                            Text(idea.description!, style:  TextStyle(
                                 color: AppTheme.textMuted, fontSize: 11),
                                 maxLines: 1, overflow: TextOverflow.ellipsis),
                           const SizedBox(height: 2),
-                          Text('✅ Done: \$dateStr', style: const TextStyle(
+                          Text('✅ Done: \$dateStr', style:  TextStyle(
                               color: AppTheme.green, fontSize: 10, fontWeight: FontWeight.w500)),
                         ],
                       ),
@@ -776,7 +776,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                               borderRadius: BorderRadius.circular(7),
                               border: Border.all(color: AppTheme.red.withOpacity(0.3)),
                             ),
-                            child: const Icon(Icons.delete_outline, color: AppTheme.red, size: 14),
+                            child:  Icon(Icons.delete_outline, color: AppTheme.red, size: 14),
                           ),
                         ),
                       ]),
@@ -794,13 +794,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final confirm = await showDialog<bool>(context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.bg3,
-        title: const Text('মুছবে?', style: TextStyle(color: AppTheme.textPrimary)),
+        title:  Text('মুছবে?', style: TextStyle(color: AppTheme.textPrimary)),
         content: Text('"${idea.title}" মুছে যাবে।',
-            style: const TextStyle(color: AppTheme.textSecondary)),
+            style:  TextStyle(color: AppTheme.textSecondary)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
           TextButton(onPressed: () => Navigator.pop(context, true),
-              child: const Text('মুছো', style: TextStyle(color: AppTheme.red))),
+              child:  Text('মুছো', style: TextStyle(color: AppTheme.red))),
         ],
       ),
     );
@@ -821,7 +821,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       appBar: AppBar(
         title: _selectMode
             ? Text('${_selected.length} selected',
-            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700))
+            style:  TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700))
             : Row(children: [
           Container(width: 10, height: 10, decoration: BoxDecoration(
               color: widget.project.color, shape: BoxShape.circle)),
@@ -832,7 +832,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         ]),
         leading: _selectMode
             ? IconButton(
-            icon: const Icon(Icons.close, color: AppTheme.textSecondary),
+            icon:  Icon(Icons.close, color: AppTheme.textSecondary),
             onPressed: _toggleSelectMode)
             : null,
         actions: _selectMode
@@ -848,7 +848,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           if (_selected.isNotEmpty) ...[
             IconButton(
               onPressed: _bulkStatusChange,
-              icon: const Icon(Icons.swap_horiz, color: AppTheme.yellow, size: 22),
+              icon:  Icon(Icons.swap_horiz, color: AppTheme.yellow, size: 22),
               tooltip: 'Status পরিবর্তন',
             ),
             IconButton(
@@ -858,7 +858,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             ),
             IconButton(
               onPressed: _bulkDelete,
-              icon: const Icon(Icons.delete_outline, color: AppTheme.red, size: 22),
+              icon:  Icon(Icons.delete_outline, color: AppTheme.red, size: 22),
               tooltip: 'মুছো',
             ),
           ],
@@ -871,7 +871,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
           PopupMenuButton<String>(
             color: AppTheme.bg3,
-            icon: const Icon(Icons.sort, color: AppTheme.textSecondary, size: 20),
+            icon:  Icon(Icons.sort, color: AppTheme.textSecondary, size: 20),
             onSelected: (v) => setState(() => _sort = v),
             itemBuilder: (_) => [
               _menuItem('priority', Icons.flag_outlined, 'Priority অনুযায়ী'),
@@ -916,8 +916,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             ]),
             const SizedBox(height: 10),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('অগ্রগতি', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-              Text('${(progress*100).round()}%', style: const TextStyle(
+               Text('অগ্রগতি', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+              Text('${(progress*100).round()}%', style:  TextStyle(
                   color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w700)),
             ]),
             const SizedBox(height: 4),
@@ -947,7 +947,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             ]),
           ),
         ),
-        const Divider(height: 1, color: AppTheme.border),
+         Divider(height: 1, color: AppTheme.border),
         Expanded(
           child: sorted.isEmpty
               ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -957,7 +957,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               _filter == 'today' ? 'আজকে কোনো deadline নেই 🎉'
                   : _filter == 'overdue' ? 'কোনো overdue নেই 🎉'
                   : 'কোনো আইডিয়া নেই',
-              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 15),
+              style:  TextStyle(color: AppTheme.textSecondary, fontSize: 15),
             ),
           ]))
               : ListView.separated(
@@ -990,7 +990,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: AppTheme.green.withOpacity(0.5)),
             ),
-            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+            child:  Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.archive_outlined, size: 13, color: AppTheme.green),
               SizedBox(width: 5),
               Text('📦 আর্কাইভ', style: TextStyle(
@@ -1162,14 +1162,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           decoration: BoxDecoration(color: AppTheme.bg3,
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: AppTheme.border)),
-                          child: const Icon(Icons.copy_outlined,
+                          child:  Icon(Icons.copy_outlined,
                               size: 18, color: AppTheme.textSecondary),
                         ),
                       ),
                   ]),
                   if (idea.description != null && idea.description!.isNotEmpty) ...[
                     const SizedBox(height: 3),
-                    Text(idea.description!, style: const TextStyle(
+                    Text(idea.description!, style:  TextStyle(
                         color: AppTheme.textSecondary, fontSize: 12),
                         maxLines: 2, overflow: TextOverflow.ellipsis),
                   ],
@@ -1210,9 +1210,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: AppTheme.red.withOpacity(0.5))),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.warning_amber_rounded, size: 11, color: AppTheme.red),
+           Icon(Icons.warning_amber_rounded, size: 11, color: AppTheme.red),
           const SizedBox(width: 3),
-          Text('OVERDUE · $label', style: const TextStyle(
+          Text('OVERDUE · $label', style:  TextStyle(
               color: AppTheme.red, fontSize: 10, fontWeight: FontWeight.w700)),
         ]),
       );
@@ -1224,7 +1224,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             color: AppTheme.yellow.withOpacity(0.15),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: AppTheme.yellow.withOpacity(0.5))),
-        child: Text('আজকে deadline!', style: const TextStyle(
+        child: Text('আজকে deadline!', style:  TextStyle(
             color: AppTheme.yellow, fontSize: 10, fontWeight: FontWeight.w700)),
       );
     }
@@ -1233,7 +1233,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       decoration: BoxDecoration(
           color: AppTheme.bg3, borderRadius: BorderRadius.circular(20),
           border: Border.all(color: AppTheme.border)),
-      child: Text(label, style: const TextStyle(
+      child: Text(label, style:  TextStyle(
           color: AppTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
     );
   }
@@ -1286,7 +1286,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       child: Column(children: [
         Text(val, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.w700)),
         const SizedBox(height: 2),
-        Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+        Text(label, style:  TextStyle(color: AppTheme.textMuted, fontSize: 11)),
       ]),
     ),
   );
@@ -1300,14 +1300,14 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   Widget _field(TextEditingController ctrl, String hint, {int maxLines=1}) => TextField(
     controller: ctrl, maxLines: maxLines,
-    style: const TextStyle(color: AppTheme.textPrimary),
+    style:  TextStyle(color: AppTheme.textPrimary),
     decoration: InputDecoration(
-      hintText: hint, hintStyle: const TextStyle(color: AppTheme.textMuted),
+      hintText: hint, hintStyle:  TextStyle(color: AppTheme.textMuted),
       filled: true, fillColor: AppTheme.bg3,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppTheme.border)),
+          borderSide:  BorderSide(color: AppTheme.border)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppTheme.border)),
+          borderSide:  BorderSide(color: AppTheme.border)),
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
