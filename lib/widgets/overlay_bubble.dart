@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:android_intent_plus/android_intent.dart';
@@ -9,25 +10,29 @@ import '../models/project.dart';
 
 /// Content shown inside the system-wide overlay window (the actual
 /// Messenger-style chat head that floats over other apps / the home
-/// screen). This runs in its own isolated Flutter engine — started from
-/// `overlayMain()` in main.dart — completely separate from the main app
-/// UI, which is why it has its own tiny widget tree here.
+/// screen). Runs in its own isolated Flutter engine, started from
+/// `overlayMain()` in main.dart.
 ///
-/// Design notes (read before changing the drag logic):
-///  - The plugin's own native `enableDrag` is kept OFF everywhere. When it
-///    was on, dragging inside the *expanded* quick-add panel (e.g. tapping
-///    a project chip) was being captured as a window-drag instead of a
-///    button tap. Instead, dragging is done entirely in Flutter via a
-///    small dedicated handle + `moveOverlay()`, which only exists on the
-///    collapsed bubble — so it can never interfere with the form.
-///  - "Drag down to remove" is approximated using the *cumulative distance
-///    dragged downward from where the drag started*, not the bubble's
-///    actual position on the screen. The overlay's own Flutter engine only
-///    knows the size of its own tiny window (60x60 / 320x?), not the full
-///    device screen, so there's no reliable way to detect "you're now near
-///    the bottom of the screen" from in here. This is a practical
-///    approximation, not pixel-perfect Messenger behavior — worth testing
-///    on your device and tweaking `_deleteThreshold` if it feels off.
+/// ── Why dragging temporarily goes fullscreen ─────────────────────
+/// The collapsed bubble's native window is only 60x60 — from inside that
+/// tiny window, Flutter has no idea how big the actual device screen is,
+/// so there's no way to know "the middle of the screen" or "just above
+/// the nav bar" for the Messenger-style delete zone. The fix: the moment
+/// a drag starts, the window is resized to cover the full screen
+/// (transparent everywhere except the bubble itself), which makes
+/// `MediaQuery` report real screen dimensions for as long as the drag
+/// lasts. As soon as the drag ends, it shrinks back down to a normal
+/// small bubble — a fullscreen window is only ever touch-capturing while
+/// actively dragging, never while idle.
+///
+/// A `GlobalKey` keeps the same drag GestureDetector alive across that
+/// resize (Flutter would otherwise treat the small-bubble and
+/// fullscreen-bubble as different widgets and drop the in-progress
+/// gesture). There's also a safety timer: if a drag ever stops receiving
+/// updates (a lost gesture, for whatever reason) for 4 seconds, the
+/// bubble force-collapses back to a small window on its own, so a broken
+/// gesture can never leave a fullscreen touch-blocking window stuck over
+/// the whole screen.
 class OverlayBubble extends StatefulWidget {
   const OverlayBubble({super.key});
   @override State<OverlayBubble> createState() => _OverlayBubbleState();
@@ -37,7 +42,10 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   static const collapsedSize = 60;
   static const expandedWidth = 300;
   static const expandedHeight = 320;
-  static const _deleteThreshold = 380.0; // px of cumulative downward drag
+  static const _deleteZoneSize = 64.0;
+  static const _deleteSnapDistance = 70.0;
+
+  final GlobalKey _dragKey = GlobalKey();
 
   bool _expanded = false;
   bool _loading = true;
@@ -45,10 +53,12 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   int? _selectedProjectId;
   final _ctrl = TextEditingController();
 
-  // Custom drag state (collapsed bubble only)
-  Offset? _pos;
-  double _dragCumulativeDy = 0;
-  bool _showDeleteHint = false;
+  // Drag state
+  bool _dragMode = false;
+  Offset _pos = const Offset(0, 300); // top-left of the 60x60 bubble, screen coords
+  bool _belowMiddle = false;
+  bool _nearDelete = false;
+  Timer? _safetyTimer;
 
   @override
   void initState() {
@@ -57,13 +67,18 @@ class _OverlayBubbleState extends State<OverlayBubble> {
     _syncPosition();
   }
 
+  @override
+  void dispose() {
+    _safetyTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _syncPosition() async {
     try {
       final p = await FlutterOverlayWindow.getOverlayPosition();
-      if (mounted) setState(() => _pos = Offset(p.x.toDouble(), p.y.toDouble()));
+      if (mounted) setState(() => _pos = Offset(p.x, p.y));
     } catch (_) {
-      // Not fatal — we just won't have an initial position to drag from
-      // until the first successful call.
+      // Falls back to the default Offset above — not fatal.
     }
   }
 
@@ -102,8 +117,6 @@ class _OverlayBubbleState extends State<OverlayBubble> {
       projectId: _selectedProjectId!, title: title,
       createdAt: n, updatedAt: n,
     ));
-    // Let the main app know something changed, in case it's open in the
-    // background and wants to refresh its project list.
     await FlutterOverlayWindow.shareData('idea_added');
     await _collapse();
   }
@@ -115,45 +128,84 @@ class _OverlayBubbleState extends State<OverlayBubble> {
         action: 'android.intent.action.MAIN',
         package: 'com.hanif.mymanager',
         componentName: 'com.hanif.mymanager.MainActivity',
-        flags: [
-          Flag.FLAG_ACTIVITY_NEW_TASK,
-          Flag.FLAG_ACTIVITY_REORDER_TO_FRONT,
-        ],
+        flags: [Flag.FLAG_ACTIVITY_NEW_TASK, Flag.FLAG_ACTIVITY_REORDER_TO_FRONT],
       );
       await intent.launch();
     } catch (_) {
-      // If this fails on some device/launcher combo, at worst nothing
-      // happens — the bubble itself keeps working either way.
+      // At worst nothing happens — the bubble itself keeps working.
     }
   }
 
-  // ── Custom drag (collapsed bubble's handle only) ─────────────────
-  void _onHandlePanStart(DragStartDetails d) {
-    setState(() { _dragCumulativeDy = 0; _showDeleteHint = false; });
+  // ── Drag lifecycle ────────────────────────────────────────────
+  Future<void> _onDragStart(DragStartDetails d) async {
+    setState(() { _dragMode = true; _belowMiddle = false; _nearDelete = false; });
+    _armSafetyTimer();
+    // Temporarily cover the whole screen so we can read real screen
+    // dimensions and place the delete zone exactly like Messenger does.
+    await FlutterOverlayWindow.resizeOverlay(
+        WindowSize.matchParent, WindowSize.fullCover, false);
   }
 
-  Future<void> _onHandlePanUpdate(DragUpdateDetails d) async {
-    if (_pos == null) return;
-    final next = _pos! + d.delta;
+  void _onDragUpdate(DragUpdateDetails d) {
+    if (!_dragMode) return;
+    _armSafetyTimer();
+    final size = MediaQuery.of(context).size;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
     setState(() {
-      _pos = next;
-      _dragCumulativeDy = (_dragCumulativeDy + d.delta.dy)
-          .clamp(0.0, _deleteThreshold + 100);
-      _showDeleteHint = _dragCumulativeDy >= _deleteThreshold;
+      _pos = Offset(
+        (_pos.dx + d.delta.dx).clamp(0.0, size.width - collapsedSize),
+        (_pos.dy + d.delta.dy).clamp(0.0, size.height - collapsedSize),
+      );
+      // The delete zone only appears once the bubble crosses the middle
+      // of the screen — exactly like Messenger.
+      _belowMiddle = (_pos.dy + collapsedSize / 2) > size.height / 2;
+      if (_belowMiddle) {
+        final bubbleCenter = Offset(_pos.dx + collapsedSize / 2, _pos.dy + collapsedSize / 2);
+        final deleteCenter = Offset(size.width / 2, size.height - bottomInset - 64);
+        _nearDelete = (bubbleCenter - deleteCenter).distance < _deleteSnapDistance;
+      } else {
+        _nearDelete = false;
+      }
     });
-    try {
-      await FlutterOverlayWindow.moveOverlay(OverlayPosition(next.dx, next.dy));
-    } catch (_) {/* best-effort */}
   }
 
-  Future<void> _onHandlePanEnd(DragEndDetails d) async {
-    final shouldDelete = _showDeleteHint;
-    setState(() { _dragCumulativeDy = 0; _showDeleteHint = false; });
+  Future<void> _onDragEnd(DragEndDetails d) async {
+    _safetyTimer?.cancel();
+    final shouldDelete = _nearDelete;
     if (shouldDelete) {
-      // Session-only close: doesn't touch the persisted "bubble_enabled"
+      // Session-only close — doesn't touch the persisted "bubble_enabled"
       // setting, so the bubble comes back next time the app is opened.
       await FlutterOverlayWindow.closeOverlay();
+      return;
     }
+    await _snapBackToBubble();
+  }
+
+  Future<void> _snapBackToBubble() async {
+    final size = MediaQuery.of(context).size;
+    final snapX = (_pos.dx + collapsedSize / 2 > size.width / 2)
+        ? size.width - collapsedSize - 12
+        : 12.0;
+    final finalPos = Offset(snapX, _pos.dy);
+    await FlutterOverlayWindow.resizeOverlay(collapsedSize, collapsedSize, false);
+    await FlutterOverlayWindow.moveOverlay(OverlayPosition(finalPos.dx, finalPos.dy));
+    if (mounted) setState(() {
+      _pos = finalPos;
+      _dragMode = false;
+      _belowMiddle = false;
+      _nearDelete = false;
+    });
+  }
+
+  /// If a drag gesture ever stops delivering updates (e.g. a dropped
+  /// pointer event), this forces the window back to a small bubble after
+  /// 4 idle seconds, so it can never get stuck full-screen and block the
+  /// rest of the device.
+  void _armSafetyTimer() {
+    _safetyTimer?.cancel();
+    _safetyTimer = Timer(const Duration(seconds: 4), () {
+      if (_dragMode) _snapBackToBubble();
+    });
   }
 
   @override
@@ -162,44 +214,45 @@ class _OverlayBubbleState extends State<OverlayBubble> {
       debugShowCheckedModeBanner: false,
       home: Scaffold(
         backgroundColor: Colors.transparent,
-        body: _expanded ? _expandedPanel() : _collapsedBubble(),
+        body: _expanded
+            ? _expandedPanel()
+            : (_dragMode ? _dragOverlay() : _collapsedBubble()),
       ),
     );
   }
 
+  Widget _bubbleVisual({required bool danger}) => Container(
+    width: collapsedSize.toDouble(),
+    height: collapsedSize.toDouble(),
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft, end: Alignment.bottomRight,
+        colors: danger
+            ? const [AppTheme.danger, Color(0xFFB91C1C)]
+            : const [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+      ),
+      shape: BoxShape.circle,
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.35),
+          blurRadius: 10, offset: const Offset(0, 3))],
+    ),
+    child: Icon(danger ? Icons.delete_outline : Icons.lightbulb_outline,
+        color: Colors.white, size: 26),
+  );
+
   Widget _collapsedBubble() => Stack(children: [
     GestureDetector(
       onTap: _expand,
-      child: Container(
-        width: collapsedSize.toDouble(),
-        height: collapsedSize.toDouble(),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft, end: Alignment.bottomRight,
-            colors: _showDeleteHint
-                ? [AppTheme.red, const Color(0xFFB91C1C)]
-                : const [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-          ),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.35),
-                blurRadius: 10, offset: const Offset(0, 3)),
-          ],
-        ),
-        child: Icon(
-          _showDeleteHint ? Icons.delete_outline : Icons.lightbulb_outline,
-          color: Colors.white, size: 26,
-        ),
-      ),
+      child: _bubbleVisual(danger: false),
     ),
-    // Small drag handle — this is the *only* part of the collapsed bubble
-    // that moves the window. Tapping the rest of the circle expands it.
+    // Small drag handle — the only part of the collapsed bubble that
+    // starts a move. Tapping the rest of the circle expands it instead.
     Positioned(
       right: 0, bottom: 0,
       child: GestureDetector(
-        onPanStart: _onHandlePanStart,
-        onPanUpdate: _onHandlePanUpdate,
-        onPanEnd: _onHandlePanEnd,
+        key: _dragKey,
+        onPanStart: _onDragStart,
+        onPanUpdate: _onDragUpdate,
+        onPanEnd: _onDragEnd,
         child: Container(
           width: 20, height: 20,
           decoration: BoxDecoration(
@@ -213,6 +266,46 @@ class _OverlayBubbleState extends State<OverlayBubble> {
     ),
   ]);
 
+  Widget _dragOverlay() {
+    final size = MediaQuery.of(context).size;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final deleteCenter = Offset(size.width / 2, size.height - bottomInset - 64);
+    return Stack(children: [
+      // Delete zone — hidden until the bubble crosses the vertical
+      // middle of the screen, then fades in near the nav bar.
+      AnimatedOpacity(
+        duration: const Duration(milliseconds: 150),
+        opacity: _belowMiddle ? 1 : 0,
+        child: Positioned(
+          left: deleteCenter.dx - _deleteZoneSize / 2,
+          top: deleteCenter.dy - _deleteZoneSize / 2,
+          child: AnimatedScale(
+            duration: const Duration(milliseconds: 120),
+            scale: _nearDelete ? 1.15 : 1.0,
+            child: Container(
+              width: _deleteZoneSize, height: _deleteZoneSize,
+              decoration: BoxDecoration(
+                color: _nearDelete ? AppTheme.danger : Colors.black.withOpacity(0.55),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withOpacity(0.7), width: 1.5),
+              ),
+              child: const Icon(Icons.close, color: Colors.white, size: 28),
+            ),
+          ),
+        ),
+      ),
+      Positioned(
+        left: _pos.dx, top: _pos.dy,
+        child: GestureDetector(
+          key: _dragKey,
+          onPanUpdate: _onDragUpdate,
+          onPanEnd: _onDragEnd,
+          child: _bubbleVisual(danger: _nearDelete),
+        ),
+      ),
+    ]);
+  }
+
   Widget _expandedPanel() => Center(
     child: Container(
       width: expandedWidth.toDouble(),
@@ -222,10 +315,8 @@ class _OverlayBubbleState extends State<OverlayBubble> {
         color: AppTheme.bg2,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: AppTheme.border),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.4),
-              blurRadius: 16, offset: const Offset(0, 6)),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4),
+            blurRadius: 16, offset: const Offset(0, 6))],
       ),
       child: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
@@ -266,13 +357,14 @@ class _OverlayBubbleState extends State<OverlayBubble> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: sel ? p.color.withOpacity(0.2) : AppTheme.bg3,
+                            color: sel ? AppTheme.accent.withOpacity(0.15) : AppTheme.bg3,
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: sel ? p.color : AppTheme.border,
+                            border: Border.all(
+                                color: sel ? AppTheme.accent : AppTheme.border,
                                 width: sel ? 2 : 1),
                           ),
                           child: Text(p.name, style: TextStyle(
-                              color: sel ? p.color : AppTheme.textSecondary,
+                              color: sel ? AppTheme.accent : AppTheme.textSecondary,
                               fontSize: 12, fontWeight: FontWeight.w600)),
                         ),
                       ),
