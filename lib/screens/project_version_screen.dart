@@ -78,12 +78,12 @@ class _ProjectVersionScreenState extends State<ProjectVersionScreen> {
                 color: AppTheme.bg2,
                 child: Row(children: [
                   Container(width: 12, height: 12,
-                      decoration: BoxDecoration(color: widget.project.color, shape: BoxShape.circle)),
+                      decoration: BoxDecoration(color: AppTheme.textMuted, shape: BoxShape.circle)),
                   const SizedBox(width: 10),
                   Text('বর্তমান version: ',
                       style:  TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
                   Text('v${widget.project.version}',
-                      style: TextStyle(color: widget.project.color, fontSize: 15, fontWeight: FontWeight.w800)),
+                      style: TextStyle(color: AppTheme.textPrimary, fontSize: 15, fontWeight: FontWeight.w800)),
                   const Spacer(),
                   GestureDetector(
                     onTap: _saveNewVersion,
