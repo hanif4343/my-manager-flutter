@@ -100,14 +100,14 @@ class _SearchScreenState extends State<SearchScreen> {
                         leading: Container(
                           width: 36, height: 36,
                           decoration: BoxDecoration(
-                            color: r.project.color.withOpacity(0.15),
+                            color: AppTheme.bg3,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Icon(
                             r.type == 'project' ? Icons.folder_outlined
                                 : r.type == 'idea' ? Icons.lightbulb_outline
                                     : Icons.insert_drive_file_outlined,
-                            color: r.project.color, size: 18,
+                            color: AppTheme.textSecondary, size: 18,
                           ),
                         ),
                         title: Text(r.title,
@@ -120,7 +120,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         trailing: Text(
                           r.type == 'project' ? 'প্রজেক্ট'
                               : r.type == 'idea' ? 'আইডিয়া' : 'ফাইল',
-                          style: TextStyle(color: r.project.color,
+                          style: TextStyle(color: AppTheme.textMuted,
                               fontSize: 11, fontWeight: FontWeight.w600),
                         ),
                         onTap: () {
