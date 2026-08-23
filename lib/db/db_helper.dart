@@ -3,10 +3,11 @@ import 'package:path/path.dart';
 import '../models/project.dart';
 import '../models/idea.dart';
 import '../models/idea_file.dart';
+import '../models/checklist_item.dart';
 
 class DBHelper {
   static Database? _db;
-  static const _version = 5;
+  static const _version = 6;
 
   static Future<Database> get db async {
     _db ??= await _initDB();
@@ -74,6 +75,18 @@ class DBHelper {
         FOREIGN KEY(project_id) REFERENCES projects(id)
       )
     ''');
+    await db.execute('''
+      CREATE TABLE checklist_items(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        idea_id INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        done INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY(idea_id) REFERENCES ideas(id)
+      )
+    ''');
   }
 
   static Future<void> _onUpgrade(Database db, int oldV, int newV) async {
@@ -109,6 +122,22 @@ class DBHelper {
     if (oldV < 5) {
       try {
         await db.execute('ALTER TABLE ideas ADD COLUMN deadline INTEGER');
+      } catch (_) {}
+    }
+    if (oldV < 6) {
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS checklist_items(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            idea_id INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            done INTEGER DEFAULT 0,
+            sort_order INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY(idea_id) REFERENCES ideas(id)
+          )
+        ''');
       } catch (_) {}
     }
   }
@@ -265,6 +294,7 @@ class DBHelper {
   static Future<void> deleteIdea(int id) async {
     final d = await db;
     await d.delete('idea_files', where: 'idea_id=?', whereArgs: [id]);
+    await d.delete('checklist_items', where: 'idea_id=?', whereArgs: [id]);
     await d.delete('ideas', where: 'id=?', whereArgs: [id]);
   }
 
@@ -282,6 +312,7 @@ class DBHelper {
     final d = await db;
     for (final id in ids) {
       await d.delete('idea_files', where: 'idea_id=?', whereArgs: [id]);
+      await d.delete('checklist_items', where: 'idea_id=?', whereArgs: [id]);
       await d.delete('ideas', where: 'id=?', whereArgs: [id]);
     }
   }
@@ -295,6 +326,39 @@ class DBHelper {
       await d.update('idea_files', {'project_id': toProjectId},
           where: 'idea_id=?', whereArgs: [id]);
     }
+  }
+
+  // ── CHECKLIST / SUBTASKS ──────────────────────────────
+  static Future<List<ChecklistItem>> getChecklist(int ideaId) async {
+    final d = await db;
+    final rows = await d.query('checklist_items',
+        where: 'idea_id=?', whereArgs: [ideaId],
+        orderBy: 'sort_order ASC, id ASC');
+    return rows.map(ChecklistItem.fromMap).toList();
+  }
+
+  static Future<int> insertChecklistItem(ChecklistItem item) async {
+    final d = await db;
+    final rows = await d.query('checklist_items',
+        where: 'idea_id=?', whereArgs: [item.ideaId]);
+    return d.insert('checklist_items', {...item.toMap(), 'sort_order': rows.length});
+  }
+
+  static Future<void> updateChecklistItem(ChecklistItem item) async {
+    final d = await db;
+    await d.update('checklist_items', item.toMap(), where: 'id=?', whereArgs: [item.id]);
+  }
+
+  static Future<void> toggleChecklistItem(int id, bool done) async {
+    final d = await db;
+    await d.update('checklist_items',
+        {'done': done ? 1 : 0, 'updated_at': DateTime.now().millisecondsSinceEpoch},
+        where: 'id=?', whereArgs: [id]);
+  }
+
+  static Future<void> deleteChecklistItem(int id) async {
+    final d = await db;
+    await d.delete('checklist_items', where: 'id=?', whereArgs: [id]);
   }
 
   // ── FILES ─────────────────────────────────────────────
