@@ -10,32 +10,46 @@ import 'services/settings_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  tz.initializeTimeZones();
-  await SettingsService.init();
-  await NotificationService.init();
-  // Schedule daily digest every morning at 8:00 AM
-  await NotificationService.scheduleDailyDigest(hour: 8, minute: 0);
+  try {
+    tz.initializeTimeZones();
+  } catch (_) {}
+  try {
+    await SettingsService.init();
+  } catch (_) {}
+  try {
+    await NotificationService.init();
+    // Schedule daily digest every morning at 8:00 AM
+    await NotificationService.scheduleDailyDigest(hour: 8, minute: 0);
+  } catch (_) {
+    // Notifications failing to set up shouldn't block the app either.
+  }
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
   ));
   // If the floating bubble was left on last time and the overlay permission
   // is still granted, bring it back so it survives an app restart. If the
-  // permission was revoked meanwhile, this just does nothing.
-  final bubbleWanted = SettingsService.getBool('bubble_enabled', defaultValue: false);
-  if (bubbleWanted) {
-    final granted = await FlutterOverlayWindow.isPermissionGranted();
-    if (granted) {
-      await FlutterOverlayWindow.showOverlay(
-        height: 60, width: 60,
-        alignment: OverlayAlignment.centerRight,
-        flag: OverlayFlag.defaultFlag,
-        enableDrag: false,
-        positionGravity: PositionGravity.none,
-        overlayTitle: 'My Manager',
-        overlayContent: 'কুইক-অ্যাড বাবল চলছে',
-      );
+  // permission was revoked meanwhile, this just does nothing. Wrapped in
+  // try-catch so a plugin hiccup here can never block the app from
+  // launching — worst case, the bubble just doesn't reappear this time.
+  try {
+    final bubbleWanted = SettingsService.getBool('bubble_enabled', defaultValue: false);
+    if (bubbleWanted) {
+      final granted = await FlutterOverlayWindow.isPermissionGranted();
+      if (granted) {
+        await FlutterOverlayWindow.showOverlay(
+          height: 60, width: 60,
+          alignment: OverlayAlignment.centerRight,
+          flag: OverlayFlag.defaultFlag,
+          enableDrag: false,
+          positionGravity: PositionGravity.none,
+          overlayTitle: 'My Manager',
+          overlayContent: 'কুইক-অ্যাড বাবল চলছে',
+        );
+      }
     }
+  } catch (_) {
+    // Never let a bubble-restore failure prevent the app from starting.
   }
   runApp(const MyManagerApp());
 }
