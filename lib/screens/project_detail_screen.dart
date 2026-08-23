@@ -20,15 +20,15 @@ import 'file_grid_screen.dart';
 int now() => DateTime.now().millisecondsSinceEpoch;
 
 const statusConfig = {
-  'todo':  {'label': '⭕ বাকি',   'color': Color(0xFF9C8B6E)},
-  'doing': {'label': '⏳ চলছে',   'color': Color(0xFFD69F2E)},
-  'done':  {'label': '✅ শেষ',    'color': Color(0xFF5C7A4F)},
+  'todo':  {'label': 'বাকি',  'icon': Icons.radio_button_unchecked, 'color': Color(0xFF6E6E78)},
+  'doing': {'label': 'চলছে', 'icon': Icons.incomplete_circle_outlined, 'color': Color(0xFF6E6E78)},
+  'done':  {'label': 'শেষ',  'icon': Icons.check_circle, 'color': Color(0xFF6E6E78)},
 };
 
 const priorityConfig = {
-  'high':   {'label': '🔴 হাই',    'color': Color(0xFFC1443A)},
-  'medium': {'label': '🟡 মিডিয়াম','color': Color(0xFFD69F2E)},
-  'low':    {'label': '🟢 লো',     'color': Color(0xFF5C7A4F)},
+  'high':   {'label': 'জরুরি',  'icon': Icons.signal_cellular_alt, 'color': Color(0xFF6E6E78)},
+  'medium': {'label': 'মাঝারি', 'icon': Icons.signal_cellular_alt_2_bar, 'color': Color(0xFF6E6E78)},
+  'low':    {'label': 'কম',    'icon': Icons.signal_cellular_alt_1_bar, 'color': Color(0xFF6E6E78)},
 };
 
 class ProjectDetailScreen extends StatefulWidget {
@@ -153,7 +153,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         content: Column(mainAxisSize: MainAxisSize.min, children: ['todo','doing','done'].map((s) {
           final cfg = statusConfig[s]!;
           return ListTile(
-            leading: Icon(Icons.circle, color: cfg['color'] as Color, size: 14),
+            leading: Icon(cfg['icon'] as IconData, color: AppTheme.textSecondary, size: 18),
             title: Text(cfg['label'] as String, style:  TextStyle(color: AppTheme.textPrimary)),
             onTap: () => Navigator.pop(context, s),
           );
@@ -212,7 +212,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           width: double.maxFinite,
           child: ListView(shrinkWrap: true, children: others.map((p) => ListTile(
             leading: Container(width: 12, height: 12,
-                decoration: BoxDecoration(color: p.color, shape: BoxShape.circle)),
+                decoration: BoxDecoration(color: AppTheme.textMuted, shape: BoxShape.circle)),
             title: Text(p.name, style:  TextStyle(color: AppTheme.textPrimary)),
             onTap: () => Navigator.pop(context, p),
           )).toList()),
@@ -372,16 +372,21 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           duration: const Duration(milliseconds: 150),
                           padding: const EdgeInsets.symmetric(vertical: 9),
                           decoration: BoxDecoration(
-                            color: sel ? (cfg['color'] as Color).withOpacity(0.15) : AppTheme.bg3,
+                            color: sel ? AppTheme.accent.withOpacity(0.15) : AppTheme.bg3,
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                                color: sel ? cfg['color'] as Color : AppTheme.border,
+                                color: sel ? AppTheme.accent : AppTheme.border,
                                 width: sel ? 2 : 1),
                           ),
-                          child: Text(cfg['label'] as String,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: cfg['color'] as Color,
-                                  fontSize: 13, fontWeight: FontWeight.w600)),
+                          child: Column(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(cfg['icon'] as IconData, size: 16,
+                                color: sel ? AppTheme.accent : AppTheme.textSecondary),
+                            const SizedBox(height: 3),
+                            Text(cfg['label'] as String,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: sel ? AppTheme.accent : AppTheme.textSecondary,
+                                    fontSize: 12, fontWeight: FontWeight.w600)),
+                          ]),
                         ),
                       ),
                     ));
@@ -824,7 +829,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             style:  TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700))
             : Row(children: [
           Container(width: 10, height: 10, decoration: BoxDecoration(
-              color: widget.project.color, shape: BoxShape.circle)),
+              color: AppTheme.textMuted, shape: BoxShape.circle)),
           const SizedBox(width: 8),
           Expanded(child: Text(widget.project.name,
               style: AppTheme.display(size: 16),
@@ -924,7 +929,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             ClipRRect(borderRadius: BorderRadius.circular(6),
               child: LinearProgressIndicator(value: progress, minHeight: 6,
                 backgroundColor: AppTheme.bg3,
-                valueColor: AlwaysStoppedAnimation(widget.project.color)),
+                valueColor: AlwaysStoppedAnimation(AppTheme.textMuted)),
             ),
           ]),
         ),
@@ -1131,15 +1136,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   child: Container(
                     width: 36, height: 36,
                     decoration: BoxDecoration(
-                      color: (sc['color'] as Color).withOpacity(0.12),
+                      color: AppTheme.bg3,
                       shape: BoxShape.circle,
-                      border: Border.all(color: sc['color'] as Color, width: 2),
+                      border: Border.all(color: AppTheme.border, width: 2),
                     ),
                     child: Icon(
                       idea.status=='done' ? Icons.check_rounded
                           : idea.status=='doing' ? Icons.timelapse_rounded
                           : Icons.radio_button_unchecked_rounded,
-                      size: 18, color: sc['color'] as Color,
+                      size: 18, color: AppTheme.textSecondary,
                     ),
                   ),
                 ),
