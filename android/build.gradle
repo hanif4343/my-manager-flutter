@@ -29,22 +29,29 @@ subprojects {
 // compile targets, so they can pick up mismatched defaults (Java 1.8 vs
 // Kotlin JVM 17) depending on the JDK running Gradle. Force every module —
 // including third-party plugins — to the same consistent target so that
-// never happens.
+// never happens. Some subprojects (like :app, due to evaluationDependsOn
+// above) may already be evaluated by the time this runs, so calling
+// afterEvaluate on them would throw — handle both cases.
+def forceJvmTarget = { proj ->
+    if (proj.hasProperty('android')) {
+        proj.android {
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_1_8
+                targetCompatibility JavaVersion.VERSION_1_8
+            }
+        }
+    }
+    proj.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            jvmTarget = "1.8"
+        }
+    }
+}
 subprojects {
-    afterEvaluate { proj ->
-        if (proj.hasProperty('android')) {
-            proj.android {
-                compileOptions {
-                    sourceCompatibility JavaVersion.VERSION_1_8
-                    targetCompatibility JavaVersion.VERSION_1_8
-                }
-            }
-        }
-        proj.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-            kotlinOptions {
-                jvmTarget = "1.8"
-            }
-        }
+    if (state.executed) {
+        forceJvmTarget(project)
+    } else {
+        afterEvaluate { forceJvmTarget(project) }
     }
 }
 
