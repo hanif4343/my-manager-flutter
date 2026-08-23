@@ -88,7 +88,7 @@ class _CopyMoveScreenState extends State<CopyMoveScreen> {
                       margin: const EdgeInsets.only(bottom: 10),
                       child: ExpansionTile(
                         leading: Container(width: 12, height: 12,
-                            decoration: BoxDecoration(color: p.color, shape: BoxShape.circle)),
+                            decoration: BoxDecoration(color: AppTheme.textMuted, shape: BoxShape.circle)),
                         title: Text(p.name, style:  TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
                         iconColor: AppTheme.textSecondary,
                         collapsedIconColor: AppTheme.textMuted,
