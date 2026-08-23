@@ -423,7 +423,7 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
       appBar: AppBar(
         title: Row(children: [
           Container(width: 10, height: 10, decoration: BoxDecoration(
-              color: widget.project.color, shape: BoxShape.circle)),
+              color: AppTheme.textMuted, shape: BoxShape.circle)),
           const SizedBox(width: 8),
           Expanded(child: Text(_idea.title,
               style: AppTheme.display(size: 16),
@@ -439,12 +439,16 @@ class _IdeaDetailScreenState extends State<IdeaDetailScreen> {
               margin: const EdgeInsets.only(right: 12),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: (sc['color'] as Color).withOpacity(0.15),
+                color: AppTheme.bg3,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: sc['color'] as Color),
+                border: Border.all(color: AppTheme.border),
               ),
-              child: Text(sc['label'] as String, style: TextStyle(
-                  color: sc['color'] as Color, fontSize: 12, fontWeight: FontWeight.w700)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(sc['icon'] as IconData, size: 14, color: AppTheme.textSecondary),
+                const SizedBox(width: 6),
+                Text(sc['label'] as String, style: TextStyle(
+                    color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w700)),
+              ]),
             ),
           ),
         ],
