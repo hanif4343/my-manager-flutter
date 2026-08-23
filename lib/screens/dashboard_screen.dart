@@ -256,15 +256,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _load();
         },
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(height: 4, decoration: BoxDecoration(
-            color: p.color,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-          )),
           Padding(
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                Expanded(child: Text(p.name, style: AppTheme.display(size: 16))),
+                // Monogram avatar — project identity by initial letter,
+                // not by a color assignment.
+                Container(
+                  width: 34, height: 34,
+                  decoration: BoxDecoration(
+                    color: AppTheme.bg3, shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    p.name.isNotEmpty ? p.name.substring(0, 1).toUpperCase() : '?',
+                    style: TextStyle(color: AppTheme.textSecondary,
+                        fontWeight: FontWeight.w800, fontSize: 14),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Text(p.name, style: AppTheme.title())),
                 // Edit & Copy — the two most-used actions, kept visible.
                 _iconBtn(Icons.edit_outlined, () async {
                   await Navigator.push(context, MaterialPageRoute(
@@ -288,38 +300,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   onSelected: (v) { if (v == 'delete') _delete(p); },
                   itemBuilder: (_) => [
                     PopupMenuItem(value: 'delete', child: Row(children: [
-                      Icon(Icons.delete_outline, size: 18, color: AppTheme.red),
-                      SizedBox(width: 10),
-                      Text('মুছে ফেলো', style: TextStyle(color: AppTheme.red)),
+                      Icon(Icons.delete_outline, size: 18, color: AppTheme.danger),
+                      const SizedBox(width: 10),
+                      Text('মুছে ফেলো', style: TextStyle(color: AppTheme.danger)),
                     ])),
                   ],
                 ),
               ]),
               if (p.description != null && p.description!.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(p.description!, style:  TextStyle(
-                    color: AppTheme.textSecondary, fontSize: 13),
+                const SizedBox(height: 8),
+                Text(p.description!, style: AppTheme.body(),
                     maxLines: 2, overflow: TextOverflow.ellipsis),
               ],
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               ClipRRect(borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
                   value: progress, minHeight: 5,
                   backgroundColor: AppTheme.bg3,
-                  valueColor: AlwaysStoppedAnimation(p.color),
+                  valueColor: AlwaysStoppedAnimation(AppTheme.textMuted),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Row(children: [
-                _statChip('⭕ ${st['todo']}', AppTheme.textMuted),
-                const SizedBox(width: 10),
-                _statChip('⏳ ${st['doing']}', AppTheme.yellow),
-                const SizedBox(width: 10),
-                _statChip('✅ ${st['done']}', AppTheme.green),
+                _statChip(Icons.radio_button_unchecked, '${st['todo']}'),
+                const SizedBox(width: 12),
+                _statChip(Icons.incomplete_circle_outlined, '${st['doing']}'),
+                const SizedBox(width: 12),
+                _statChip(Icons.check_circle_outline, '${st['done']}'),
                 const Spacer(),
-                Text('${(progress * 100).round()}%', style:  TextStyle(
-                    color: AppTheme.textSecondary, fontSize: 13,
-                    fontWeight: FontWeight.w700)),
+                Text('${(progress * 100).round()}%', style: AppTheme.caption(
+                    weight: FontWeight.w700, color: AppTheme.textSecondary)),
               ]),
             ]),
           ),
@@ -327,6 +337,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
+
+  Widget _statChip(IconData icon, String text) => Row(mainAxisSize: MainAxisSize.min, children: [
+    Icon(icon, size: 13, color: AppTheme.textMuted),
+    const SizedBox(width: 4),
+    Text(text, style: AppTheme.caption()),
+  ]);
 
   Widget _iconBtn(IconData icon, VoidCallback onTap,
       {Color? color, String? tooltip}) => Tooltip(
@@ -341,7 +357,4 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     ),
   );
-
-  Widget _statChip(String text, Color color) => Text(text,
-      style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600));
 }
