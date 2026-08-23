@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import '../widgets/app_theme.dart';
 import 'dashboard_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
+import 'share_intake_screen.dart';
 
 /// Top-level shell: bottom navigation between Projects / Search / Settings.
 /// Moving these into a bottom bar means the Dashboard's AppBar no longer
@@ -22,15 +25,46 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   // the background, and the tab wouldn't otherwise know to refresh.
   int _dashboardGen = 0;
 
+  StreamSubscription? _shareSub;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _initShareListener();
+  }
+
+  /// "Share TO My Manager" — content shared in from other apps (browser,
+  /// gallery, WhatsApp, etc.) arrives here, whether the app was already
+  /// open or was launched fresh by the share itself.
+  void _initShareListener() {
+    try {
+      // While the app is already running.
+      _shareSub = ReceiveSharingIntent.instance.getMediaStream().listen(
+        (files) => _handleSharedFiles(files),
+        onError: (_) {},
+      );
+      // Cold start via a share.
+      ReceiveSharingIntent.instance.getInitialMedia().then((files) {
+        if (files.isNotEmpty) _handleSharedFiles(files);
+      }).catchError((_) {});
+    } catch (_) {
+      // If the share-intent plugin isn't available for any reason, the
+      // rest of the app should still work fine without it.
+    }
+  }
+
+  void _handleSharedFiles(List<SharedMediaFile> files) {
+    if (files.isEmpty || !mounted) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ShareIntakeScreen(sharedFiles: files),
+    )).then((_) => setState(() => _dashboardGen++));
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _shareSub?.cancel();
     super.dispose();
   }
 
