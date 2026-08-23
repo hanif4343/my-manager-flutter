@@ -96,10 +96,20 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   }
 
   Future<void> _expand() async {
-    await FlutterOverlayWindow.resizeOverlay(expandedWidth, expandedHeight, false);
-    // focusPointer lets the TextField actually receive the keyboard.
-    await FlutterOverlayWindow.updateFlag(OverlayFlag.focusPointer);
+    // Flip to the expanded layout first so Flutter's content is already
+    // the right shape by the time the native window catches up — avoids
+    // a brief mismatched frame where a 300x320 window still shows the
+    // small 60x60 circle content.
     setState(() => _expanded = true);
+    try {
+      await FlutterOverlayWindow.resizeOverlay(expandedWidth, expandedHeight, false);
+      // focusPointer lets the TextField actually receive the keyboard.
+      await FlutterOverlayWindow.updateFlag(OverlayFlag.focusPointer);
+    } catch (_) {
+      // If the resize itself failed, don't leave the bubble stuck in a
+      // half-expanded state — fall back to collapsed.
+      if (mounted) setState(() => _expanded = false);
+    }
   }
 
   Future<void> _collapse() async {
@@ -137,16 +147,40 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   }
 
   // ── Drag lifecycle ────────────────────────────────────────────
-  Future<void> _onDragStart(DragStartDetails d) async {
-    setState(() { _dragMode = true; _belowMiddle = false; _nearDelete = false; });
-    _armSafetyTimer();
-    // Temporarily cover the whole screen so we can read real screen
-    // dimensions and place the delete zone exactly like Messenger does.
-    await FlutterOverlayWindow.resizeOverlay(
-        WindowSize.matchParent, WindowSize.fullCover, false);
+  // Note: onPanStart fires for *any* touch-and-release, even a plain tap
+  // with zero movement — so we don't resize to fullscreen immediately.
+  // We wait until the finger has actually moved past a small threshold
+  // before treating it as a real drag. Without this, a simple tap that
+  // happens to land on the handle would trigger a fullscreen-resize and
+  // instant resize-back in the same frame, before the new screen size
+  // was even readable — which is what was making the bubble vanish.
+  static const _dragThreshold = 6.0;
+  bool _dragPending = false;
+  double _pendingDx = 0, _pendingDy = 0;
+
+  void _onDragStart(DragStartDetails d) {
+    _dragPending = true;
+    _pendingDx = 0;
+    _pendingDy = 0;
   }
 
-  void _onDragUpdate(DragUpdateDetails d) {
+  Future<void> _onDragUpdate(DragUpdateDetails d) async {
+    if (_dragPending && !_dragMode) {
+      _pendingDx += d.delta.dx;
+      _pendingDy += d.delta.dy;
+      if (Offset(_pendingDx, _pendingDy).distance < _dragThreshold) {
+        return; // Still just a tap-sized wiggle — ignore it.
+      }
+      // Movement crossed the threshold — this is a real drag now.
+      _dragPending = false;
+      setState(() { _dragMode = true; _belowMiddle = false; _nearDelete = false; });
+      _armSafetyTimer();
+      // Temporarily cover the whole screen so we can read real screen
+      // dimensions and place the delete zone exactly like Messenger does.
+      await FlutterOverlayWindow.resizeOverlay(
+          WindowSize.matchParent, WindowSize.fullCover, false);
+      if (!mounted) return;
+    }
     if (!_dragMode) return;
     _armSafetyTimer();
     final size = MediaQuery.of(context).size;
@@ -170,6 +204,12 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   }
 
   Future<void> _onDragEnd(DragEndDetails d) async {
+    _dragPending = false;
+    if (!_dragMode) {
+      // Was just a tap on the handle's corner — never actually became a
+      // drag, so there's nothing to undo. The window never resized.
+      return;
+    }
     _safetyTimer?.cancel();
     final shouldDelete = _nearDelete;
     if (shouldDelete) {
