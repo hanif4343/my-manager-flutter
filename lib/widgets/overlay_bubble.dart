@@ -126,45 +126,23 @@ class _OverlayBubbleState extends State<OverlayBubble> {
     );
   }
 
-  Widget _collapsedBubble() => Stack(children: [
-    GestureDetector(
-      onTap: _expand,
-      child: Container(
-        width: collapsedSize.toDouble(),
-        height: collapsedSize.toDouble(),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft, end: Alignment.bottomRight,
-            colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-          ),
-          shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.35),
-              blurRadius: 10, offset: const Offset(0, 3))],
+  Widget _collapsedBubble() => GestureDetector(
+    onTap: _expand,
+    child: Container(
+      width: collapsedSize.toDouble(),
+      height: collapsedSize.toDouble(),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
         ),
-        child: const Icon(Icons.lightbulb_outline, color: Colors.white, size: 26),
+        shape: BoxShape.circle,
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.35),
+            blurRadius: 10, offset: const Offset(0, 3))],
       ),
+      child: const Icon(Icons.lightbulb_outline, color: Colors.white, size: 26),
     ),
-    // Small "hide for now" badge — a plain tap target (no drag), sitting
-    // at the corner. The native overlay window here is exactly 60x60, so
-    // this has to stay fully inside those bounds or it gets clipped.
-    // Session-only close — comes back automatically next time the app
-    // is opened (permanent off is a separate Settings toggle).
-    Positioned(
-      top: 0, right: 0,
-      child: GestureDetector(
-        onTap: _hideForNow,
-        child: Container(
-          width: 18, height: 18,
-          decoration: BoxDecoration(
-            color: AppTheme.danger,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 1.5),
-          ),
-          child: const Icon(Icons.close, size: 11, color: Colors.white),
-        ),
-      ),
-    ),
-  ]);
+  );
 
   Widget _expandedPanel() => Center(
     child: Container(
@@ -190,10 +168,14 @@ class _OverlayBubbleState extends State<OverlayBubble> {
                     style: TextStyle(color: AppTheme.textPrimary,
                         fontSize: 16, fontWeight: FontWeight.w700))),
                 _headerIcon(Icons.open_in_full, 'পুরো অ্যাপ খোলো', _openMainApp),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 _headerIcon(Icons.check_circle, 'সেভ করো', _save, color: AppTheme.green),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 _headerIcon(Icons.remove, 'ছোট করো (বাবলে ফিরে যাও)', _collapse),
+                const SizedBox(width: 4),
+                _headerIcon(Icons.visibility_off_outlined,
+                    'এখনকার মতো লুকাও (অ্যাপ খুললে আবার আসবে)',
+                    _hideForNow, color: AppTheme.danger),
               ]),
               const SizedBox(height: 12),
               if (_projects.isEmpty)
