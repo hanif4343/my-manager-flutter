@@ -186,7 +186,7 @@ class _OverlayBubbleState extends State<OverlayBubble> {
               Row(children: [
                 const Text('⚡', style: TextStyle(fontSize: 18)),
                 const SizedBox(width: 6),
-                const Expanded(child: Text('Quick Idea',
+                 Expanded(child: Text('Quick Idea',
                     style: TextStyle(color: AppTheme.textPrimary,
                         fontSize: 16, fontWeight: FontWeight.w700))),
                 _headerIcon(Icons.open_in_full, 'পুরো অ্যাপ খোলো', _openMainApp),
@@ -197,13 +197,13 @@ class _OverlayBubbleState extends State<OverlayBubble> {
               ]),
               const SizedBox(height: 12),
               if (_projects.isEmpty)
-                const Expanded(child: Center(
+                 Expanded(child: Center(
                   child: Text('আগে অ্যাপে একটা প্রজেক্ট বানাও',
                       style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
                       textAlign: TextAlign.center),
                 ))
               else ...[
-                const Text('প্রজেক্ট:', style: TextStyle(
+                 Text('প্রজেক্ট:', style: TextStyle(
                     color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
                 SizedBox(
@@ -235,13 +235,13 @@ class _OverlayBubbleState extends State<OverlayBubble> {
                   child: TextField(
                     controller: _ctrl, autofocus: true, maxLines: null,
                     expands: true, textAlignVertical: TextAlignVertical.top,
-                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
+                    style:  TextStyle(color: AppTheme.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
                       hintText: 'আইডিয়া লিখো...',
-                      hintStyle: const TextStyle(color: AppTheme.textMuted),
+                      hintStyle:  TextStyle(color: AppTheme.textMuted),
                       filled: true, fillColor: AppTheme.bg3,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: AppTheme.border)),
+                          borderSide:  BorderSide(color: AppTheme.border)),
                       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
                           borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
                       contentPadding: const EdgeInsets.all(12),
