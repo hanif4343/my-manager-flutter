@@ -5,16 +5,18 @@ import '../models/project.dart';
 import '../widgets/app_theme.dart';
 import '../services/export_service.dart';
 import '../services/drive_service.dart';
+import '../services/settings_service.dart';
 import 'project_detail_screen.dart';
 import 'project_form_screen.dart';
 import 'backup_screen.dart';
 
 /// Dashboard tab — shows the project list. Search and Settings now live
 /// in the bottom navigation, so this AppBar only keeps what's needed at
-/// a glance (cloud sync status) plus a small overflow menu for the
-/// less-frequent "Import ZIP" action.
+/// a glance (cloud sync status, quick dark/light toggle) plus a small
+/// overflow menu for the less-frequent "Import ZIP" action.
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final VoidCallback? onThemeToggle;
+  const DashboardScreen({super.key, this.onThemeToggle});
   @override State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
@@ -138,6 +140,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ]),
         automaticallyImplyLeading: false,
         actions: [
+          // Quick dark/light toggle — the same setting Settings has, just
+          // reachable without leaving the tab you're on.
+          IconButton(
+            onPressed: () async {
+              final next = !SettingsService.isDark;
+              await SettingsService.setDark(next);
+              widget.onThemeToggle?.call();
+            },
+            icon: Icon(
+              SettingsService.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+              size: 22, color: AppTheme.textSecondary,
+            ),
+            tooltip: SettingsService.isDark ? 'লাইট মোড' : 'ডার্ক মোড',
+          ),
           // Drive — glanceable status, kept visible (ভরাট সবুজ = সিংক্‌ড, ফাঁকা = অফলাইন)
           IconButton(
             onPressed: () async {
