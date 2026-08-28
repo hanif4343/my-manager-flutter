@@ -78,7 +78,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final tabs = [
-      DashboardScreen(key: ValueKey(_dashboardGen)),
+      DashboardScreen(key: ValueKey(_dashboardGen), onThemeToggle: widget.onThemeToggle),
       const SearchScreen(),
       SettingsScreen(onThemeToggle: widget.onThemeToggle),
     ];
