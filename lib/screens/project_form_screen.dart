@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../db/db_helper.dart';
 import '../models/project.dart';
@@ -15,6 +16,9 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
   // Default color — not user-selectable in new project form
   int _colorValue = AppTheme.projectColors[0].value;
   bool _saving = false;
+  bool _savedExplicitly = false;
+  int? _createdProjectId;
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -25,6 +29,55 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
       _desc.text = p.description ?? '';
       _colorValue = p.colorValue;
     }
+    // Periodic autosave while typing — protects against the app itself
+    // being killed/backgrounded mid-edit, not just navigating away.
+    _name.addListener(_scheduleAutosave);
+    _desc.addListener(_scheduleAutosave);
+  }
+
+  void _scheduleAutosave() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 1500), _persist);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    // Autosave-on-close: if the screen is being torn down any way other
+    // than the explicit Save button — back gesture, back button, the app
+    // getting backgrounded/killed while this screen is up — don't lose
+    // whatever was typed. This can't be `await`ed from dispose(), so it
+    // fires and forgets; that's fine since _persist() guards against
+    // being called with an empty name.
+    if (!_savedExplicitly) _persist();
+    _name.dispose();
+    _desc.dispose();
+    super.dispose();
+  }
+
+  /// Writes the current form fields to the database. For a brand-new
+  /// project, remembers the created id so a later autosave (e.g. from
+  /// dispose) updates that same row instead of inserting a duplicate.
+  Future<void> _persist() async {
+    if (_name.text.trim().isEmpty) return;
+    final n = now();
+    final existingId = widget.project?.id ?? _createdProjectId;
+    if (existingId == null) {
+      _createdProjectId = await DBHelper.insertProject(Project(
+        name: _name.text.trim(),
+        description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
+        colorValue: _colorValue, createdAt: n, updatedAt: n,
+      ));
+    } else {
+      await DBHelper.updateProject(Project(
+        id: existingId,
+        name: _name.text.trim(),
+        description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
+        colorValue: _colorValue,
+        createdAt: widget.project?.createdAt ?? n,
+        updatedAt: n,
+      ));
+    }
   }
 
   Future<void> _save() async {
@@ -34,20 +87,8 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
       return;
     }
     setState(() => _saving = true);
-    final n = now();
-    if (widget.project == null) {
-      await DBHelper.insertProject(Project(
-        name: _name.text.trim(),
-        description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
-        colorValue: _colorValue, createdAt: n, updatedAt: n,
-      ));
-    } else {
-      await DBHelper.updateProject(widget.project!.copyWith(
-        name: _name.text.trim(),
-        description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
-        colorValue: _colorValue, updatedAt: n,
-      ));
-    }
+    await _persist();
+    _savedExplicitly = true;
     if (mounted) Navigator.pop(context);
   }
 
