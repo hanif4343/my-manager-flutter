@@ -6,6 +6,7 @@ import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import '../db/db_helper.dart';
 import '../models/project.dart';
 import '../models/idea.dart';
@@ -245,6 +246,89 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final attachments = <_Attachment>[];
     bool isRecording = false;
     String? recordPath;
+    // Tracks whether the Save button was actually pressed. If the sheet
+    // gets dismissed any other way (swipe down, tap outside, back
+    // button), whatever was typed still gets saved automatically below —
+    // nothing typed here is ever silently lost.
+    bool savedExplicitly = false;
+    // For a brand-new idea, the very first autosave creates the row and
+    // remembers its id here so later autosaves UPDATE that same row
+    // instead of inserting a new one every time.
+    int? createdIdeaId;
+    bool persisting = false;
+    Timer? debounceTimer;
+
+    /// Writes whatever is currently in the form to the database. Shared
+    /// between the Save button, the periodic autosave-while-typing, and
+    /// the autosave-on-dismiss fallback, so they can never drift out of
+    /// sync.
+    Future<void> persist() async {
+      if (nameCtrl.text.trim().isEmpty || persisting) return;
+      persisting = true;
+      try {
+        final n = now();
+        int ideaId;
+        final existingId = idea?.id ?? createdIdeaId;
+        if (existingId == null) {
+          ideaId = await DBHelper.insertIdea(Idea(
+            projectId: widget.project.id!,
+            title: nameCtrl.text.trim(),
+            description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+            priority: priority,
+            deadline: deadline?.millisecondsSinceEpoch,
+            createdAt: n, updatedAt: n,
+          ));
+          createdIdeaId = ideaId;
+        } else {
+          ideaId = existingId;
+          await DBHelper.updateIdea(Idea(
+            id: ideaId,
+            projectId: widget.project.id!,
+            title: nameCtrl.text.trim(),
+            description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+            status: idea?.status ?? 'todo',
+            priority: priority,
+            isArchived: idea?.isArchived ?? 0,
+            deadline: deadline?.millisecondsSinceEpoch,
+            createdAt: idea?.createdAt ?? n,
+            updatedAt: n,
+          ));
+        }
+
+        if (reminder != null && reminder!.isAfter(DateTime.now())) {
+          await NotificationService.scheduleNotification(
+            ideaId + 1000, '💡 ${nameCtrl.text.trim()}',
+            'এই আইডিয়ার কাজ করার সময় হয়েছে!', reminder!,
+          );
+        }
+
+        // Attachments only need writing once, the first time they're
+        // present — repeat autosaves would otherwise re-attach the same
+        // files over and over.
+        if (attachments.isNotEmpty) {
+          for (final a in attachments) {
+            await DBHelper.insertFile(IdeaFile(
+              ideaId: ideaId, projectId: widget.project.id!,
+              name: a.name, type: a.type,
+              content: a.content, createdAt: n, updatedAt: n,
+            ));
+          }
+          attachments.clear();
+        }
+      } finally {
+        persisting = false;
+      }
+    }
+
+    /// Debounced autosave while typing — protects against the app itself
+    /// getting closed or killed mid-edit, not just the sheet being
+    /// dismissed. Fires 1.5s after the last keystroke.
+    void scheduleAutosave() {
+      debounceTimer?.cancel();
+      debounceTimer = Timer(const Duration(milliseconds: 1500), persist);
+    }
+    nameCtrl.addListener(scheduleAutosave);
+    descCtrl.addListener(scheduleAutosave);
 
     await showModalBottomSheet(
       context: context,
@@ -580,43 +664,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   SizedBox(width: double.infinity, child: ElevatedButton.icon(
                     onPressed: () async {
                       if (nameCtrl.text.trim().isEmpty) return;
-                      final n = now();
-                      int ideaId;
-                      if (idea == null) {
-                        ideaId = await DBHelper.insertIdea(Idea(
-                          projectId: widget.project.id!,
-                          title: nameCtrl.text.trim(),
-                          description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
-                          priority: priority,
-                          deadline: deadline?.millisecondsSinceEpoch,
-                          createdAt: n, updatedAt: n,
-                        ));
-                      } else {
-                        ideaId = idea.id!;
-                        await DBHelper.updateIdea(idea.copyWith(
-                          title: nameCtrl.text.trim(),
-                          description: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
-                          priority: priority,
-                          deadline: deadline?.millisecondsSinceEpoch,
-                          updatedAt: n,
-                        ));
-                      }
-
-                      if (reminder != null && reminder!.isAfter(DateTime.now())) {
-                        await NotificationService.scheduleNotification(
-                          ideaId + 1000, '💡 ${nameCtrl.text.trim()}',
-                          'এই আইডিয়ার কাজ করার সময় হয়েছে!', reminder!,
-                        );
-                      }
-
-                      for (final a in attachments) {
-                        await DBHelper.insertFile(IdeaFile(
-                          ideaId: ideaId, projectId: widget.project.id!,
-                          name: a.name, type: a.type,
-                          content: a.content, createdAt: n, updatedAt: n,
-                        ));
-                      }
-
+                      await persist();
+                      savedExplicitly = true;
                       if (ctx.mounted) Navigator.pop(ctx);
                       _load();
                     },
@@ -642,6 +691,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         },
       ),
     );
+
+    debounceTimer?.cancel();
+    nameCtrl.removeListener(scheduleAutosave);
+    descCtrl.removeListener(scheduleAutosave);
+
+    // The sheet is gone now — if it was dismissed any way other than the
+    // Save button (swiped down, tapped outside, back button, or the app
+    // itself getting closed/backgrounded mid-edit), don't lose what was
+    // typed. Auto-save it as if Save had been pressed.
+    if (!savedExplicitly && nameCtrl.text.trim().isNotEmpty) {
+      await persist();
+      _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('📝 খসড়া স্বয়ংক্রিয়ভাবে সেভ হয়েছে'),
+          backgroundColor: AppTheme.accent,
+          duration: Duration(seconds: 2),
+        ));
+      }
+    }
   }
 
   void _copyIdea(Idea idea) {
