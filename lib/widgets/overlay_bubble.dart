@@ -42,8 +42,9 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   int? _selectedProjectId;
 
   final _newIdeaCtrl = TextEditingController();
-  int? _editingIdeaId;
-  final _editCtrl = TextEditingController();
+  Idea? _editingIdea;
+  final _editTitleCtrl = TextEditingController();
+  final _editDescCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -54,7 +55,8 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   @override
   void dispose() {
     _newIdeaCtrl.dispose();
-    _editCtrl.dispose();
+    _editTitleCtrl.dispose();
+    _editDescCtrl.dispose();
     super.dispose();
   }
 
@@ -64,9 +66,14 @@ class _OverlayBubbleState extends State<OverlayBubble> {
     try {
       final list = await DBHelper.getProjectsSortedByUsage();
       if (!mounted) return;
+      // Locked projects don't show up in the bubble at all — the bubble
+      // can't reasonably prompt for fingerprint/PIN from its own tiny
+      // overlay window, so the simplest safe answer is to just not
+      // surface locked projects here rather than risk a weak bypass.
+      final visible = list.where((p) => !p.isLocked).toList();
       setState(() {
-        _projects = list;
-        _selectedProjectId = list.isNotEmpty ? list.first.id : null;
+        _projects = visible;
+        _selectedProjectId = visible.isNotEmpty ? visible.first.id : null;
         _loadingProjects = false;
       });
       if (_selectedProjectId != null) _loadIdeas(_selectedProjectId!);
@@ -90,7 +97,7 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   }
 
   void _selectProject(int id) {
-    setState(() { _selectedProjectId = id; _editingIdeaId = null; });
+    setState(() { _selectedProjectId = id; _editingIdea = null; });
     _loadIdeas(id);
   }
 
@@ -110,24 +117,28 @@ class _OverlayBubbleState extends State<OverlayBubble> {
 
   void _startEdit(Idea idea) {
     setState(() {
-      _editingIdeaId = idea.id;
-      _editCtrl.text = idea.title;
+      _editingIdea = idea;
+      _editTitleCtrl.text = idea.title;
+      _editDescCtrl.text = idea.description ?? '';
     });
   }
 
-  void _cancelEdit() => setState(() => _editingIdeaId = null);
+  void _cancelEdit() => setState(() => _editingIdea = null);
 
-  Future<void> _commitEdit(Idea idea) async {
-    final title = _editCtrl.text.trim();
+  Future<void> _commitEdit() async {
+    final idea = _editingIdea;
+    if (idea == null) return;
+    final title = _editTitleCtrl.text.trim();
     if (title.isEmpty) return;
     await DBHelper.updateIdea(Idea(
       id: idea.id, projectId: idea.projectId, title: title,
-      description: idea.description, status: idea.status,
+      description: _editDescCtrl.text.trim().isEmpty ? null : _editDescCtrl.text.trim(),
+      status: idea.status,
       priority: idea.priority, isArchived: idea.isArchived,
       deadline: idea.deadline, createdAt: idea.createdAt,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     ));
-    setState(() => _editingIdeaId = null);
+    setState(() => _editingIdea = null);
     // Re-sorts to the top too, since it's now the most recently touched.
     _loadIdeas(idea.projectId);
   }
@@ -148,7 +159,7 @@ class _OverlayBubbleState extends State<OverlayBubble> {
       await FlutterOverlayWindow.updateFlag(OverlayFlag.defaultFlag);
       await FlutterOverlayWindow.resizeOverlay(collapsedSize, collapsedSize, true);
     } catch (_) {}
-    setState(() { _expanded = false; _editingIdeaId = null; });
+    setState(() { _expanded = false; _editingIdea = null; });
   }
 
   /// Brings the host app (My Manager itself) to the foreground.
@@ -217,7 +228,9 @@ class _OverlayBubbleState extends State<OverlayBubble> {
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4),
             blurRadius: 16, offset: const Offset(0, 6))],
       ),
-      child: _loadingProjects
+      child: _editingIdea != null
+          ? _editIdeaView()
+          : _loadingProjects
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
           : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               // Header — no dedicated "save" icon here anymore; adding a
@@ -320,7 +333,6 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   );
 
   Widget _ideaRow(Idea idea) {
-    final editing = _editingIdeaId == idea.id;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Container(
@@ -328,58 +340,115 @@ class _OverlayBubbleState extends State<OverlayBubble> {
         decoration: BoxDecoration(
           color: AppTheme.bg3,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: editing ? AppTheme.accent : AppTheme.border,
-              width: editing ? 2 : 1),
+          border: Border.all(color: AppTheme.border),
         ),
-        child: editing
-            ? Row(children: [
-                Expanded(child: TextField(
-                  controller: _editCtrl, autofocus: true,
-                  style:  TextStyle(color: AppTheme.textPrimary, fontSize: 13),
-                  decoration: const InputDecoration(
-                    isDense: true, border: InputBorder.none,
-                  ),
-                  onSubmitted: (_) => _commitEdit(idea),
-                )),
-                GestureDetector(
-                  onTap: () => _commitEdit(idea),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(Icons.check, size: 18, color: AppTheme.green),
-                  ),
-                ),
-                GestureDetector(
-                  onTap: _cancelEdit,
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(Icons.close, size: 18, color: AppTheme.textMuted),
-                  ),
-                ),
-              ])
-            : Row(children: [
-                Icon(
-                  idea.status == 'done' ? Icons.check_circle
-                      : idea.status == 'doing' ? Icons.incomplete_circle_outlined
-                      : Icons.radio_button_unchecked,
-                  size: 16, color: AppTheme.textMuted,
-                ),
-                const SizedBox(width: 8),
-                Expanded(child: Text(idea.title, maxLines: 1, overflow: TextOverflow.ellipsis,
+        child: Row(children: [
+          Icon(
+            idea.status == 'done' ? Icons.check_circle
+                : idea.status == 'doing' ? Icons.incomplete_circle_outlined
+                : Icons.radio_button_unchecked,
+            size: 16, color: AppTheme.textMuted,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _startEdit(idea),
+              behavior: HitTestBehavior.opaque,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(idea.title, maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         color: idea.status == 'done' ? AppTheme.textMuted : AppTheme.textPrimary,
-                        fontSize: 13,
-                        decoration: idea.status == 'done' ? TextDecoration.lineThrough : null))),
-                GestureDetector(
-                  onTap: () => _startEdit(idea),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(Icons.edit_outlined, size: 15, color: AppTheme.textMuted),
+                        fontSize: 13, fontWeight: FontWeight.w600,
+                        decoration: idea.status == 'done' ? TextDecoration.lineThrough : null)),
+                if (idea.description != null && idea.description!.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(idea.description!, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                   ),
-                ),
               ]),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => _startEdit(idea),
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: Icon(Icons.edit_note, size: 18, color: AppTheme.textMuted),
+            ),
+          ),
+        ]),
       ),
     );
   }
+
+  /// Full-content edit view — replaces the whole panel while active.
+  /// This is what the pencil icon on an idea actually opens: editing the
+  /// idea's title *and* its existing note/description, not just
+  /// renaming it.
+  Widget _editIdeaView() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Row(children: [
+      GestureDetector(
+        onTap: _cancelEdit,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: Icon(Icons.arrow_back, size: 18, color: AppTheme.textMuted),
+        ),
+      ),
+      Expanded(child: Text('আইডিয়া এডিট করো', style: TextStyle(
+          color: AppTheme.textPrimary, fontSize: 15, fontWeight: FontWeight.w700))),
+      GestureDetector(
+        onTap: _commitEdit,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(color: AppTheme.accent,
+              borderRadius: BorderRadius.circular(8)),
+          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.check, size: 14, color: Colors.white),
+            SizedBox(width: 4),
+            Text('আপডেট', style: TextStyle(color: Colors.white,
+                fontSize: 12, fontWeight: FontWeight.w700)),
+          ]),
+        ),
+      ),
+    ]),
+    const SizedBox(height: 12),
+    Text('শিরোনাম', style: TextStyle(
+        color: AppTheme.textSecondary, fontSize: 11.5, fontWeight: FontWeight.w700)),
+    const SizedBox(height: 6),
+    TextField(
+      controller: _editTitleCtrl,
+      style: TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
+      decoration: InputDecoration(
+        filled: true, fillColor: AppTheme.bg3,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: AppTheme.border)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
+      ),
+    ),
+    const SizedBox(height: 12),
+    Text('নোট / বিবরণ', style: TextStyle(
+        color: AppTheme.textSecondary, fontSize: 11.5, fontWeight: FontWeight.w700)),
+    const SizedBox(height: 6),
+    Expanded(
+      child: TextField(
+        controller: _editDescCtrl, maxLines: null, expands: true,
+        textAlignVertical: TextAlignVertical.top,
+        style: TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+        decoration: InputDecoration(
+          hintText: 'এখানে বিস্তারিত লিখো বা আগের লেখা এডিট করো...',
+          hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+          filled: true, fillColor: AppTheme.bg3,
+          contentPadding: const EdgeInsets.all(12),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: AppTheme.border)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
+        ),
+      ),
+    ),
+  ]);
 
   Widget _headerIcon(IconData icon, String tooltip, VoidCallback onTap, {Color? color}) =>
       Tooltip(
