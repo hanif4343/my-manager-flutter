@@ -4,6 +4,7 @@ import '../models/idea.dart';
 import '../models/project.dart';
 import '../models/idea_file.dart';
 import '../widgets/app_theme.dart';
+import '../services/auth_service.dart';
 import 'idea_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -123,8 +124,14 @@ class _SearchScreenState extends State<SearchScreen> {
                           style: TextStyle(color: AppTheme.textMuted,
                               fontSize: 11, fontWeight: FontWeight.w600),
                         ),
-                        onTap: () {
+                        onTap: () async {
                           if (r.idea != null) {
+                            if (r.project.isLocked) {
+                              final ok = await AuthService.authenticate(
+                                  reason: '"${r.project.name}" লক করা — যাচাই করো');
+                              if (!ok) return;
+                            }
+                            if (!context.mounted) return;
                             Navigator.push(context, MaterialPageRoute(
                                 builder: (_) => IdeaDetailScreen(
                                     idea: r.idea!, project: r.project)));
