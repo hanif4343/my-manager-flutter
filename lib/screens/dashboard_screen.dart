@@ -6,6 +6,7 @@ import '../widgets/app_theme.dart';
 import '../services/export_service.dart';
 import '../services/drive_service.dart';
 import '../services/settings_service.dart';
+import '../services/auth_service.dart';
 import 'project_detail_screen.dart';
 import 'project_form_screen.dart';
 import 'backup_screen.dart';
@@ -257,6 +258,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ]),
   );
 
+  Future<void> _openProject(Project p) async {
+    if (p.isLocked) {
+      final ok = await AuthService.authenticate(
+          reason: '"${p.name}" খুলতে যাচাই করো');
+      if (!ok) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('যাচাই ব্যর্থ — প্রজেক্ট খোলা গেল না'),
+          backgroundColor: AppTheme.danger,
+        ));
+        return;
+      }
+    }
+    if (!mounted) return;
+    await Navigator.push(context,
+        MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: p)));
+    _load();
+  }
+
+  Future<void> _toggleLock(Project p) async {
+    if (!p.isLocked) {
+      // Turning lock ON doesn't need to re-authenticate — you're already
+      // in the app. Just confirm the device actually has a way to
+      // authenticate later, otherwise the lock would be unopenable.
+      final canAuth = await AuthService.canAuthenticate();
+      if (!canAuth) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('ডিভাইসে ফিঙ্গারপ্রিন্ট/PIN সেট করা নেই, লক করা যাবে না'),
+          backgroundColor: AppTheme.danger,
+        ));
+        return;
+      }
+    } else {
+      // Turning lock OFF requires proving you're allowed to.
+      final ok = await AuthService.authenticate(reason: 'লক খুলতে যাচাই করো');
+      if (!ok) return;
+    }
+    await DBHelper.updateProject(p.copyWith(
+        locked: p.isLocked ? 0 : 1, updatedAt: now()));
+    _load();
+  }
+
   Widget _projectCard(Project p) {
     final st = _stats[p.id] ?? {'total':0,'done':0,'doing':0,'todo':0};
     final total = st['total']!;
@@ -266,11 +308,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () async {
-          await Navigator.push(context,
-              MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: p)));
-          _load();
-        },
+        onTap: () => _openProject(p),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Padding(
             padding: const EdgeInsets.all(14),
@@ -292,7 +330,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Expanded(child: Text(p.name, style: AppTheme.title())),
+                Expanded(child: Row(children: [
+                  Flexible(child: Text(p.name, style: AppTheme.title(),
+                      overflow: TextOverflow.ellipsis)),
+                  if (p.isLocked) ...[
+                    const SizedBox(width: 6),
+                    Icon(Icons.lock_outline, size: 14, color: AppTheme.textMuted),
+                  ],
+                ])),
                 // Edit & Copy — the two most-used actions, kept visible.
                 _iconBtn(Icons.edit_outlined, () async {
                   await Navigator.push(context, MaterialPageRoute(
@@ -313,8 +358,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child:  Icon(Icons.more_vert, size: 16, color: AppTheme.textMuted),
                   ),
                   color: AppTheme.bg2,
-                  onSelected: (v) { if (v == 'delete') _delete(p); },
+                  onSelected: (v) {
+                    if (v == 'delete') _delete(p);
+                    if (v == 'lock') _toggleLock(p);
+                  },
                   itemBuilder: (_) => [
+                    PopupMenuItem(value: 'lock', child: Row(children: [
+                      Icon(p.isLocked ? Icons.lock_open_outlined : Icons.lock_outline,
+                          size: 18, color: AppTheme.textSecondary),
+                      const SizedBox(width: 10),
+                      Text(p.isLocked ? 'লক খোলো' : 'লক করো',
+                          style: TextStyle(color: AppTheme.textSecondary)),
+                    ])),
                     PopupMenuItem(value: 'delete', child: Row(children: [
                       Icon(Icons.delete_outline, size: 18, color: AppTheme.danger),
                       const SizedBox(width: 10),
