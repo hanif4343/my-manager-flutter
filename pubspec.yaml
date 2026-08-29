@@ -32,6 +32,8 @@ dependencies:
   flutter_overlay_window: ^0.5.0
   android_intent_plus: ^5.3.0
   receive_sharing_intent: ^1.8.1
+  workmanager: ^0.5.2
+  local_auth: ^2.3.0
 
 dev_dependencies:
   flutter_test:
