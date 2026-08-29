@@ -7,7 +7,7 @@ import '../models/checklist_item.dart';
 
 class DBHelper {
   static Database? _db;
-  static const _version = 6;
+  static const _version = 7;
 
   static Future<Database> get db async {
     _db ??= await _initDB();
@@ -31,6 +31,7 @@ class DBHelper {
         status TEXT DEFAULT 'active',
         version INTEGER DEFAULT 1,
         sort_order INTEGER DEFAULT 0,
+        locked INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
@@ -138,6 +139,11 @@ class DBHelper {
             FOREIGN KEY(idea_id) REFERENCES ideas(id)
           )
         ''');
+      } catch (_) {}
+    }
+    if (oldV < 7) {
+      try {
+        await db.execute('ALTER TABLE projects ADD COLUMN locked INTEGER DEFAULT 0');
       } catch (_) {}
     }
   }
