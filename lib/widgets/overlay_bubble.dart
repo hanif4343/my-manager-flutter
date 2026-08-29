@@ -12,17 +12,18 @@ import '../models/project.dart';
 /// screen). Runs in its own isolated Flutter engine, started from
 /// `overlayMain()` in main.dart.
 ///
-/// Deliberately kept simple: earlier versions tried to replicate
-/// Messenger's exact "drag down to an X to remove" gesture using a
-/// custom fullscreen-resize-mid-drag trick. That turned out to be too
-/// fragile to get right without testing on a real device — it kept
-/// causing crashes. Moving is now handled entirely by the overlay
-/// plugin's own built-in dragging (`enableDrag: true`), which is
-/// reliable and well-tested by the plugin itself. Dragging is only ever
-/// enabled while collapsed — it's turned off while the quick-add panel
-/// is open, which is what fixed the original "dragging while picking a
-/// project" bug. Turning the bubble off entirely is done from the
-/// Settings toggle, not a drag gesture.
+/// The expanded panel works like a tiny idea manager rather than a
+/// single "type and go" box: the project you probably want is already
+/// selected (most-used first), your existing ideas for it are listed
+/// (most recently touched first) and editable right there, and adding a
+/// new one doesn't close the panel — so several quick edits/additions
+/// can happen in one go before minimizing back to the bubble.
+///
+/// Moving the collapsed bubble is handled entirely by the overlay
+/// plugin's own built-in dragging (`enableDrag: true`) rather than
+/// custom gesture code — that was the fragile part in earlier versions.
+/// Dragging is only ever enabled while collapsed, off while this panel
+/// is open.
 class OverlayBubble extends StatefulWidget {
   const OverlayBubble({super.key});
   @override State<OverlayBubble> createState() => _OverlayBubbleState();
@@ -31,13 +32,18 @@ class OverlayBubble extends StatefulWidget {
 class _OverlayBubbleState extends State<OverlayBubble> {
   static const collapsedSize = 60;
   static const expandedWidth = 300;
-  static const expandedHeight = 320;
+  static const expandedHeight = 420;
 
   bool _expanded = false;
-  bool _loading = true;
+  bool _loadingProjects = true;
+  bool _loadingIdeas = false;
   List<Project> _projects = [];
+  List<Idea> _ideas = [];
   int? _selectedProjectId;
-  final _ctrl = TextEditingController();
+
+  final _newIdeaCtrl = TextEditingController();
+  int? _editingIdeaId;
+  final _editCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -45,17 +51,85 @@ class _OverlayBubbleState extends State<OverlayBubble> {
     _loadProjects();
   }
 
+  @override
+  void dispose() {
+    _newIdeaCtrl.dispose();
+    _editCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Most-used projects first (most ideas, ties broken by recency) — the
+  /// project you probably want is already selected when the panel opens.
   Future<void> _loadProjects() async {
     try {
-      final list = await DBHelper.getProjects();
-      if (mounted) setState(() {
+      final list = await DBHelper.getProjectsSortedByUsage();
+      if (!mounted) return;
+      setState(() {
         _projects = list;
         _selectedProjectId = list.isNotEmpty ? list.first.id : null;
-        _loading = false;
+        _loadingProjects = false;
       });
+      if (_selectedProjectId != null) _loadIdeas(_selectedProjectId!);
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _loadingProjects = false);
     }
+  }
+
+  /// Existing ideas for the selected project, most recently touched
+  /// first — a reasonable stand-in for "most used" since there's no
+  /// explicit usage counter on ideas.
+  Future<void> _loadIdeas(int projectId) async {
+    setState(() => _loadingIdeas = true);
+    try {
+      final list = await DBHelper.getIdeas(projectId);
+      list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      if (mounted) setState(() { _ideas = list; _loadingIdeas = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingIdeas = false);
+    }
+  }
+
+  void _selectProject(int id) {
+    setState(() { _selectedProjectId = id; _editingIdeaId = null; });
+    _loadIdeas(id);
+  }
+
+  Future<void> _addIdea() async {
+    final title = _newIdeaCtrl.text.trim();
+    if (title.isEmpty || _selectedProjectId == null) return;
+    _newIdeaCtrl.clear();
+    final n = DateTime.now().millisecondsSinceEpoch;
+    await DBHelper.insertIdea(Idea(
+      projectId: _selectedProjectId!, title: title,
+      createdAt: n, updatedAt: n,
+    ));
+    await FlutterOverlayWindow.shareData('idea_added');
+    // Stays open — quick-capture doesn't have to mean one-and-done.
+    _loadIdeas(_selectedProjectId!);
+  }
+
+  void _startEdit(Idea idea) {
+    setState(() {
+      _editingIdeaId = idea.id;
+      _editCtrl.text = idea.title;
+    });
+  }
+
+  void _cancelEdit() => setState(() => _editingIdeaId = null);
+
+  Future<void> _commitEdit(Idea idea) async {
+    final title = _editCtrl.text.trim();
+    if (title.isEmpty) return;
+    await DBHelper.updateIdea(Idea(
+      id: idea.id, projectId: idea.projectId, title: title,
+      description: idea.description, status: idea.status,
+      priority: idea.priority, isArchived: idea.isArchived,
+      deadline: idea.deadline, createdAt: idea.createdAt,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    ));
+    setState(() => _editingIdeaId = null);
+    // Re-sorts to the top too, since it's now the most recently touched.
+    _loadIdeas(idea.projectId);
   }
 
   Future<void> _expand() async {
@@ -74,20 +148,7 @@ class _OverlayBubbleState extends State<OverlayBubble> {
       await FlutterOverlayWindow.updateFlag(OverlayFlag.defaultFlag);
       await FlutterOverlayWindow.resizeOverlay(collapsedSize, collapsedSize, true);
     } catch (_) {}
-    _ctrl.clear();
-    if (mounted) setState(() => _expanded = false);
-  }
-
-  Future<void> _save() async {
-    final title = _ctrl.text.trim();
-    if (title.isEmpty || _selectedProjectId == null) return;
-    final n = DateTime.now().millisecondsSinceEpoch;
-    await DBHelper.insertIdea(Idea(
-      projectId: _selectedProjectId!, title: title,
-      createdAt: n, updatedAt: n,
-    ));
-    await FlutterOverlayWindow.shareData('idea_added');
-    await _collapse();
+    setState(() { _expanded = false; _editingIdeaId = null; });
   }
 
   /// Brings the host app (My Manager itself) to the foreground.
@@ -156,20 +217,18 @@ class _OverlayBubbleState extends State<OverlayBubble> {
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4),
             blurRadius: 16, offset: const Offset(0, 6))],
       ),
-      child: _loading
+      child: _loadingProjects
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
           : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              // Header — Save lives here, at the top, so the on-screen
-              // keyboard can never cover it.
+              // Header — no dedicated "save" icon here anymore; adding a
+              // new idea has its own + button further down instead.
               Row(children: [
                 const Text('⚡', style: TextStyle(fontSize: 18)),
                 const SizedBox(width: 6),
-                 Expanded(child: Text('Quick Idea',
+                 Expanded(child: Text('My Manager',
                     style: TextStyle(color: AppTheme.textPrimary,
-                        fontSize: 16, fontWeight: FontWeight.w700))),
+                        fontSize: 15, fontWeight: FontWeight.w700))),
                 _headerIcon(Icons.open_in_full, 'পুরো অ্যাপ খোলো', _openMainApp),
-                const SizedBox(width: 4),
-                _headerIcon(Icons.check_circle, 'সেভ করো', _save, color: AppTheme.green),
                 const SizedBox(width: 4),
                 _headerIcon(Icons.remove, 'ছোট করো (বাবলে ফিরে যাও)', _collapse),
                 const SizedBox(width: 4),
@@ -177,7 +236,7 @@ class _OverlayBubbleState extends State<OverlayBubble> {
                     'এখনকার মতো লুকাও (অ্যাপ খুললে আবার আসবে)',
                     _hideForNow, color: AppTheme.danger),
               ]),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               if (_projects.isEmpty)
                  Expanded(child: Center(
                   child: Text('আগে অ্যাপে একটা প্রজেক্ট বানাও',
@@ -185,17 +244,15 @@ class _OverlayBubbleState extends State<OverlayBubble> {
                       textAlign: TextAlign.center),
                 ))
               else ...[
-                 Text('প্রজেক্ট:', style: TextStyle(
-                    color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
+                // Most-used project first.
                 SizedBox(
-                  height: 34,
+                  height: 32,
                   child: ListView(scrollDirection: Axis.horizontal, children: _projects.map((p) {
                     final sel = _selectedProjectId == p.id;
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: GestureDetector(
-                        onTap: () => setState(() => _selectedProjectId = p.id),
+                        onTap: () => _selectProject(p.id!),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
@@ -212,29 +269,117 @@ class _OverlayBubbleState extends State<OverlayBubble> {
                     );
                   }).toList()),
                 ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _ctrl, autofocus: true, maxLines: null,
-                    expands: true, textAlignVertical: TextAlignVertical.top,
-                    style:  TextStyle(color: AppTheme.textPrimary, fontSize: 14),
+                const SizedBox(height: 10),
+                // Quick-add row — its own dedicated + button.
+                Row(children: [
+                  Expanded(child: TextField(
+                    controller: _newIdeaCtrl,
+                    style:  TextStyle(color: AppTheme.textPrimary, fontSize: 13),
                     decoration: InputDecoration(
-                      hintText: 'আইডিয়া লিখো...',
-                      hintStyle:  TextStyle(color: AppTheme.textMuted),
+                      hintText: 'নতুন আইডিয়া লিখো...',
+                      hintStyle:  TextStyle(color: AppTheme.textMuted, fontSize: 13),
                       filled: true, fillColor: AppTheme.bg3,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
                           borderSide:  BorderSide(color: AppTheme.border)),
                       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
                           borderSide: const BorderSide(color: AppTheme.accent, width: 2)),
-                      contentPadding: const EdgeInsets.all(12),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     ),
-                    onSubmitted: (_) => _save(),
+                    onSubmitted: (_) => _addIdea(),
+                  )),
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: _addIdea,
+                    child: Container(
+                      padding: const EdgeInsets.all(11),
+                      decoration: BoxDecoration(color: AppTheme.accent,
+                          borderRadius: BorderRadius.circular(10)),
+                      child: const Icon(Icons.add, color: Colors.white, size: 18),
+                    ),
                   ),
+                ]),
+                const SizedBox(height: 10),
+                 Text('সাম্প্রতিক আইডিয়া', style: TextStyle(
+                    color: AppTheme.textSecondary, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Expanded(
+                  child: _loadingIdeas
+                      ? const Center(child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppTheme.accent))
+                      : _ideas.isEmpty
+                          ?  Center(child: Text('এখনো কোনো আইডিয়া নেই',
+                              style: TextStyle(color: AppTheme.textMuted, fontSize: 12)))
+                          : ListView.builder(
+                              itemCount: _ideas.length,
+                              itemBuilder: (_, i) => _ideaRow(_ideas[i]),
+                            ),
                 ),
               ],
             ]),
     ),
   );
+
+  Widget _ideaRow(Idea idea) {
+    final editing = _editingIdeaId == idea.id;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppTheme.bg3,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: editing ? AppTheme.accent : AppTheme.border,
+              width: editing ? 2 : 1),
+        ),
+        child: editing
+            ? Row(children: [
+                Expanded(child: TextField(
+                  controller: _editCtrl, autofocus: true,
+                  style:  TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+                  decoration: const InputDecoration(
+                    isDense: true, border: InputBorder.none,
+                  ),
+                  onSubmitted: (_) => _commitEdit(idea),
+                )),
+                GestureDetector(
+                  onTap: () => _commitEdit(idea),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(Icons.check, size: 18, color: AppTheme.green),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: _cancelEdit,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(Icons.close, size: 18, color: AppTheme.textMuted),
+                  ),
+                ),
+              ])
+            : Row(children: [
+                Icon(
+                  idea.status == 'done' ? Icons.check_circle
+                      : idea.status == 'doing' ? Icons.incomplete_circle_outlined
+                      : Icons.radio_button_unchecked,
+                  size: 16, color: AppTheme.textMuted,
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text(idea.title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: idea.status == 'done' ? AppTheme.textMuted : AppTheme.textPrimary,
+                        fontSize: 13,
+                        decoration: idea.status == 'done' ? TextDecoration.lineThrough : null))),
+                GestureDetector(
+                  onTap: () => _startEdit(idea),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(Icons.edit_outlined, size: 15, color: AppTheme.textMuted),
+                  ),
+                ),
+              ]),
+      ),
+    );
+  }
 
   Widget _headerIcon(IconData icon, String tooltip, VoidCallback onTap, {Color? color}) =>
       Tooltip(
