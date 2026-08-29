@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+import 'package:workmanager/workmanager.dart';
 import '../services/settings_service.dart';
 import '../services/notification_service.dart';
+import '../services/drive_service.dart';
 import '../widgets/app_theme.dart';
+
+// Must match the constant of the same name in main.dart — kept as a
+// separate literal here (rather than importing main.dart) to avoid a
+// circular import (main.dart -> home_shell.dart -> settings_screen.dart).
+const _autoBackupTaskName = 'my_manager_auto_backup';
 
 class SettingsScreen extends StatefulWidget {
   final VoidCallback onThemeToggle;
@@ -14,6 +21,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isDark = SettingsService.isDark;
   bool _bubbleEnabled = SettingsService.getBool('bubble_enabled', defaultValue: false);
   bool _bubbleBusy = false;
+  bool _autoBackupEnabled = SettingsService.getBool('auto_backup_enabled', defaultValue: false);
+  bool _autoBackupBusy = false;
   bool _digestEnabled = true;
   int _digestHour = 8;
   int _digestMinute = 0;
@@ -87,8 +96,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           height: 60, width: 60,
           alignment: OverlayAlignment.centerRight,
           flag: OverlayFlag.defaultFlag,
-          enableDrag: false,
-          positionGravity: PositionGravity.none,
+          enableDrag: true,
+          positionGravity: PositionGravity.auto,
           overlayTitle: 'My Manager',
           overlayContent: 'কুইক-অ্যাড বাবল চলছে',
         );
@@ -102,6 +111,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() => _bubbleBusy = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('বাবল চালু করা যায়নি: $e'),
+          backgroundColor: AppTheme.red,
+        ));
+      }
+    }
+  }
+
+  Future<void> _onAutoBackupToggle(bool val) async {
+    if (_autoBackupBusy) return;
+    setState(() => _autoBackupBusy = true);
+    try {
+      if (val) {
+        if (!DriveService.instance.isSignedIn) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar( SnackBar(
+            content: Text('আগে Backup পেজ থেকে Google Account সাইন-ইন করো'),
+            backgroundColor: AppTheme.red,
+          ));
+          setState(() => _autoBackupBusy = false);
+          return;
+        }
+        await Workmanager().registerPeriodicTask(
+          _autoBackupTaskName, _autoBackupTaskName,
+          frequency: const Duration(hours: 1),
+          constraints: Constraints(networkType: NetworkType.unmetered),
+          existingWorkPolicy: ExistingWorkPolicy.replace,
+        );
+      } else {
+        await Workmanager().cancelByUniqueName(_autoBackupTaskName);
+      }
+      await SettingsService.setBool('auto_backup_enabled', val);
+      if (mounted) setState(() { _autoBackupEnabled = val; _autoBackupBusy = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _autoBackupBusy = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Auto-backup চালু করা যায়নি: $e'),
           backgroundColor: AppTheme.red,
         ));
       }
@@ -150,6 +194,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     value: _bubbleEnabled,
                     activeColor: AppTheme.accent,
                     onChanged: _onBubbleToggle,
+                  ),
+          ),
+          const SizedBox(height: 16),
+
+          _sectionTitle('Backup'),
+          _settingTile(
+            icon: Icons.cloud_sync_outlined,
+            iconColor: AppTheme.accent,
+            title: 'Auto Backup (শুধু WiFi-তে)',
+            subtitle: 'প্রতি ঘণ্টায় WiFi-তে থাকলে নিজে থেকে Google Drive-এ backup হবে — '
+                'আগে Backup পেজ থেকে একবার sign-in করা লাগবে',
+            trailing: _autoBackupBusy
+                ? const SizedBox(width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accent))
+                : Switch(
+                    value: _autoBackupEnabled,
+                    activeColor: AppTheme.accent,
+                    onChanged: _onAutoBackupToggle,
                   ),
           ),
           const SizedBox(height: 16),
