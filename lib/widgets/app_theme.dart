@@ -28,6 +28,16 @@ class AppTheme {
 
   static const accent = Color(0xFF4F46E5); // single accent — primary actions only
   static const danger = Color(0xFFDC4C4C); // destructive actions only
+  // Universal feedback colors — success/warning/error. These are a
+  // different thing from "color-coding meaning" (status, priority,
+  // project identity, which deliberately stay neutral everywhere else).
+  // A success snackbar being green, or a recording dot being amber, is a
+  // near-universal UI convention independent of that — same category as
+  // the delete button staying red.
+  static const _lightSuccess = Color(0xFF15803D);
+  static const _darkSuccess  = Color(0xFF4ADE80);
+  static const _lightWarning = Color(0xFFB45309);
+  static const _darkWarning  = Color(0xFFFBBF24);
   static const neutralAvatar = Color(0xFF5C5C66); // project monogram circles
 
   static bool _isDarkMode = false;
@@ -44,10 +54,10 @@ class AppTheme {
   static Color get textSecondary => _isDarkMode ? _darkInk2 : _lightInk2;
   static Color get textMuted => _isDarkMode ? _darkInk3 : _lightInk3;
 
-  // Kept for any old call sites that still reference these names —
-  // they now just point at neutral ink instead of carrying meaning.
-  static Color get green => textSecondary;
-  static Color get yellow => textSecondary;
+  // Kept for any old call sites that still reference these names — now
+  // genuine feedback colors (success/warning), not neutral placeholders.
+  static Color get green => _isDarkMode ? _darkSuccess : _lightSuccess;
+  static Color get yellow => _isDarkMode ? _darkWarning : _lightWarning;
   static Color get red => danger;
   static Color get tape => bg3;
 
