@@ -55,9 +55,13 @@ class _ShareIntakeScreenState extends State<ShareIntakeScreen> {
 
   Future<void> _loadProjects() async {
     final list = await DBHelper.getProjects();
+    // Locked projects are excluded here too, for the same reason as the
+    // floating bubble — no easy way to prompt for fingerprint/PIN from
+    // this flow either.
+    final visible = list.where((p) => !p.isLocked).toList();
     if (mounted) setState(() {
-      _projects = list;
-      _selectedProjectId = list.isNotEmpty ? list.first.id : null;
+      _projects = visible;
+      _selectedProjectId = visible.isNotEmpty ? visible.first.id : null;
       _loading = false;
     });
   }
