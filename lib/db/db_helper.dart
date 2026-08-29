@@ -149,6 +149,23 @@ class DBHelper {
     return rows.map(Project.fromMap).toList();
   }
 
+  /// Projects ordered by how much they're actually used — most ideas
+  /// first, ties broken by most recently touched. Used by the floating
+  /// bubble's quick-add panel so the project you probably want is
+  /// already at the front, instead of relying on manual sort order.
+  static Future<List<Project>> getProjectsSortedByUsage() async {
+    final d = await db;
+    final rows = await d.rawQuery('''
+      SELECT p.*,
+        (SELECT COUNT(*) FROM ideas i
+         WHERE i.project_id = p.id AND (i.is_archived IS NULL OR i.is_archived = 0)
+        ) AS idea_count
+      FROM projects p
+      ORDER BY idea_count DESC, p.updated_at DESC
+    ''');
+    return rows.map(Project.fromMap).toList();
+  }
+
   static Future<int> insertProject(Project p) async {
     final d = await db;
     await d.execute('UPDATE projects SET sort_order = sort_order + 1');
