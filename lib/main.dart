@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:workmanager/workmanager.dart';
+import 'services/widget_service.dart';
 import 'screens/home_shell.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/overlay_bubble.dart';
@@ -73,6 +74,9 @@ void main() async {
     // Auto-backup setup failing shouldn't block the app from starting.
   }
   runApp(const MyManagerApp());
+  // Refresh the home screen widget on every cold start too, in case
+  // something changed while the app wasn't running.
+  WidgetService.update();
 }
 
 /// Runs in a headless background isolate whenever Android's WorkManager
