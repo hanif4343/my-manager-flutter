@@ -18,7 +18,9 @@ import 'idea_detail_screen.dart';
 import 'project_version_screen.dart';
 import 'file_grid_screen.dart';
 
-int now() => DateTime.now().millisecondsSinceEpoch;
+// now() is defined in app_theme.dart (imported above) — no local
+// duplicate here, to avoid "ambiguous import" errors in any screen that
+// imports both this file and app_theme.dart.
 
 const statusConfig = {
   'todo':  {'label': 'বাকি',  'icon': Icons.radio_button_unchecked, 'color': Color(0xFF6E6E78)},
