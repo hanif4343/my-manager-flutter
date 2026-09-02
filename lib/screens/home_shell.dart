@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import '../widgets/app_theme.dart';
+import '../services/widget_service.dart';
 import 'dashboard_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
@@ -72,6 +73,12 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       setState(() => _dashboardGen++);
+    }
+    // Refresh the home screen widget whenever the app leaves the
+    // foreground — covers ideas added/edited/completed during the
+    // session, right before the person goes back to their home screen.
+    if (state == AppLifecycleState.paused) {
+      WidgetService.update();
     }
   }
 
