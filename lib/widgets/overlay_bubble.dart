@@ -6,6 +6,7 @@ import 'app_theme.dart';
 import '../db/db_helper.dart';
 import '../models/idea.dart';
 import '../models/project.dart';
+import '../services/widget_service.dart';
 
 /// Content shown inside the system-wide overlay window (the actual
 /// Messenger-style chat head that floats over other apps / the home
@@ -111,6 +112,7 @@ class _OverlayBubbleState extends State<OverlayBubble> {
       createdAt: n, updatedAt: n,
     ));
     await FlutterOverlayWindow.shareData('idea_added');
+    WidgetService.update();
     // Stays open — quick-capture doesn't have to mean one-and-done.
     _loadIdeas(_selectedProjectId!);
   }
@@ -139,6 +141,7 @@ class _OverlayBubbleState extends State<OverlayBubble> {
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     ));
     setState(() => _editingIdea = null);
+    WidgetService.update();
     // Re-sorts to the top too, since it's now the most recently touched.
     _loadIdeas(idea.projectId);
   }
