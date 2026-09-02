@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_background"
+    android:padding="14dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="⚡ My Manager"
+        android:textColor="#F2F2F5"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/widget_summary"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="0 টা বাকি"
+        android:textColor="#A8A8B3"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/widget_idea_1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="#F2F2F5"
+        android:textSize="12.5sp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/widget_idea_2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="#F2F2F5"
+        android:textSize="12.5sp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/widget_idea_3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="#F2F2F5"
+        android:textSize="12.5sp"
+        android:visibility="gone" />
+
+</LinearLayout>
