@@ -56,3 +56,15 @@ dependencies {
     // (local_auth's biometric/PIN prompt needs an AppCompat theme).
     implementation 'androidx.appcompat:appcompat:1.6.1'
 }
+
+// workmanager and home_widget each pull in a different version of
+// androidx.work (2.8.1 vs 2.7.1 via its -ktx artifact), causing a
+// duplicate-class error at release build time. Forcing both to the same
+// version makes Gradle resolve them as one, instead of two conflicting
+// copies.
+configurations.all {
+    resolutionStrategy {
+        force 'androidx.work:work-runtime:2.8.1'
+        force 'androidx.work:work-runtime-ktx:2.8.1'
+    }
+}
