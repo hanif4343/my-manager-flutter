@@ -35,6 +35,8 @@ dependencies:
   workmanager: ^0.5.2
   local_auth: ^2.3.0
   home_widget: ^0.5.0
+  flutter_secure_storage: ^10.3.1
+  otp: ^3.2.0
 
 dev_dependencies:
   flutter_test:
