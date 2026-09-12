@@ -13,18 +13,22 @@ import '../services/widget_service.dart';
 /// screen). Runs in its own isolated Flutter engine, started from
 /// `overlayMain()` in main.dart.
 ///
-/// The expanded panel works like a tiny idea manager rather than a
-/// single "type and go" box: the project you probably want is already
-/// selected (most-used first), your existing ideas for it are listed
-/// (most recently touched first) and editable right there, and adding a
-/// new one doesn't close the panel — so several quick edits/additions
-/// can happen in one go before minimizing back to the bubble.
+/// ── Why dragging is custom instead of native ────────────────────
+/// The plugin's own built-in `enableDrag` was tried first, but on some
+/// devices (reported: Vivo/OriginOS) its native touch handling could get
+/// stuck mid-gesture — the bubble stopped responding to taps/moves *and*
+/// blocked touches to the rest of the screen, bad enough to need a
+/// device restart. Native drag is now always off. Moving the bubble is
+/// done entirely in Flutter instead: 4 small invisible drag zones, one
+/// at each corner, calling `moveOverlay()` directly and clamping the
+/// result so it can never leave the screen. The center of the bubble
+/// stays a plain tap-to-expand zone with no drag logic attached at all,
+/// so there's no tap-vs-drag ambiguity.
 ///
-/// Moving the collapsed bubble is handled entirely by the overlay
-/// plugin's own built-in dragging (`enableDrag: true`) rather than
-/// custom gesture code — that was the fragile part in earlier versions.
-/// Dragging is only ever enabled while collapsed, off while this panel
-/// is open.
+/// Getting real screen bounds to clamp against, even from this tiny
+/// 60x60 window, uses `View.of(context).display.size` — MediaQuery /
+/// FlutterView.physicalSize here would only report this window's own
+/// size, not the actual device screen.
 class OverlayBubble extends StatefulWidget {
   const OverlayBubble({super.key});
   @override State<OverlayBubble> createState() => _OverlayBubbleState();
@@ -47,10 +51,16 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   final _editTitleCtrl = TextEditingController();
   final _editDescCtrl = TextEditingController();
 
+  // Custom bounded drag — tracks the bubble's current absolute position
+  // (screen coordinates), synced from the plugin once at startup, then
+  // updated locally as the person drags.
+  Offset? _pos;
+
   @override
   void initState() {
     super.initState();
     _loadProjects();
+    _syncPosition();
   }
 
   @override
@@ -59,6 +69,16 @@ class _OverlayBubbleState extends State<OverlayBubble> {
     _editTitleCtrl.dispose();
     _editDescCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _syncPosition() async {
+    try {
+      final p = await FlutterOverlayWindow.getOverlayPosition();
+      if (mounted) setState(() => _pos = Offset(p.x, p.y));
+    } catch (_) {
+      // Not fatal — the first drag will just use whatever _pos ends up
+      // defaulting to; worst case a small first-drag jump.
+    }
   }
 
   /// Most-used projects first (most ideas, ties broken by recency) — the
@@ -146,6 +166,28 @@ class _OverlayBubbleState extends State<OverlayBubble> {
     _loadIdeas(idea.projectId);
   }
 
+  /// Moves the bubble by [delta], clamped so it can never go past any
+  /// edge of the real device screen. Uses `View.of(context).display.size`
+  /// rather than MediaQuery — MediaQuery/physicalSize here would only
+  /// report this tiny 60x60 window's own bounds, not the actual screen,
+  /// so clamping against that would be meaningless. `display.size` is
+  /// the one API that reports the true physical display regardless of
+  /// how small the current window is — no fullscreen resize needed.
+  void _dragBy(Offset delta) {
+    if (_pos == null) return;
+    final view = View.of(context);
+    final dpr = view.devicePixelRatio;
+    final screenW = view.display.size.width / dpr;
+    final screenH = view.display.size.height / dpr;
+    final next = Offset(
+      (_pos!.dx + delta.dx).clamp(0.0, screenW - collapsedSize),
+      (_pos!.dy + delta.dy).clamp(0.0, screenH - collapsedSize),
+    );
+    setState(() => _pos = next);
+    FlutterOverlayWindow.moveOverlay(OverlayPosition(next.dx, next.dy))
+        .catchError((_) {});
+  }
+
   Future<void> _expand() async {
     try {
       await FlutterOverlayWindow.resizeOverlay(expandedWidth, expandedHeight, false);
@@ -160,7 +202,9 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   Future<void> _collapse() async {
     try {
       await FlutterOverlayWindow.updateFlag(OverlayFlag.defaultFlag);
-      await FlutterOverlayWindow.resizeOverlay(collapsedSize, collapsedSize, true);
+      // Drag is handled entirely by our own corner-handle logic, never
+      // by the plugin's native drag — always false here.
+      await FlutterOverlayWindow.resizeOverlay(collapsedSize, collapsedSize, false);
     } catch (_) {}
     setState(() { _expanded = false; _editingIdea = null; });
   }
@@ -201,21 +245,43 @@ class _OverlayBubbleState extends State<OverlayBubble> {
     );
   }
 
-  Widget _collapsedBubble() => GestureDetector(
-    onTap: _expand,
-    child: Container(
-      width: collapsedSize.toDouble(),
-      height: collapsedSize.toDouble(),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft, end: Alignment.bottomRight,
-          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+  Widget _collapsedBubble() => Stack(children: [
+    // Center: a plain tap opens the quick-add panel. This zone doesn't
+    // handle drag at all, so there's no tap-vs-drag ambiguity here.
+    GestureDetector(
+      onTap: _expand,
+      child: Container(
+        width: collapsedSize.toDouble(),
+        height: collapsedSize.toDouble(),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft, end: Alignment.bottomRight,
+            colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+          ),
+          shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.35),
+              blurRadius: 10, offset: const Offset(0, 3))],
         ),
-        shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.35),
-            blurRadius: 10, offset: const Offset(0, 3))],
+        child: const Icon(Icons.lightbulb_outline, color: Colors.white, size: 26),
       ),
-      child: const Icon(Icons.lightbulb_outline, color: Colors.white, size: 26),
+    ),
+    // The 4 corners: press-and-drag here to move the bubble, bounded to
+    // stay fully on-screen. Kept spatially separate from the center tap
+    // zone on purpose — no ambiguity, no gesture-arena conflicts.
+    _cornerHandle(top: 0, left: 0),
+    _cornerHandle(top: 0, right: 0),
+    _cornerHandle(bottom: 0, left: 0),
+    _cornerHandle(bottom: 0, right: 0),
+  ]);
+
+  Widget _cornerHandle({double? top, double? bottom, double? left, double? right}) => Positioned(
+    top: top, bottom: bottom, left: left, right: right,
+    child: GestureDetector(
+      onPanUpdate: (d) => _dragBy(d.delta),
+      child: Container(
+        width: 18, height: 18,
+        color: Colors.transparent, // invisible hit area, no visual clutter
+      ),
     ),
   );
 
