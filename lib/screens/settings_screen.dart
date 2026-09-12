@@ -4,7 +4,9 @@ import 'package:workmanager/workmanager.dart';
 import '../services/settings_service.dart';
 import '../services/notification_service.dart';
 import '../services/drive_service.dart';
+import '../services/auth_service.dart';
 import '../widgets/app_theme.dart';
+import 'vault_screen.dart';
 
 // Must match the constant of the same name in main.dart — kept as a
 // separate literal here (rather than importing main.dart) to avoid a
@@ -216,6 +218,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 16),
 
+          _sectionTitle('Vault'),
+          _settingTile(
+            icon: Icons.lock_outline,
+            iconColor: AppTheme.accent,
+            title: 'পাসওয়ার্ড ভল্ট',
+            subtitle: 'পাসওয়ার্ড, API token, GitHub token, secrets — এনক্রিপ্টেড, '
+                'fingerprint/PIN দিয়ে সুরক্ষিত',
+            trailing: Icon(Icons.chevron_right, color: AppTheme.textMuted),
+            onTap: () async {
+              final canAuth = await AuthService.canAuthenticate();
+              if (!canAuth) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar( SnackBar(
+                  content: Text('ডিভাইসে ফিঙ্গারপ্রিন্ট/PIN সেট করা নেই'),
+                  backgroundColor: AppTheme.red,
+                ));
+                return;
+              }
+              final ok = await AuthService.authenticate(reason: 'ভল্ট খুলতে যাচাই করো');
+              if (ok && mounted) {
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const VaultScreen()));
+              }
+            },
+          ),
+          const SizedBox(height: 16),
+
           _sectionTitle('Daily Digest Notification'),
           _settingTile(
             icon: Icons.notifications_outlined,
@@ -303,13 +331,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   );
 
   Widget _settingTile({required IconData icon, required Color iconColor,
-      required String title, String? subtitle, Widget? trailing}) =>
+      required String title, String? subtitle, Widget? trailing, VoidCallback? onTap}) =>
       Container(
         margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(color: AppTheme.bg2,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppTheme.border)),
         child: ListTile(
+          onTap: onTap,
           leading: Container(width: 36, height: 36,
             decoration: BoxDecoration(color: iconColor.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(8)),
