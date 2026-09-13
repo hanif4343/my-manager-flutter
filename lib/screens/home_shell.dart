@@ -3,15 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import '../widgets/app_theme.dart';
 import '../services/widget_service.dart';
+import '../services/auth_service.dart';
 import 'dashboard_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
 import 'share_intake_screen.dart';
+import 'vault_screen.dart';
 
-/// Top-level shell: bottom navigation between Projects / Search / Settings.
-/// Moving these into a bottom bar means the Dashboard's AppBar no longer
-/// needs to carry Search and Settings icons — less clutter, better thumb
-/// reach, and each section stays out of the way until you actually tap it.
+/// Top-level shell: bottom navigation between Projects / Search / Vault /
+/// Settings. Vault is a first-class destination of its own — a password
+/// manager is a fundamentally different tool from the project/idea
+/// manager the rest of this app is, so it doesn't belong tucked inside
+/// Settings as just another toggle.
 class HomeShell extends StatefulWidget {
   final VoidCallback onThemeToggle;
   const HomeShell({super.key, required this.onThemeToggle});
@@ -82,6 +85,26 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     }
   }
 
+  /// Vault isn't one of the swappable IndexedStack tabs — tapping it
+  /// authenticates, then pushes it as a full route on top of everything
+  /// (same as the auto-lock-on-pause behavior it already has when opened
+  /// this way). The bottom nav's selected tab underneath doesn't change,
+  /// so returning from the vault lands back exactly where you were.
+  Future<void> _openVault() async {
+    final canAuth = await AuthService.canAuthenticate();
+    if (!canAuth) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar( SnackBar(
+        content: Text('ডিভাইসে ফিঙ্গারপ্রিন্ট/PIN সেট করা নেই'),
+        backgroundColor: AppTheme.red,
+      ));
+      return;
+    }
+    final ok = await AuthService.authenticate(reason: 'ভল্ট খুলতে যাচাই করো');
+    if (ok && mounted) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const VaultScreen()));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final tabs = [
@@ -110,7 +133,18 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         ),
         child: NavigationBar(
           selectedIndex: _index,
-          onDestinationSelected: (i) => setState(() => _index = i),
+          onDestinationSelected: (i) {
+            if (i == 2) {
+              // Vault's position in the destinations list below — a tap
+              // here never changes _index, it just opens the vault as
+              // its own route.
+              _openVault();
+              return;
+            }
+            // Settings shifted from index 2 to index 3 to make room for
+            // Vault, so map the NavigationBar's index back to the tabs list.
+            setState(() => _index = i == 3 ? 2 : i);
+          },
           height: 60,
           destinations: const [
             NavigationDestination(
@@ -121,6 +155,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 icon: Icon(Icons.search_outlined),
                 selectedIcon: Icon(Icons.search),
                 label: 'খোঁজো'),
+            NavigationDestination(
+                icon: Icon(Icons.lock_outline),
+                selectedIcon: Icon(Icons.lock),
+                label: 'ভল্ট'),
             NavigationDestination(
                 icon: Icon(Icons.settings_outlined),
                 selectedIcon: Icon(Icons.settings),
