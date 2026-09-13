@@ -7,6 +7,7 @@ import 'services/widget_service.dart';
 import 'screens/home_shell.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/overlay_bubble.dart';
+import 'screens/autofill_picker_screen.dart';
 import 'services/notification_service.dart';
 import 'services/settings_service.dart';
 import 'services/drive_service.dart';
@@ -119,6 +120,15 @@ void overlayMain() async {
     await SettingsService.init();
   } catch (_) {}
   runApp(const OverlayBubble());
+}
+
+/// Entry point Android launches when it wants us to show autofill
+/// suggestions for a login field somewhere else on the device. Runs in
+/// its own separate Flutter engine, same pattern as overlayMain() above.
+@pragma('vm:entry-point')
+void autofillEntryPoint() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const AutofillPickerApp());
 }
 
 class MyManagerApp extends StatefulWidget {
