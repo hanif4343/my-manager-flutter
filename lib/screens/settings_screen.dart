@@ -7,6 +7,7 @@ import '../services/drive_service.dart';
 import '../services/auth_service.dart';
 import '../widgets/app_theme.dart';
 import 'vault_screen.dart';
+import 'package:flutter_autofill_service/flutter_autofill_service.dart';
 
 // Must match the constant of the same name in main.dart — kept as a
 // separate literal here (rather than importing main.dart) to avoid a
@@ -239,6 +240,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (ok && mounted) {
                 Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const VaultScreen()));
+              }
+            },
+          ),
+          _settingTile(
+            icon: Icons.auto_fix_high,
+            iconColor: AppTheme.accent,
+            title: 'Autofill চালু করো',
+            subtitle: 'অন্য অ্যাপ/ব্রাউজারের লগইন ফর্মে My Manager থেকে পাসওয়ার্ড সাজেস্ট হবে — '
+                'Android-এর নিজস্ব সেটিংস পেজ খুলবে',
+            trailing: Icon(Icons.chevron_right, color: AppTheme.textMuted),
+            onTap: () async {
+              try {
+                await AutofillService().requestSetAutofillService();
+              } catch (e) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('Autofill সেটিংস খোলা যায়নি: $e'),
+                  backgroundColor: AppTheme.red,
+                ));
               }
             },
           ),
