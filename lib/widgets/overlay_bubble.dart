@@ -161,6 +161,11 @@ class _OverlayBubbleState extends State<OverlayBubble> {
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     ));
     setState(() => _editingIdea = null);
+    // Tells the main app engine a change happened, so it can refresh
+    // immediately — matters because the overlay can float *over* the
+    // main app without ever actually backgrounding it, so the app's own
+    // "refresh when resumed" logic never fires in that case.
+    await FlutterOverlayWindow.shareData('idea_updated');
     WidgetService.update();
     // Re-sorts to the top too, since it's now the most recently touched.
     _loadIdeas(idea.projectId);
