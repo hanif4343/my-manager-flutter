@@ -4,9 +4,7 @@ import 'package:workmanager/workmanager.dart';
 import '../services/settings_service.dart';
 import '../services/notification_service.dart';
 import '../services/drive_service.dart';
-import '../services/auth_service.dart';
 import '../widgets/app_theme.dart';
-import 'vault_screen.dart';
 import 'package:flutter_autofill_service/flutter_autofill_service.dart';
 
 // Must match the constant of the same name in main.dart — kept as a
@@ -219,30 +217,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 16),
 
-          _sectionTitle('Vault'),
-          _settingTile(
-            icon: Icons.lock_outline,
-            iconColor: AppTheme.accent,
-            title: 'পাসওয়ার্ড ভল্ট',
-            subtitle: 'পাসওয়ার্ড, API token, GitHub token, secrets — এনক্রিপ্টেড, '
-                'fingerprint/PIN দিয়ে সুরক্ষিত',
-            trailing: Icon(Icons.chevron_right, color: AppTheme.textMuted),
-            onTap: () async {
-              final canAuth = await AuthService.canAuthenticate();
-              if (!canAuth) {
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar( SnackBar(
-                  content: Text('ডিভাইসে ফিঙ্গারপ্রিন্ট/PIN সেট করা নেই'),
-                  backgroundColor: AppTheme.red,
-                ));
-                return;
-              }
-              final ok = await AuthService.authenticate(reason: 'ভল্ট খুলতে যাচাই করো');
-              if (ok && mounted) {
-                Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const VaultScreen()));
-              }
-            },
-          ),
+          // The Vault itself now lives in its own bottom-nav tab (see
+          // home_shell.dart) rather than here — a password manager is a
+          // different kind of tool from the rest of this app, so it gets
+          // its own first-class section instead of being a Settings
+          // sub-item. Autofill setup stays here since it's a one-time
+          // system-level toggle, not the vault's content.
+          _sectionTitle('Autofill'),
           _settingTile(
             icon: Icons.auto_fix_high,
             iconColor: AppTheme.accent,
