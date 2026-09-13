@@ -98,6 +98,28 @@
             </intent-filter>
         </receiver>
 
+        <!-- Password Vault Autofill Service. NOTE: the exact class name
+             here is my best-effort match based on the plugin's package
+             (com.keevault.flutter_autofill_service) and its Dart-facing
+             API naming convention — I could not fully verify this exact
+             string from the plugin's own source before writing this. If
+             "My Manager" doesn't show up as an Autofill service option
+             in Android Settings after installing, this class name is
+             the first thing to double check against the plugin's own
+             source/example on GitHub. -->
+        <service
+            android:name="com.keevault.flutter_autofill_service.AutofillService"
+            android:label="My Manager Autofill"
+            android:permission="android.permission.BIND_AUTOFILL_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.autofill.AutofillService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.autofill"
+                android:resource="@xml/autofill_service_config"/>
+        </service>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>
