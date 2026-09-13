@@ -62,9 +62,18 @@ dependencies {
 // duplicate-class error at release build time. Forcing both to the same
 // version makes Gradle resolve them as one, instead of two conflicting
 // copies.
+//
+// Separately, one of the newer plugins (likely flutter_secure_storage or
+// flutter_autofill_service) transitively pulls in androidx.core 1.17.0,
+// which refuses to build under anything older than Android Gradle Plugin
+// 8.9.1 (we're on 8.6.0). Rather than chase an AGP/Gradle/Kotlin version
+// upgrade chain, force androidx.core back to a well-established version
+// from before that AGP-version gate existed.
 configurations.all {
     resolutionStrategy {
         force 'androidx.work:work-runtime:2.8.1'
         force 'androidx.work:work-runtime-ktx:2.8.1'
+        force 'androidx.core:core:1.13.1'
+        force 'androidx.core:core-ktx:1.13.1'
     }
 }
