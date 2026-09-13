@@ -40,7 +40,11 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
   Future<void> _load() async {
     AutofillMetadata? metadata;
     try {
-      metadata = await AutofillService().fillRequestedInteractive;
+      // fillRequestedInteractive gives a bool. We check fillRequested for AutofillMetadata.
+      dynamic req = await AutofillService().fillRequested;
+      if (req is AutofillMetadata) {
+        metadata = req;
+      }
     } catch (_) {
       // Not fatal — we just won't be able to narrow down by app/site,
       // and will show every login instead.
