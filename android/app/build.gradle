@@ -15,9 +15,11 @@ android {
         coreLibraryDesugaringEnabled true
     }
 
-    kotlinOptions {
-        jvmTarget = '1.8'
-    }
+    // JVM target for Kotlin compilation is set centrally in the root
+    // android/build.gradle (applies to every module, including this one) —
+    // removed the duplicate here since it used the older `kotlinOptions`
+    // DSL, which caused a build-breaking incompatibility once other
+    // plugins pulled in a different Kotlin Gradle Plugin resolution.
 
     defaultConfig {
         applicationId "com.hanif.mymanager"
