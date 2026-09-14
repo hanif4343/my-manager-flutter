@@ -192,8 +192,19 @@ class DriveService {
     final d = await DBHelper.db;
     final projects = await d.query('projects');
     final ideas = await d.query('ideas');
-    final files = await d.query('idea_files');
     final versions = await d.query('project_versions');
+
+    // idea_files one row at a time, not `d.query('idea_files')` in one
+    // go — some attachments (photos, PDFs) are large enough on their own
+    // that batching many rows together overflows Android's CursorWindow
+    // ("Row too big to fit into CursorWindow"). Querying by id
+    // individually gives each row its own fresh window instead.
+    final fileIds = await d.query('idea_files', columns: ['id']);
+    final files = <Map<String, dynamic>>[];
+    for (final idRow in fileIds) {
+      final rows = await d.query('idea_files', where: 'id = ?', whereArgs: [idRow['id']]);
+      if (rows.isNotEmpty) files.add(rows.first);
+    }
 
     return jsonEncode({
       'version': 3,
