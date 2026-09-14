@@ -282,9 +282,15 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   Widget _cornerHandle({double? top, double? bottom, double? left, double? right}) => Positioned(
     top: top, bottom: bottom, left: left, right: right,
     child: GestureDetector(
+      onTap: _expand, // a plain tap here should still open the panel —
+                       // otherwise a tap that happens to land in this
+                       // small corner zone does nothing at all.
       onPanUpdate: (d) => _dragBy(d.delta),
       child: Container(
-        width: 18, height: 18,
+        width: 14, height: 14, // shrunk from 18 — less of the bubble's
+                                // area is "drag-only" now that tap works
+                                // here too, but keeping it small still
+                                // matters for the *drag* gesture itself.
         color: Colors.transparent, // invisible hit area, no visual clutter
       ),
     ),
