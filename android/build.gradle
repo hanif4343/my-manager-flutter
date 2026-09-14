@@ -1,5 +1,5 @@
 buildscript {
-    ext.kotlin_version = '1.9.24'
+    ext.kotlin_version = '2.0.21'
     repositories {
         google()
         mavenCentral()
@@ -35,10 +35,12 @@ subprojects {
 //
 // Uses the modern `compilerOptions` DSL rather than the older
 // `kotlinOptions` — that older API is deprecated-with-error in current
-// Kotlin Gradle Plugin versions and broke here with a cryptic
-// "getJvmDefault()" NoSuchMethodError once one of the newer plugins
-// pulled in a Kotlin Gradle Plugin version whose deprecated-shim
-// internals no longer lined up with kotlin_version 1.9.24's.
+// Kotlin Gradle Plugin versions. This, combined with bumping
+// kotlin_version above (some plugins — home_widget is a known offender,
+// per flutter/flutter#179253 — ship Kotlin-2.x metadata that a pinned
+// 1.9.x Kotlin Gradle Plugin can't read, causing a cryptic
+// "getJvmDefault()" NoSuchMethodError), keeps everything on one
+// consistent, current Kotlin toolchain.
 def forceJvmTarget = { proj ->
     if (proj.hasProperty('android')) {
         proj.android {
