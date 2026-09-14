@@ -1,5 +1,5 @@
 buildscript {
-    ext.kotlin_version = '2.0.21'
+    ext.kotlin_version = '2.2.21'
     repositories {
         google()
         mavenCentral()
@@ -35,12 +35,17 @@ subprojects {
 //
 // Uses the modern `compilerOptions` DSL rather than the older
 // `kotlinOptions` — that older API is deprecated-with-error in current
-// Kotlin Gradle Plugin versions. This, combined with bumping
-// kotlin_version above (some plugins — home_widget is a known offender,
-// per flutter/flutter#179253 — ship Kotlin-2.x metadata that a pinned
-// 1.9.x Kotlin Gradle Plugin can't read, causing a cryptic
-// "getJvmDefault()" NoSuchMethodError), keeps everything on one
-// consistent, current Kotlin toolchain.
+// Kotlin Gradle Plugin versions.
+//
+// kotlin_version above is pinned to 2.2.21 specifically because
+// flutter_autofill_service pulls in KSP (Kotlin Symbol Processing)
+// version "2.2.21-2.0.4" — that version string's first part is the exact
+// Kotlin version KSP expects to run against. Any mismatch there (we'd
+// tried 1.9.24, then 2.0.21 first) produces a cryptic
+// "getJvmDefault()" NoSuchMethodError instead of a clear version-mismatch
+// message, since it's raised deep inside KSP's own Gradle task rather
+// than during normal dependency resolution. Confirmed by reading the
+// actual Gradle stack trace, not guessed.
 def forceJvmTarget = { proj ->
     if (proj.hasProperty('android')) {
         proj.android {
