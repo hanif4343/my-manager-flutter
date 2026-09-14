@@ -32,6 +32,13 @@ subprojects {
 // never happens. Some subprojects (like :app, due to evaluationDependsOn
 // above) may already be evaluated by the time this runs, so calling
 // afterEvaluate on them would throw — handle both cases.
+//
+// Uses the modern `compilerOptions` DSL rather than the older
+// `kotlinOptions` — that older API is deprecated-with-error in current
+// Kotlin Gradle Plugin versions and broke here with a cryptic
+// "getJvmDefault()" NoSuchMethodError once one of the newer plugins
+// pulled in a Kotlin Gradle Plugin version whose deprecated-shim
+// internals no longer lined up with kotlin_version 1.9.24's.
 def forceJvmTarget = { proj ->
     if (proj.hasProperty('android')) {
         proj.android {
@@ -42,8 +49,8 @@ def forceJvmTarget = { proj ->
         }
     }
     proj.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-        kotlinOptions {
-            jvmTarget = "1.8"
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
         }
     }
 }
