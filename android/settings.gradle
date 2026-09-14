@@ -14,12 +14,28 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
+
+    // flutter_autofill_service applies the KSP plugin internally with its
+    // own hardcoded version ("2.2.21-2.0.4" at time of writing), which has
+    // known bugs in its KspAATask (the exact "getJvmDefault()"
+    // NoSuchMethodError this build kept hitting — see
+    // github.com/google/ksp/issues, multiple KspAATask fixes landed after
+    // that release). Force it to a newer patch of the *same* KSP-side
+    // version (2.0.4 -> 2.0.5) that includes those fixes, without needing
+    // to touch the plugin's own source.
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "com.google.devtools.ksp") {
+                useVersion("2.2.21-2.0.5")
+            }
+        }
+    }
 }
 
 plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
     id "com.android.application" version "8.6.0" apply false
-    id "org.jetbrains.kotlin.android" version "1.9.24" apply false
+    id "org.jetbrains.kotlin.android" version "2.2.21" apply false
 }
 
 include ":app"
