@@ -56,7 +56,7 @@ class CashbookExportService {
           _summaryBox(fontBold, 'নিট', _fmt(totalIn - totalOut)),
         ]),
         pw.SizedBox(height: 16),
-        pw.Table.fromTextArray(
+        pw.TableHelper.fromTextArray(
           headerStyle: pw.TextStyle(font: fontBold, fontSize: 10),
           cellStyle: pw.TextStyle(font: font, fontSize: 9.5),
           headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
