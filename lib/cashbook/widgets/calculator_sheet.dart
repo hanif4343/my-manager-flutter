@@ -107,48 +107,55 @@ class _CalculatorSheetState extends State<CalculatorSheet> {
 
   /// A tiny recursive-descent evaluator for +,-,*,/ and parentheses —
   /// avoids pulling in a whole expression-parsing package for four
-  /// operators.
+  /// operators. Implemented as instance methods (not nested local
+  /// functions) because parseExpr/parseTerm/parseFactor call each other
+  /// circularly, and Dart's local function declarations can't
+  /// forward-reference one another the way class methods can.
+  late String _evalStr;
+  late int _evalPos;
+
   double _evalMath(String s) {
-    int pos = 0;
-    double parseExpr() {
-      double v = parseTerm();
-      while (pos < s.length && (s[pos] == '+' || s[pos] == '-')) {
-        final op = s[pos++];
-        final rhs = parseTerm();
-        v = op == '+' ? v + rhs : v - rhs;
-      }
+    _evalStr = s;
+    _evalPos = 0;
+    return _parseExpr();
+  }
+
+  double _parseExpr() {
+    double v = _parseTerm();
+    while (_evalPos < _evalStr.length && (_evalStr[_evalPos] == '+' || _evalStr[_evalPos] == '-')) {
+      final op = _evalStr[_evalPos++];
+      final rhs = _parseTerm();
+      v = op == '+' ? v + rhs : v - rhs;
+    }
+    return v;
+  }
+
+  double _parseTerm() {
+    double v = _parseFactor();
+    while (_evalPos < _evalStr.length && (_evalStr[_evalPos] == '*' || _evalStr[_evalPos] == '/')) {
+      final op = _evalStr[_evalPos++];
+      final rhs = _parseFactor();
+      v = op == '*' ? v * rhs : v / rhs;
+    }
+    return v;
+  }
+
+  double _parseFactor() {
+    if (_evalPos < _evalStr.length && _evalStr[_evalPos] == '-') {
+      _evalPos++;
+      return -_parseFactor();
+    }
+    if (_evalPos < _evalStr.length && _evalStr[_evalPos] == '(') {
+      _evalPos++;
+      final v = _parseExpr();
+      if (_evalPos < _evalStr.length && _evalStr[_evalPos] == ')') _evalPos++;
       return v;
     }
-
-    double parseTerm() {
-      double v = parseFactor();
-      while (pos < s.length && (s[pos] == '*' || s[pos] == '/')) {
-        final op = s[pos++];
-        final rhs = parseFactor();
-        v = op == '*' ? v * rhs : v / rhs;
-      }
-      return v;
+    final start = _evalPos;
+    while (_evalPos < _evalStr.length && RegExp(r'[0-9.]').hasMatch(_evalStr[_evalPos])) {
+      _evalPos++;
     }
-
-    double parseFactor() {
-      if (pos < s.length && s[pos] == '-') {
-        pos++;
-        return -parseFactor();
-      }
-      if (pos < s.length && s[pos] == '(') {
-        pos++;
-        final v = parseExpr();
-        if (pos < s.length && s[pos] == ')') pos++;
-        return v;
-      }
-      final start = pos;
-      while (pos < s.length && RegExp(r'[0-9.]').hasMatch(s[pos])) {
-        pos++;
-      }
-      return double.parse(s.substring(start, pos));
-    }
-
-    return parseExpr();
+    return double.parse(_evalStr.substring(start, _evalPos));
   }
 
   String _fmtNum(double v) {
