@@ -13,7 +13,9 @@ class BanglaDigitInputFormatter extends TextInputFormatter {
     TextEditingValue newValue,
   ) {
     final buf = StringBuffer();
-    for (final ch in newValue.text.characters) {
+    final src = newValue.text;
+    for (int i = 0; i < src.length; i++) {
+      final ch = src[i];
       final bnIndex = _bn.indexOf(ch);
       if (bnIndex != -1) {
         buf.write(bnIndex.toString());
@@ -38,13 +40,5 @@ class BanglaDigitInputFormatter extends TextInputFormatter {
   static double? parse(String text) {
     if (text.trim().isEmpty) return null;
     return double.tryParse(text.trim());
-  }
-}
-
-extension _Characters on String {
-  Iterable<String> get characters sync* {
-    for (int i = 0; i < length; i++) {
-      yield this[i];
-    }
   }
 }
