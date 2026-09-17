@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../db/cashbook_db.dart';
 import '../models/cashbook_account.dart';
@@ -48,6 +49,7 @@ class _CashbookScreenState extends State<CashbookScreen> {
   bool _searchOpen = false;
   final _searchCtrl = TextEditingController();
   bool _loading = true;
+  String? _loadError;
 
   @override
   void initState() {
@@ -62,24 +64,37 @@ class _CashbookScreenState extends State<CashbookScreen> {
   }
 
   Future<void> _load() async {
-    await CashbookDB.processRecurring();
-    final accounts = await CashbookDB.getAccounts();
-    final entries = await CashbookDB.getEntries();
-    final budgets = await CashbookDB.getBudgets();
-    final debts = await CashbookDB.getDebts();
-    if (!mounted) return;
-    setState(() {
-      _accounts = accounts;
-      _entries = entries;
-      _budgets = budgets;
-      _debts = debts;
-      _activeAccountId ??= accounts.isNotEmpty ? accounts.first.id : null;
-      _loading = false;
-    });
-    // The 8pm reminder and the always-on backup both re-check themselves
-    // every time the Cashbook is opened.
-    CashbookNotificationService.refresh();
-    CashbookBackupService.backupSilently();
+    try {
+      await CashbookDB.processRecurring();
+      final accounts = await CashbookDB.getAccounts();
+      final entries = await CashbookDB.getEntries();
+      final budgets = await CashbookDB.getBudgets();
+      final debts = await CashbookDB.getDebts();
+      if (!mounted) return;
+      setState(() {
+        _accounts = accounts;
+        _entries = entries;
+        _budgets = budgets;
+        _debts = debts;
+        _activeAccountId ??= accounts.isNotEmpty ? accounts.first.id : null;
+        _loading = false;
+        _loadError = null;
+      });
+      // The 8pm reminder and the always-on backup both re-check
+      // themselves every time the Cashbook is opened — fire-and-forget,
+      // never allowed to block the UI or the screen from showing.
+      unawaited(CashbookNotificationService.refresh()
+          .catchError((e) => debugPrint('Cashbook reminder refresh failed: $e')));
+      unawaited(CashbookBackupService.backupSilently()
+          .catchError((e) => debugPrint('Cashbook backup failed: $e')));
+    } catch (e, st) {
+      debugPrint('Cashbook load failed: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadError = e.toString();
+      });
+    }
   }
 
   Future<void> _afterMutation() async {
@@ -167,7 +182,38 @@ class _CashbookScreenState extends State<CashbookScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return Scaffold(backgroundColor: AppTheme.bg, body: const Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        backgroundColor: AppTheme.bg,
+        appBar: AppBar(title: const Text('ক্যাশবুক')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_loadError != null) {
+      return Scaffold(
+        backgroundColor: AppTheme.bg,
+        appBar: AppBar(title: const Text('ক্যাশবুক')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.error_outline, size: 40, color: AppTheme.red),
+              const SizedBox(height: 12),
+              Text('ক্যাশবুক লোড করতে সমস্যা হয়েছে', style: AppTheme.title(size: 15)),
+              const SizedBox(height: 8),
+              Text(_loadError!, style: AppTheme.caption(), textAlign: TextAlign.center),
+              const SizedBox(height: 18),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() { _loading = true; _loadError = null; });
+                  _load();
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent, foregroundColor: Colors.white),
+                child: const Text('আবার চেষ্টা করো'),
+              ),
+            ]),
+          ),
+        ),
+      );
     }
     return Scaffold(
       backgroundColor: AppTheme.bg,
