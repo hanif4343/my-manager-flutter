@@ -243,6 +243,60 @@ class DriveService {
     });
   }
 
+  // ── GENERIC NAMED-JSON BACKUP (used by the Cashbook module, which
+  // keeps its own separate database and therefore its own backup file
+  // rather than being folded into _exportAllDataAsJson above) ────────
+  Future<DriveBackupResult> backupJson(String fileName, String jsonData) async {
+    if (!isSignedIn) return DriveBackupResult.notSignedIn;
+    try {
+      lastError = null;
+      await _initApi();
+      _backupFolderId ??= await _ensureFolder();
+      if (_backupFolderId == null) {
+        lastError = 'Backup ফোল্ডার তৈরি/খুঁজে পাওয়া যায়নি';
+        return DriveBackupResult.failed;
+      }
+      final bytes = utf8.encode(jsonData);
+      final q = "name='$fileName' and '${_backupFolderId!}' in parents and trashed=false";
+      final existing = await _driveApi!.files.list(q: q, $fields: 'files(id)');
+      if (existing.files != null && existing.files!.isNotEmpty) {
+        await _driveApi!.files.update(
+          drive.File(), existing.files!.first.id!,
+          uploadMedia: drive.Media(Stream.value(bytes), bytes.length), $fields: 'id',
+        );
+      } else {
+        final f = drive.File()..name = fileName..parents = [_backupFolderId!];
+        await _driveApi!.files.create(f,
+            uploadMedia: drive.Media(Stream.value(bytes), bytes.length), $fields: 'id');
+      }
+      return DriveBackupResult.success;
+    } catch (e) {
+      lastError = e.toString();
+      debugPrint('DriveService backupJson error: $e');
+      return DriveBackupResult.failed;
+    }
+  }
+
+  Future<String?> restoreJson(String fileName) async {
+    if (!isSignedIn) return null;
+    try {
+      await _initApi();
+      _backupFolderId ??= await _ensureFolder();
+      if (_backupFolderId == null) return null;
+      final q = "name='$fileName' and '${_backupFolderId!}' in parents and trashed=false";
+      final list = await _driveApi!.files.list(q: q, $fields: 'files(id)');
+      if (list.files == null || list.files!.isEmpty) return null;
+      final media = await _driveApi!.files.get(list.files!.first.id!,
+          downloadOptions: drive.DownloadOptions.fullMedia) as drive.Media;
+      final bytes = <int>[];
+      await for (final chunk in media.stream) { bytes.addAll(chunk); }
+      return utf8.decode(bytes);
+    } catch (e) {
+      lastError = e.toString();
+      return null;
+    }
+  }
+
   // ── LAST BACKUP TIME ──────────────────────────────────
   Future<DateTime?> getLastBackupTime() async {
     if (!isSignedIn || _backupFolderId == null) return null;
