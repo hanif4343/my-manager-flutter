@@ -5,11 +5,14 @@ import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import '../widgets/app_theme.dart';
 import '../services/widget_service.dart';
 import '../services/auth_service.dart';
+import '../cashbook/services/cashbook_service.dart';
+import '../cashbook/services/cashbook_notification_service.dart';
 import 'dashboard_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
 import 'share_intake_screen.dart';
 import 'vault_screen.dart';
+import '../cashbook/screens/cashbook_screen.dart';
 
 /// Top-level shell: bottom navigation between Projects / Search / Vault /
 /// Settings. Vault is a first-class destination of its own — a password
@@ -100,6 +103,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       setState(() => _dashboardGen++);
+      CashbookNotificationService.refresh();
     }
     // Refresh the home screen widget whenever the app leaves the
     // foreground — covers ideas added/edited/completed during the
@@ -126,6 +130,28 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final ok = await AuthService.authenticate(reason: 'ভল্ট খুলতে যাচাই করো');
     if (ok && mounted) {
       Navigator.push(context, MaterialPageRoute(builder: (_) => const VaultScreen()));
+    }
+  }
+
+  /// Cashbook follows the exact same "authenticate, then push as its own
+  /// route" pattern as the Vault above — the lock can be turned off from
+  /// inside the Cashbook's own settings if the user doesn't want it.
+  Future<void> _openCashbook() async {
+    if (!CashbookService.lockEnabled) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const CashbookScreen()));
+      return;
+    }
+    final canAuth = await AuthService.canAuthenticate();
+    if (!canAuth) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('ডিভাইসে ফিঙ্গারপ্রিন্ট/PIN সেট করা নেই'),
+        backgroundColor: AppTheme.red,
+      ));
+      return;
+    }
+    final ok = await AuthService.authenticate(reason: 'ক্যাশবুক খুলতে যাচাই করো');
+    if (ok && mounted) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const CashbookScreen()));
     }
   }
 
@@ -165,9 +191,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               _openVault();
               return;
             }
-            // Settings shifted from index 2 to index 3 to make room for
-            // Vault, so map the NavigationBar's index back to the tabs list.
-            setState(() => _index = i == 3 ? 2 : i);
+            if (i == 3) {
+              // Cashbook, same non-tab treatment as Vault right above it.
+              _openCashbook();
+              return;
+            }
+            // Settings shifted from index 2 to index 4 to make room for
+            // Vault and Cashbook, so map the NavigationBar's index back
+            // to the tabs list.
+            setState(() => _index = i == 4 ? 2 : i);
           },
           height: 60,
           destinations: const [
@@ -183,6 +215,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 icon: Icon(Icons.lock_outline),
                 selectedIcon: Icon(Icons.lock),
                 label: 'ভল্ট'),
+            NavigationDestination(
+                icon: Icon(Icons.account_balance_wallet_outlined),
+                selectedIcon: Icon(Icons.account_balance_wallet),
+                label: 'ক্যাশবুক'),
             NavigationDestination(
                 icon: Icon(Icons.settings_outlined),
                 selectedIcon: Icon(Icons.settings),
