@@ -35,7 +35,7 @@ class CashbookExportService {
     required List<CashbookAccount> accounts,
   }) async {
     final font = await PdfGoogleFonts.notoSansBengaliRegular();
-    final fontBold = await PdfGoogleFonts.notoSansBengaliBold();
+    final fontBold = font;
     final doc = pw.Document(theme: pw.ThemeData.withFont(base: font, bold: fontBold));
 
     final sorted = [...entries]..sort((a, b) => b.date.compareTo(a.date));
