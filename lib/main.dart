@@ -16,6 +16,25 @@ const autoBackupTaskName = 'my_manager_auto_backup';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Flutter's default release-mode error widget is a blank grey box with
+  // no text (by design, to avoid leaking stack traces to end users) —
+  // which is indistinguishable from a genuinely blank screen. Showing the
+  // real message here instead makes any future crash immediately
+  // diagnosable from a screenshot, on a real device, without adb.
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    return Material(
+      color: Colors.white,
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            'কিছু একটা ভুল হয়েছে:\n\n${details.exceptionAsString()}\n\n${details.stack}',
+            style: const TextStyle(color: Colors.red, fontSize: 11),
+          ),
+        ),
+      ),
+    );
+  };
   try {
     tz.initializeTimeZones();
   } catch (_) {}
