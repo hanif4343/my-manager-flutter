@@ -261,4 +261,55 @@ class CashbookDB {
       }
     });
   }
+
+  // ── LEGACY IMPORT (e.g. from another cash-book app's .db export) ────
+  /// Accounts are matched or created by name, so importing the same
+  /// backup twice never creates duplicate wallets — only new entries
+  /// would be appended (harmless duplicates in the entries list, but at
+  /// least accounts stay clean). [entries] items need: accountName,
+  /// type ('in'/'out'), amount, date ('YYYY-MM-DD'), note.
+  static Future<int> importLegacy({
+    required List<String> accountNames,
+    required List<Map<String, dynamic>> entries,
+  }) async {
+    final d = await db;
+    int inserted = 0;
+    await d.transaction((txn) async {
+      final nameToId = <String, int>{};
+      final existing = await txn.query('accounts');
+      for (final row in existing) {
+        nameToId[row['name'] as String] = row['id'] as int;
+      }
+      for (final name in accountNames) {
+        if (!nameToId.containsKey(name)) {
+          final id = await txn.insert('accounts', {
+            'name': name,
+            'icon': '📒',
+            'sort_order': nameToId.length,
+            'created_at': DateTime.now().millisecondsSinceEpoch,
+          });
+          nameToId[name] = id;
+        }
+      }
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (final e in entries) {
+        final accId = nameToId[e['accountName']];
+        if (accId == null) continue;
+        await txn.insert('entries', {
+          'account_id': accId,
+          'type': e['type'],
+          'amount': e['amount'],
+          'category': 'other',
+          'note': e['note'] ?? '',
+          'date': e['date'],
+          'voucher_image': null,
+          'recurring': 0,
+          'created_at': now,
+          'updated_at': now,
+        });
+        inserted++;
+      }
+    });
+    return inserted;
+  }
 }
