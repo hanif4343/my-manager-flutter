@@ -9,6 +9,7 @@ import '../services/cashbook_service.dart';
 import '../services/cashbook_backup_service.dart';
 import '../services/cashbook_notification_service.dart';
 import '../services/cashbook_export_service.dart';
+import '../services/cashbook_legacy_import_service.dart';
 import '../widgets/bangla_digit_input_formatter.dart';
 import 'cashbook_entry_sheet.dart';
 import 'cashbook_debt_sheet.dart';
@@ -181,6 +182,71 @@ class _CashbookScreenState extends State<CashbookScreen> {
         title: 'ক্যাশবুক রিপোর্ট', entries: _entries, accounts: _accounts);
   }
 
+  Future<void> _importLegacy() async {
+    LegacyImportPreview? preview;
+    try {
+      preview = await CashbookLegacyImportService.pickAndPreview();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('ফাইল পড়তে সমস্যা হয়েছে: $e')));
+      }
+      return;
+    }
+    if (preview == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('এটা চেনা যাচ্ছে না — সঠিক Cash Book .db ফাইল বেছে নিন')));
+      }
+      return;
+    }
+    if (!mounted) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('পুরনো ব্যাকআপ ইমপোর্ট করবে?'),
+        content: Text(
+          '${preview!.accountCount}টা হিসাব এবং ${preview.entryCount}টা এন্ট্রি পাওয়া গেছে।\n\n'
+          'এগুলো আপনার বর্তমান হিসাবের পাশে নতুন করে যোগ হবে (কিছু মুছে যাবে না)। '
+          'সব এন্ট্রি ডিফল্টভাবে "অন্যান্য" ক্যাটাগরিতে থাকবে — পরে চাইলে এডিট করে বদলাতে পারবেন।',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('ইমপোর্ট করো')),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    if (mounted) {
+      showDialog(
+        context: context, barrierDismissible: false,
+        builder: (_) => const AlertDialog(
+          content: Row(children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('ইমপোর্ট হচ্ছে...')),
+          ]),
+        ),
+      );
+    }
+    try {
+      final count = await CashbookLegacyImportService.import(preview.tempPath);
+      if (mounted) Navigator.pop(context); // close progress dialog
+      await _afterMutation();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('✓ $count টা এন্ট্রি ইমপোর্ট হয়েছে')));
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('ইমপোর্ট ব্যর্থ হয়েছে: $e')));
+      }
+    }
+  }
+
   // ── build ─────────────────────────────────────────────
   static const _titles = ['ক্যাশবুক', 'বাজেট', 'রিপোর্ট', 'দেনা-পাওনা'];
 
@@ -238,11 +304,13 @@ class _CashbookScreenState extends State<CashbookScreen> {
               if (v == 'pdf') _exportPdf();
               if (v == 'excel') _exportExcel();
               if (v == 'account') _addAccount();
+              if (v == 'import') _importLegacy();
             },
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'pdf', child: Text('📄 PDF এক্সপোর্ট')),
               const PopupMenuItem(value: 'excel', child: Text('📊 Excel এক্সপোর্ট')),
               const PopupMenuItem(value: 'account', child: Text('➕ নতুন হিসাব যোগ')),
+              const PopupMenuItem(value: 'import', child: Text('📥 পুরনো ব্যাকআপ ইমপোর্ট করো')),
             ],
           ),
         ],
