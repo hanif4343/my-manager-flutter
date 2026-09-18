@@ -16,6 +16,11 @@ import '../../widgets/app_theme.dart';
 
 const _monthNames = ['জানুয়ারি','ফেব্রুয়ারি','মার্চ','এপ্রিল','মে','জুন',
   'জুলাই','আগস্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'];
+// Hand-picked short labels for chart axes — some Bangla month names
+// (মে, জুন) are shorter than 3 characters, so a blind .substring(0,3)
+// crashes on them; this avoids that entirely.
+const _monthShort = ['জানু','ফেব্রু','মার্চ','এপ্রিল','মে','জুন',
+  'জুলাই','আগস্ট','সেপ্ট','অক্টো','নভে','ডিসে'];
 String _monthLabel(String isoDate) {
   final d = DateTime.parse(isoDate);
   return '${_monthNames[d.month - 1]} ${d.year}';
@@ -584,7 +589,7 @@ class _CashbookScreenState extends State<CashbookScreen> {
       final d = DateTime(now.year, now.month - i, 1);
       final key = '${d.year}-${d.month.toString().padLeft(2, '0')}';
       final total = _entries.where((e) => e.type == 'out' && e.date.startsWith(key)).fold<double>(0, (s, e) => s + e.amount);
-      trend.add(MapEntry(_monthNames[d.month - 1].substring(0, 3), total));
+      trend.add(MapEntry(_monthShort[d.month - 1], total));
     }
     final maxTrend = trend.map((e) => e.value).fold<double>(1, (a, b) => a > b ? a : b);
 
