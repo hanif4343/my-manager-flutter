@@ -72,6 +72,7 @@ class _CashbookScreenState extends State<CashbookScreen> {
   Future<void> _load() async {
     try {
       await CashbookDB.processRecurring();
+      await CashbookDB.ensureCurrentMonthLedger();
       final accounts = await CashbookDB.getAccounts();
       final entries = await CashbookDB.getEntries();
       final budgets = await CashbookDB.getBudgets();
@@ -82,7 +83,10 @@ class _CashbookScreenState extends State<CashbookScreen> {
         _entries = entries;
         _budgets = budgets;
         _debts = debts;
-        _activeAccountId ??= accounts.isNotEmpty ? accounts.first.id : null;
+        _activeAccountId ??= CashbookService.lastAccountId;
+        if (_activeAccountId == null || !accounts.any((a) => a.id == _activeAccountId)) {
+          _activeAccountId = accounts.isNotEmpty ? accounts.first.id : null;
+        }
         _loading = false;
         _loadError = null;
       });
@@ -359,34 +363,55 @@ class _CashbookScreenState extends State<CashbookScreen> {
     final visible = _visibleEntries;
 
     return Column(children: [
-      SizedBox(
-        height: 44,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          children: [
-            ..._accounts.map((a) => Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                label: Text('${a.icon} ${a.name}'),
-                selected: a.id == _activeAccountId,
-                onSelected: (_) => setState(() => _activeAccountId = a.id),
-                selectedColor: AppTheme.accent,
-                backgroundColor: AppTheme.bg2,
-                labelStyle: TextStyle(
-                    color: a.id == _activeAccountId ? Colors.white : AppTheme.textSecondary,
-                    fontWeight: FontWeight.w600, fontSize: 12.5),
-                side: BorderSide(color: AppTheme.border),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+        child: Row(children: [
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: AppTheme.bg2,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.border),
               ),
-            )),
-            ActionChip(
-              label: const Text('+ নতুন হিসাব'),
-              onPressed: _addAccount,
-              backgroundColor: Colors.transparent,
-              side: BorderSide(color: AppTheme.border),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  value: _accounts.any((a) => a.id == _activeAccountId) ? _activeAccountId : null,
+                  isExpanded: true,
+                  isDense: false,
+                  dropdownColor: AppTheme.bg2,
+                  icon: Icon(Icons.expand_more, color: AppTheme.textSecondary),
+                  hint: Text('হিসাব বেছে নিন', style: AppTheme.body()),
+                  items: _accounts.map((a) => DropdownMenuItem(
+                    value: a.id,
+                    child: Text('${a.icon}  ${a.name}',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+                  )).toList(),
+                  onChanged: (id) {
+                    if (id == null) return;
+                    setState(() => _activeAccountId = id);
+                    CashbookService.setLastAccountId(id);
+                  },
+                ),
+              ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          Material(
+            color: AppTheme.bg2,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: _addAccount,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: AppTheme.border)),
+                child: Icon(Icons.add, color: AppTheme.accent),
+              ),
+            ),
+          ),
+        ]),
       ),
       Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
