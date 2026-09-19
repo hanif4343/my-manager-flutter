@@ -8,6 +8,7 @@ import '../models/cashbook_debt.dart';
 import '../services/cashbook_service.dart';
 import '../services/cashbook_backup_service.dart';
 import '../services/cashbook_notification_service.dart';
+import '../../services/settings_service.dart';
 import '../services/cashbook_export_service.dart';
 import '../services/cashbook_legacy_import_service.dart';
 import '../widgets/bangla_digit_input_formatter.dart';
@@ -97,6 +98,7 @@ class _CashbookScreenState extends State<CashbookScreen> {
           .catchError((e) => debugPrint('Cashbook reminder refresh failed: $e')));
       unawaited(CashbookBackupService.backupSilently()
           .catchError((e) => debugPrint('Cashbook backup failed: $e')));
+      _maybeAskBatteryExemption();
     } catch (e, st) {
       debugPrint('Cashbook load failed: $e\n$st');
       if (!mounted) return;
@@ -110,6 +112,33 @@ class _CashbookScreenState extends State<CashbookScreen> {
   Future<void> _afterMutation() async {
     await _load();
     CashbookBackupService.backupSilently();
+  }
+
+  // Asked exactly once, ever — after that we respect whatever the person
+  // chose (granted or denied) and never nag about it again.
+  static const _askedBatteryKey = 'cashbook_asked_battery_exemption';
+  Future<void> _maybeAskBatteryExemption() async {
+    if (SettingsService.getBool(_askedBatteryKey, defaultValue: false)) return;
+    await SettingsService.setBool(_askedBatteryKey, true);
+    if (!mounted) return;
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('রাতের রিমাইন্ডার নির্ভরযোগ্য করতে'),
+        content: const Text(
+          'কিছু ফোনে (Xiaomi, Vivo, Oppo, Samsung) ব্যাটারি সেভার ব্যাকগ্রাউন্ড নোটিফিকেশন বন্ধ করে দেয়। '
+          'রাত ৮টার রিমাইন্ডার যেন অ্যাপ বন্ধ থাকলেও আসে, তার জন্য এই অ্যাপটাকে ব্যাটারি অপটিমাইজেশন থেকে বাদ দেওয়া দরকার — '
+          'পরের স্ক্রিনে "Allow" চাপুন।',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('পরে')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('ঠিক আছে')),
+        ],
+      ),
+    );
+    if (proceed == true) {
+      await CashbookNotificationService.requestBatteryExemptionIfNeeded();
+    }
   }
 
   // ── account ───────────────────────────────────────────
