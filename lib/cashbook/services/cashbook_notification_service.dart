@@ -1,6 +1,7 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:permission_handler/permission_handler.dart';
 import '../db/cashbook_db.dart';
 
 /// "রাত ৮টায় মনে করিয়ে দাও যদি আজ কিছু যোগ না করে থাকি" — this only ever
@@ -91,5 +92,22 @@ class CashbookNotificationService {
       'ক্যাশবুকে আজকের জমা/খরচ যোগ করো — অন্তত একটা এন্ট্রি দিলেই আর মনে করাবো না',
       const NotificationDetails(android: androidDetails),
     );
+  }
+
+  /// MIUI/FunTouch/ColorOS-style battery managers on Xiaomi, Vivo, Oppo
+  /// and some Samsung phones aggressively kill background work,
+  /// including WorkManager tasks — no amount of app-side code fixes
+  /// that, only the person granting an exemption does. Asks once, only
+  /// if not already granted; safe to call repeatedly since it no-ops
+  /// once granted or once permanently denied.
+  static Future<void> requestBatteryExemptionIfNeeded() async {
+    try {
+      final status = await Permission.ignoreBatteryOptimizations.status;
+      if (!status.isGranted) {
+        await Permission.ignoreBatteryOptimizations.request();
+      }
+    } catch (_) {
+      // Not available on this platform/OEM — never block the app for it.
+    }
   }
 }
