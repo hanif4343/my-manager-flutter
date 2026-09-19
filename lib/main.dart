@@ -11,8 +11,10 @@ import 'screens/autofill_picker_screen.dart';
 import 'services/notification_service.dart';
 import 'services/settings_service.dart';
 import 'services/drive_service.dart';
+import 'cashbook/services/cashbook_notification_service.dart';
 
 const autoBackupTaskName = 'my_manager_auto_backup';
+const cashbookReminderTaskName = 'cashbook_reminder_check';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -93,6 +95,23 @@ void main() async {
   } catch (_) {
     // Auto-backup setup failing shouldn't block the app from starting.
   }
+  // Cashbook's "নাগ every 30 minutes after 8pm until an entry exists
+  // today" reminder — always on, no setting to disable it, registered
+  // once and left running by WorkManager's own dedup (existingWorkPolicy
+  // keep). The exact 8pm ping itself is a separate one-off alarm
+  // (CashbookNotificationService.refresh, scheduled whenever the
+  // Cashbook screen or the app is opened); this periodic task is what
+  // keeps nagging afterward even if the app is never reopened that
+  // evening.
+  try {
+    await Workmanager().registerPeriodicTask(
+      cashbookReminderTaskName, cashbookReminderTaskName,
+      frequency: const Duration(minutes: 30),
+      existingWorkPolicy: ExistingWorkPolicy.keep,
+    );
+  } catch (_) {
+    // Reminder scheduling failing shouldn't block the app from starting.
+  }
   runApp(const MyManagerApp());
   // Refresh the home screen widget on every cold start too, in case
   // something changed while the app wasn't running.
@@ -109,6 +128,10 @@ void main() async {
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     try {
+      if (task == cashbookReminderTaskName) {
+        await CashbookNotificationService.backgroundCheck();
+        return true;
+      }
       await SettingsService.init();
       if (!SettingsService.getBool('auto_backup_enabled', defaultValue: false)) {
         return true;
