@@ -14,6 +14,8 @@ import '../services/cashbook_legacy_import_service.dart';
 import '../widgets/bangla_digit_input_formatter.dart';
 import 'cashbook_entry_sheet.dart';
 import 'cashbook_debt_sheet.dart';
+import 'cashbook_accounts_screen.dart';
+import 'cashbook_voucher_gallery_screen.dart';
 import '../../widgets/app_theme.dart';
 
 const _monthNames = ['জানুয়ারি','ফেব্রুয়ারি','মার্চ','এপ্রিল','মে','জুন',
@@ -53,6 +55,7 @@ class _CashbookScreenState extends State<CashbookScreen> {
   List<CashbookDebt> _debts = [];
   int? _activeAccountId;
   String _filter = 'all';
+  DateTimeRange? _dateRange;
   bool _searchOpen = false;
   final _searchCtrl = TextEditingController();
   bool _loading = true;
@@ -175,6 +178,11 @@ class _CashbookScreenState extends State<CashbookScreen> {
     if (!isGlobalSearch && _filter != 'all') {
       list = list.where((e) => e.type == _filter).toList();
     }
+    if (_dateRange != null) {
+      final startStr = _dateRange!.start.toIso8601String().substring(0, 10);
+      final endStr = _dateRange!.end.toIso8601String().substring(0, 10);
+      list = list.where((e) => e.date.compareTo(startStr) >= 0 && e.date.compareTo(endStr) <= 0).toList();
+    }
     if (isGlobalSearch) {
       list = list.where((e) {
         final cat = CashbookService.categoryById(e.category);
@@ -212,6 +220,42 @@ class _CashbookScreenState extends State<CashbookScreen> {
   Future<void> _exportExcel() async {
     await CashbookExportService.exportExcel(
         title: 'ক্যাশবুক রিপোর্ট', entries: _entries, accounts: _accounts);
+  }
+
+  void _openVoucherGallery() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => CashbookVoucherGalleryScreen(entries: _entries)));
+  }
+
+  Future<void> _restoreFromBackup() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('ব্যাকআপ থেকে ফিরিয়ে আনবে?'),
+        content: const Text(
+          'Google Drive-এ রাখা সবশেষ ক্যাশবুক ব্যাকআপ দিয়ে বর্তমান সব ডেটা প্রতিস্থাপিত হবে। '
+          'এই ডিভাইসে এখন যা আছে তার সাথে না মিলিয়ে সরাসরি ওভাররাইট হবে — নিশ্চিত হলেই এগোন।',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
+          TextButton(onPressed: () => Navigator.pop(context, true),
+              child: Text('ফিরিয়ে আনো', style: TextStyle(color: AppTheme.red))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    if (mounted) {
+      showDialog(context: context, barrierDismissible: false,
+          builder: (_) => const AlertDialog(content: Row(children: [
+            CircularProgressIndicator(), SizedBox(width: 16), Expanded(child: Text('ফিরিয়ে আনা হচ্ছে...')),
+          ])));
+    }
+    final ok = await CashbookBackupService.restoreFromDrive();
+    if (mounted) Navigator.pop(context);
+    await _afterMutation();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(ok ? '✓ ব্যাকআপ থেকে ফিরিয়ে আনা হয়েছে' : 'কোনো ব্যাকআপ পাওয়া যায়নি বা Drive সাইন-ইন করা নেই')));
+    }
   }
 
   Future<void> _importLegacy() async {
@@ -337,12 +381,16 @@ class _CashbookScreenState extends State<CashbookScreen> {
               if (v == 'excel') _exportExcel();
               if (v == 'account') _addAccount();
               if (v == 'import') _importLegacy();
+              if (v == 'restore') _restoreFromBackup();
+              if (v == 'vouchers') _openVoucherGallery();
             },
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'pdf', child: Text('📄 PDF এক্সপোর্ট')),
               const PopupMenuItem(value: 'excel', child: Text('📊 Excel এক্সপোর্ট')),
               const PopupMenuItem(value: 'account', child: Text('➕ নতুন হিসাব যোগ')),
+              const PopupMenuItem(value: 'vouchers', child: Text('🖼️ সব ভাউচার দেখো')),
               const PopupMenuItem(value: 'import', child: Text('📥 পুরনো ব্যাকআপ ইমপোর্ট করো')),
+              const PopupMenuItem(value: 'restore', child: Text('☁️ ব্যাকআপ থেকে ফিরিয়ে আনো')),
             ],
           ),
         ],
@@ -429,6 +477,29 @@ class _CashbookScreenState extends State<CashbookScreen> {
             color: AppTheme.bg2,
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
+              onTap: () async {
+                final picked = await Navigator.push<int>(context,
+                    MaterialPageRoute(builder: (_) => CashbookAccountsScreen(activeAccountId: _activeAccountId)));
+                if (picked != null) {
+                  setState(() => _activeAccountId = picked);
+                  CashbookService.setLastAccountId(picked);
+                } else {
+                  _load(); // balances may have changed via rename/delete
+                }
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: AppTheme.border)),
+                child: Icon(Icons.list_alt, color: AppTheme.textSecondary),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Material(
+            color: AppTheme.bg2,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
               onTap: _addAccount,
               borderRadius: BorderRadius.circular(12),
               child: Container(
@@ -489,6 +560,35 @@ class _CashbookScreenState extends State<CashbookScreen> {
             _filterChip('জমা', 'in'),
             const SizedBox(width: 8),
             _filterChip('খরচ', 'out'),
+            const Spacer(),
+            if (_dateRange != null)
+              GestureDetector(
+                onTap: () => setState(() => _dateRange = null),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(color: AppTheme.accent, borderRadius: BorderRadius.circular(99)),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.close, size: 13, color: Colors.white),
+                    SizedBox(width: 3),
+                    Icon(Icons.date_range, size: 15, color: Colors.white),
+                  ]),
+                ),
+              )
+            else
+              GestureDetector(
+                onTap: () async {
+                  final range = await showDateRangePicker(
+                    context: context, firstDate: DateTime(2015), lastDate: DateTime(2100),
+                    initialDateRange: DateTimeRange(start: DateTime.now().subtract(const Duration(days: 30)), end: DateTime.now()),
+                  );
+                  if (range != null) setState(() => _dateRange = range);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(color: AppTheme.bg2, borderRadius: BorderRadius.circular(99), border: Border.all(color: AppTheme.border)),
+                  child: Icon(Icons.date_range, size: 16, color: AppTheme.textSecondary),
+                ),
+              ),
           ]),
         ),
       Expanded(child: _buildEntriesList(visible)),
@@ -782,7 +882,43 @@ class _CashbookScreenState extends State<CashbookScreen> {
         decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(14)),
         child: Text(insight, style: AppTheme.body(size: 12.5)),
       ),
+      const SizedBox(height: 22),
+      Text('বছর অনুযায়ী সারাংশ', style: AppTheme.title(size: 15)),
+      const SizedBox(height: 12),
+      ..._buildYearlySummary(),
     ]);
+  }
+
+  List<Widget> _buildYearlySummary() {
+    if (_entries.isEmpty) return [Text('এখনো কোনো এন্ট্রি নেই', style: AppTheme.body())];
+    final byYear = <String, Map<String, double>>{};
+    for (final e in _entries) {
+      final y = e.date.substring(0, 4);
+      byYear.putIfAbsent(y, () => {'in': 0, 'out': 0});
+      byYear[y]![e.type] = byYear[y]![e.type]! + e.amount;
+    }
+    final years = byYear.keys.toList()..sort((a, b) => b.compareTo(a));
+    return years.map((y) {
+      final inSum = byYear[y]!['in']!;
+      final outSum = byYear[y]!['out']!;
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(color: AppTheme.bg2, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppTheme.border)),
+        child: Row(children: [
+          Text(y, style: AppTheme.title(size: 14)),
+          const Spacer(),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text('জমা ${_fmt(inSum)}', style: TextStyle(fontSize: 12, color: AppTheme.textPrimary)),
+            Text('খরচ ${_fmt(outSum)}', style: TextStyle(fontSize: 12, color: AppTheme.red)),
+          ]),
+          const SizedBox(width: 14),
+          Text(_fmt(inSum - outSum),
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5,
+                  color: (inSum - outSum) >= 0 ? AppTheme.green : AppTheme.red)),
+        ]),
+      );
+    }).toList();
   }
 
   // ── DEBTS TAB ─────────────────────────────────────────
