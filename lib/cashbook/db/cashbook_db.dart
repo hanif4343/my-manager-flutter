@@ -82,7 +82,7 @@ class CashbookDB {
   // ── ACCOUNTS ──────────────────────────────────────────
   static Future<List<CashbookAccount>> getAccounts() async {
     final d = await db;
-    final rows = await d.query('accounts', orderBy: 'sort_order ASC, id ASC');
+    final rows = await d.query('accounts', orderBy: 'id DESC');
     return rows.map(CashbookAccount.fromMap).toList();
   }
 
@@ -95,6 +95,35 @@ class CashbookDB {
     final d = await db;
     await d.delete('entries', where: 'account_id=?', whereArgs: [id]);
     await d.delete('accounts', where: 'id=?', whereArgs: [id]);
+  }
+
+  // Matches the exact spelling used by the legacy app's own month-named
+  // ledgers (imported ones say "ফেব্রুয়ারী"/"আগষ্ট", not the more common
+  // "ফেব্রুয়ারি"/"আগস্ট") — so a freshly auto-created month never ends up
+  // as a separate, differently-spelled duplicate of an old one.
+  static const _ledgerMonthNames = ['জানুয়ারি', 'ফেব্রুয়ারী', 'মার্চ', 'এপ্রিল', 'মে', 'জুন',
+    'জুলাই', 'আগষ্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'];
+  static const _bnDigit = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+  static String _toBnDigits(int n) => n.toString().split('').map((c) => _bnDigit[int.parse(c)]).join();
+
+  /// Creates this calendar month's ledger (e.g. "সেপ্টেম্বর-২০২৬") the
+  /// first time the Cashbook is opened after the month has turned over —
+  /// called from screen load, same "recompute on open" pattern as
+  /// recurring entries and the reminder notification. Never touches or
+  /// renames past months; only ever adds the current one, once.
+  static Future<void> ensureCurrentMonthLedger() async {
+    final now = DateTime.now();
+    final name = '${_ledgerMonthNames[now.month - 1]}-${_toBnDigits(now.year)}';
+    final d = await db;
+    final existing = await d.query('accounts', where: 'name=?', whereArgs: [name], limit: 1);
+    if (existing.isEmpty) {
+      await d.insert('accounts', {
+        'name': name,
+        'icon': '📒',
+        'sort_order': 0,
+        'created_at': now.millisecondsSinceEpoch,
+      });
+    }
   }
 
   // ── ENTRIES ───────────────────────────────────────────
