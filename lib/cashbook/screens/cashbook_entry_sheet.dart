@@ -79,7 +79,7 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('নতুন ক্যাটাগরি'),
-        content: TextField(controller: ctrl, autofocus: true, decoration: const InputDecoration(hintText: 'যেমন: চিকিৎসা')),
+        content: TextField(controller: ctrl, autofocus: true),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('বাতিল')),
           TextButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: const Text('যোগ করো')),
@@ -164,157 +164,151 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SafeArea(
         child: Container(
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
           decoration: BoxDecoration(
             color: AppTheme.bg2,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             border: Border.all(color: AppTheme.border),
           ),
           child: SingleChildScrollView(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Center(child: Container(width: 38, height: 4,
-                  margin: const EdgeInsets.only(bottom: 14),
-                  decoration: BoxDecoration(color: AppTheme.border, borderRadius: BorderRadius.circular(99)))),
-              Text(_isEdit ? 'এন্ট্রি এডিট করো' : 'নতুন এন্ট্রি', style: AppTheme.title(size: 17)),
-              const SizedBox(height: 16),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(color: AppTheme.border, borderRadius: BorderRadius.circular(99)))),
 
-              // type toggle
-              Container(
-                decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.all(4),
-                child: Row(children: [
-                  _typeOpt('জমা', 'in'),
-                  _typeOpt('খরচ', 'out'),
+            // type toggle
+            Container(
+              decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(11)),
+              padding: const EdgeInsets.all(3),
+              child: Row(children: [
+                _typeOpt('জমা', 'in'),
+                _typeOpt('খরচ', 'out'),
+              ]),
+            ),
+            const SizedBox(height: 8),
+
+            // amount + calculator
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _amountCtrl,
+                  autofocus: !_isEdit,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [BanglaDigitInputFormatter()],
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  decoration: InputDecoration(
+                    prefixIcon: Padding(
+                      padding: const EdgeInsets.only(left: 12, right: 4),
+                      child: Text(_type == 'in' ? 'জমা ৳' : 'খরচ ৳',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13,
+                              color: _type == 'in' ? AppTheme.green : AppTheme.red)),
+                    ),
+                    prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                    filled: true, fillColor: AppTheme.bg3,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: BorderSide.none),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Material(
+                color: AppTheme.bg3, borderRadius: BorderRadius.circular(11),
+                child: InkWell(
+                  onTap: _openCalculator, borderRadius: BorderRadius.circular(11),
+                  child: const Padding(padding: EdgeInsets.all(12), child: Icon(Icons.calculate_outlined, size: 20)),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 8),
+
+            // category — single-line horizontal scroll, not a wrap
+            SizedBox(
+              height: 34,
+              child: ListView(scrollDirection: Axis.horizontal, children: [
+                ..._categories.map((c) => Padding(padding: const EdgeInsets.only(right: 6), child: _catChip(c))),
+                ActionChip(
+                  label: const Text('+ নতুন', style: TextStyle(fontSize: 12)),
+                  onPressed: _addCategory,
+                  visualDensity: VisualDensity.compact,
+                  backgroundColor: Colors.transparent,
+                  side: BorderSide(color: AppTheme.border),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 8),
+
+            // note — with voucher (camera) and recurring (repeat) icons built in,
+            // same idea as the reference app's camera icon inside its Notes field
+            TextField(
+              controller: _noteCtrl,
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 13, horizontal: 13),
+                filled: true, fillColor: AppTheme.bg3,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: BorderSide.none),
+                suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton(
+                    tooltip: 'ভাউচার',
+                    onPressed: _attachVoucher,
+                    icon: _voucherBase64 != null
+                        ? ClipRRect(borderRadius: BorderRadius.circular(6),
+                            child: Image.memory(base64Decode(_voucherBase64!), width: 22, height: 22, fit: BoxFit.cover))
+                        : Icon(Icons.camera_alt_outlined, size: 19, color: AppTheme.textSecondary),
+                  ),
+                  IconButton(
+                    tooltip: 'প্রতি মাসে পুনরাবৃত্তি',
+                    onPressed: () => setState(() => _recurring = !_recurring),
+                    icon: Icon(Icons.repeat, size: 19, color: _recurring ? AppTheme.accent : AppTheme.textSecondary),
+                  ),
+                  const SizedBox(width: 4),
                 ]),
               ),
-              const SizedBox(height: 16),
+            ),
+            const SizedBox(height: 8),
 
-              Text('পরিমাণ (৳)', style: AppTheme.caption()),
-              const SizedBox(height: 6),
-              Row(children: [
+            // date — compact single row with prev/next day arrows
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(11)),
+              child: Row(children: [
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => setState(() => _date = _date.subtract(const Duration(days: 1))),
+                  icon: const Icon(Icons.chevron_left, size: 20),
+                ),
                 Expanded(
-                  child: TextField(
-                    controller: _amountCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [BanglaDigitInputFormatter()],
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-                    decoration: InputDecoration(
-                      hintText: '০ বা 0 — যেকোনোভাবে লেখো',
-                      filled: true, fillColor: AppTheme.bg3,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  child: InkWell(
+                    onTap: _pickDate,
+                    child: Center(
+                      child: Text('${_date.year}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}',
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Material(
-                  color: AppTheme.bg3, borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    onTap: _openCalculator, borderRadius: BorderRadius.circular(12),
-                    child: const Padding(padding: EdgeInsets.all(13), child: Icon(Icons.calculate_outlined)),
-                  ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => setState(() => _date = _date.add(const Duration(days: 1))),
+                  icon: const Icon(Icons.chevron_right, size: 20),
                 ),
               ]),
-              Padding(
-                padding: const EdgeInsets.only(top: 5),
-                child: Text('বাংলা সংখ্যা লিখলেও স্বয়ংক্রিয়ভাবে ইংরেজিতে বদলে যাবে', style: AppTheme.caption()),
+            ),
+            const SizedBox(height: 14),
+
+            Row(children: [
+              if (_isEdit)
+                IconButton(onPressed: _delete, icon: Icon(Icons.delete_outline, color: AppTheme.red)),
+              Expanded(
+                child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('বাতিল')),
               ),
-              const SizedBox(height: 16),
-
-              Text('ক্যাটাগরি', style: AppTheme.caption()),
-              const SizedBox(height: 8),
-              Wrap(spacing: 8, runSpacing: 8, children: [
-                ..._categories.map((c) => _catChip(c)),
-                ActionChip(
-                  label: const Text('+ নতুন'),
-                  onPressed: _addCategory,
-                  backgroundColor: Colors.transparent,
-                  side: BorderSide(color: AppTheme.border, style: BorderStyle.solid),
-                ),
-              ]),
-              const SizedBox(height: 16),
-
-              Text('নোট', style: AppTheme.caption()),
-              const SizedBox(height: 6),
-              TextField(
-                controller: _noteCtrl,
-                decoration: InputDecoration(
-                  hintText: 'যেমন: বাজার খরচ, বেতন, বাস ভাড়া...',
-                  filled: true, fillColor: AppTheme.bg3,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _save,
+                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent, foregroundColor: Colors.white),
+                  child: const Text('সেভ করো'),
                 ),
               ),
-              const SizedBox(height: 16),
-
-              Text('তারিখ', style: AppTheme.caption()),
-              const SizedBox(height: 6),
-              InkWell(
-                onTap: _pickDate,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 13),
-                  decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(12)),
-                  child: Row(children: [
-                    const Icon(Icons.calendar_today_outlined, size: 16),
-                    const SizedBox(width: 8),
-                    Text('${_date.year}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}'),
-                  ]),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-                decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(12)),
-                child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  const Text('🔁 প্রতি মাসে পুনরাবৃত্তি হবে'),
-                  Switch(value: _recurring, onChanged: (v) => setState(() => _recurring = v), activeColor: AppTheme.accent),
-                ]),
-              ),
-              const SizedBox(height: 16),
-
-              Text('ভাউচার / রশিদ', style: AppTheme.caption()),
-              const SizedBox(height: 6),
-              InkWell(
-                onTap: _attachVoucher,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.border, style: _voucherBase64 == null ? BorderStyle.solid : BorderStyle.solid),
-                  ),
-                  child: Row(children: [
-                    if (_voucherBase64 != null)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(base64Decode(_voucherBase64!), width: 34, height: 34, fit: BoxFit.cover),
-                      )
-                    else
-                      Container(width: 34, height: 34,
-                          decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(8)),
-                          child: const Icon(Icons.attach_file, size: 16)),
-                    const SizedBox(width: 10),
-                    Text(_voucherBase64 != null ? '✓ ছবি সংযুক্ত হয়েছে — বদলাতে চাপুন' : 'ছবি সংযুক্ত করতে চাপুন (ঐচ্ছিক)'),
-                  ]),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              Row(children: [
-                if (_isEdit)
-                  IconButton(onPressed: _delete, icon: Icon(Icons.delete_outline, color: AppTheme.red)),
-                Expanded(
-                  child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('বাতিল')),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _save,
-                    style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent, foregroundColor: Colors.white),
-                    child: const Text('সেভ করো'),
-                  ),
-                ),
-              ]),
             ]),
           ),
         ),
@@ -329,14 +323,14 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
       child: GestureDetector(
         onTap: () => setState(() => _type = value),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
             color: selected ? color : Colors.transparent,
-            borderRadius: BorderRadius.circular(9),
+            borderRadius: BorderRadius.circular(8),
           ),
           alignment: Alignment.center,
           child: Text(label, style: TextStyle(
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w700, fontSize: 13.5,
               color: selected ? Colors.white : AppTheme.textSecondary)),
         ),
       ),
@@ -346,9 +340,11 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
   Widget _catChip(CashbookCategory c) {
     final selected = _category == c.id;
     return ChoiceChip(
-      label: Text('${c.icon} ${c.name}'),
+      label: Text('${c.icon} ${c.name}', style: const TextStyle(fontSize: 12)),
       selected: selected,
       onSelected: (_) => setState(() => _category = c.id),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       selectedColor: AppTheme.accent,
       backgroundColor: AppTheme.bg3,
       labelStyle: TextStyle(color: selected ? Colors.white : AppTheme.textSecondary, fontWeight: FontWeight.w600),
