@@ -97,6 +97,23 @@ class CashbookDB {
     await d.delete('accounts', where: 'id=?', whereArgs: [id]);
   }
 
+  static Future<void> renameAccount(int id, String newName) async {
+    final d = await db;
+    await d.update('accounts', {'name': newName}, where: 'id=?', whereArgs: [id]);
+  }
+
+  /// Balance of every account at once, for the "সব হিসাব" overview —
+  /// one query per account is fine at this scale (dozens, not thousands).
+  static Future<Map<int, double>> getAllBalances() async {
+    final d = await db;
+    final rows = await d.rawQuery('''
+      SELECT account_id,
+        COALESCE(SUM(CASE WHEN type='in' THEN amount ELSE -amount END), 0) as balance
+      FROM entries GROUP BY account_id
+    ''');
+    return {for (final r in rows) r['account_id'] as int: (r['balance'] as num).toDouble()};
+  }
+
   // Matches the exact spelling used by the legacy app's own month-named
   // ledgers (imported ones say "ফেব্রুয়ারী"/"আগষ্ট", not the more common
   // "ফেব্রুয়ারি"/"আগস্ট") — so a freshly auto-created month never ends up
