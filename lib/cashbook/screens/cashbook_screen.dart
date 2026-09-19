@@ -148,8 +148,7 @@ class _CashbookScreenState extends State<CashbookScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('নতুন হিসাব'),
-        content: TextField(controller: ctrl, autofocus: true,
-            decoration: const InputDecoration(hintText: 'যেমন: সঞ্চয়, ক্রেডিট কার্ড')),
+        content: TextField(controller: ctrl, autofocus: true),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('বাতিল')),
           TextButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: const Text('যোগ করো')),
@@ -410,7 +409,6 @@ class _CashbookScreenState extends State<CashbookScreen> {
                   isDense: false,
                   dropdownColor: AppTheme.bg2,
                   icon: Icon(Icons.expand_more, color: AppTheme.textSecondary),
-                  hint: Text('হিসাব বেছে নিন', style: AppTheme.body()),
                   items: _accounts.map((a) => DropdownMenuItem(
                     value: a.id,
                     child: Text('${a.icon}  ${a.name}',
@@ -471,7 +469,6 @@ class _CashbookScreenState extends State<CashbookScreen> {
               controller: _searchCtrl,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                hintText: 'সব হিসাব থেকে নোট/ক্যাটাগরি/টাকা খুঁজুন...',
                 prefixIcon: const Icon(Icons.search, size: 20),
                 filled: true, fillColor: AppTheme.bg2,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
