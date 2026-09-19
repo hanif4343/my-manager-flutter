@@ -60,4 +60,36 @@ class CashbookNotificationService {
   static Future<void> cancel() async {
     await _plugin.cancel(_reminderId);
   }
+
+  /// Called every ~30 minutes by a background WorkManager task (see
+  /// main.dart), all day, every day — it only actually does anything
+  /// from 8pm onward. If today already has an entry it stays silent
+  /// (and this is also how nagging "stops": once one entry exists, every
+  /// subsequent 30-min check just no-ops for the rest of the day).
+  /// Android's WorkManager periodic timing isn't clock-exact, so the
+  /// first nag after 8pm may land a little before or after the hour —
+  /// that's normal background-scheduling behavior, not a bug.
+  static Future<void> backgroundCheck() async {
+    if (DateTime.now().hour < 20) return;
+    await _init();
+    final hasEntry = await CashbookDB.hasEntryToday();
+    if (hasEntry) {
+      await _plugin.cancel(_reminderId);
+      return;
+    }
+    const androidDetails = AndroidNotificationDetails(
+      _channelId,
+      'ক্যাশবুক রিমাইন্ডার',
+      channelDescription: 'আজকের জমা-খরচ এন্ট্রি না দেওয়া থাকলে রাতে মনে করিয়ে দেয়',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+    );
+    await _plugin.show(
+      _reminderId,
+      '🧾 আজকের হিসাব এখনও লেখা হয়নি',
+      'ক্যাশবুকে আজকের জমা/খরচ যোগ করো — অন্তত একটা এন্ট্রি দিলেই আর মনে করাবো না',
+      const NotificationDetails(android: androidDetails),
+    );
+  }
 }
