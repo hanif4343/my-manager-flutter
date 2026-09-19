@@ -158,6 +158,20 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
     }
   }
 
+  Future<void> _duplicate() async {
+    final e = widget.entry!;
+    final n = DateTime.now().millisecondsSinceEpoch;
+    await CashbookDB.insertEntry(CashbookEntry(
+      accountId: e.accountId, type: e.type, amount: e.amount, category: e.category,
+      note: e.note, date: CashbookDB.todayIso(), voucherImage: e.voucherImage,
+      recurring: false, createdAt: n, updatedAt: n,
+    ));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✓ আজকের তারিখে একটা কপি তৈরি হয়েছে')));
+      Navigator.pop(context, true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -298,6 +312,8 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
             Row(children: [
               if (_isEdit)
                 IconButton(onPressed: _delete, icon: Icon(Icons.delete_outline, color: AppTheme.red)),
+              if (_isEdit)
+                IconButton(onPressed: _duplicate, icon: Icon(Icons.copy_outlined, color: AppTheme.textSecondary)),
               Expanded(
                 child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('বাতিল')),
               ),
