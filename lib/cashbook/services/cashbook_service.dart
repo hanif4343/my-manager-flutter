@@ -54,4 +54,14 @@ class CashbookService {
   /// on by default since it's money data, same spirit as the Vault.
   static bool get lockEnabled => SettingsService.getBool(_lockEnabledKey, defaultValue: true);
   static Future<void> setLockEnabled(bool v) => SettingsService.setBool(_lockEnabledKey, v);
+
+  // ── remembered account selection ─────────────────────
+  // Persisted so the account switcher opens on whatever the person left
+  // it on, across app restarts — not reset to a default every time.
+  static const _lastAccountIdKey = 'cashbook_last_account_id';
+  static int? get lastAccountId {
+    final v = SettingsService.getInt(_lastAccountIdKey, defaultValue: 0);
+    return v == 0 ? null : v;
+  }
+  static Future<void> setLastAccountId(int id) => SettingsService.setInt(_lastAccountIdKey, id);
 }
