@@ -84,7 +84,7 @@ class _CashbookDebtSheetState extends State<CashbookDebtSheet> {
             Text('নাম', style: AppTheme.caption()),
             const SizedBox(height: 6),
             TextField(controller: _nameCtrl, decoration: InputDecoration(
-              hintText: 'কার সাথে হিসাব?', filled: true, fillColor: AppTheme.bg3,
+              filled: true, fillColor: AppTheme.bg3,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
             )),
             const SizedBox(height: 14),
@@ -96,7 +96,7 @@ class _CashbookDebtSheetState extends State<CashbookDebtSheet> {
               inputFormatters: [BanglaDigitInputFormatter()],
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               decoration: InputDecoration(
-                hintText: '০', filled: true, fillColor: AppTheme.bg3,
+                filled: true, fillColor: AppTheme.bg3,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               ),
             ),
@@ -104,7 +104,7 @@ class _CashbookDebtSheetState extends State<CashbookDebtSheet> {
             Text('নোট', style: AppTheme.caption()),
             const SizedBox(height: 6),
             TextField(controller: _noteCtrl, decoration: InputDecoration(
-              hintText: 'কারণ (ঐচ্ছিক)', filled: true, fillColor: AppTheme.bg3,
+              filled: true, fillColor: AppTheme.bg3,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
             )),
             const SizedBox(height: 20),
