@@ -13,6 +13,7 @@ import 'settings_screen.dart';
 import 'share_intake_screen.dart';
 import 'vault_screen.dart';
 import '../cashbook/screens/cashbook_screen.dart';
+import 'life_home_screen.dart';
 
 /// Top-level shell: bottom navigation between Projects / Search / Vault /
 /// Settings. Vault is a first-class destination of its own — a password
@@ -158,6 +159,12 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final tabs = [
+      LifeHomeScreen(
+        onOpenProjects: () => setState(() => _index = 1),
+        onOpenVault: _openVault,
+        onOpenCashbook: _openCashbook,
+        onOpenSettings: () => setState(() => _index = 3),
+      ),
       DashboardScreen(key: ValueKey(_dashboardGen), onThemeToggle: widget.onThemeToggle),
       const SearchScreen(),
       SettingsScreen(onThemeToggle: widget.onThemeToggle),
@@ -184,25 +191,29 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         child: NavigationBar(
           selectedIndex: _index,
           onDestinationSelected: (i) {
-            if (i == 2) {
+            if (i == 3) {
               // Vault's position in the destinations list below — a tap
               // here never changes _index, it just opens the vault as
               // its own route.
               _openVault();
               return;
             }
-            if (i == 3) {
+            if (i == 4) {
               // Cashbook, same non-tab treatment as Vault right above it.
               _openCashbook();
               return;
             }
-            // Settings shifted from index 2 to index 4 to make room for
-            // Vault and Cashbook, so map the NavigationBar's index back
-            // to the tabs list.
-            setState(() => _index = i == 4 ? 2 : i);
+            // Settings shifted from index 2 to index 5 to make room for
+            // Home, Vault and Cashbook, so map the NavigationBar's index
+            // back to the tabs list (Home=0, Projects=1, Search=2, Settings=3).
+            setState(() => _index = i == 5 ? 3 : i);
           },
           height: 60,
           destinations: const [
+            NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home),
+                label: 'হোম'),
             NavigationDestination(
                 icon: Icon(Icons.folder_outlined),
                 selectedIcon: Icon(Icons.folder),
