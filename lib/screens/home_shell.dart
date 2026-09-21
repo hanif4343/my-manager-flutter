@@ -164,6 +164,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         onOpenVault: _openVault,
         onOpenCashbook: _openCashbook,
         onOpenSettings: () => setState(() => _index = 3),
+        onThemeToggle: widget.onThemeToggle,
       ),
       DashboardScreen(key: ValueKey(_dashboardGen), onThemeToggle: widget.onThemeToggle),
       const SearchScreen(),
