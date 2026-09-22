@@ -19,10 +19,23 @@
 
     <application
         android:label="My Manager"
-        android:name="${applicationName}"
+        android:name=".MyManagerApplication"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
         android:theme="@style/LaunchTheme">
+
+        <!-- Read by flutter_autofill_service (application-level meta-data,
+             not tied to any one <activity> tag) to know which Activity to
+             launch for the interactive "pick a login" / "save this login"
+             UI. Without this, the plugin falls back to a hardcoded
+             component name from its own example app
+             (com.keevault.flutter_autofill_service_example.AutofillActivity)
+             which does not exist in this app — that mismatch is a very
+             plausible cause of a crash the moment Android actually tries
+             to launch the autofill UI. -->
+        <meta-data
+            android:name="com.keevault.flutter_autofill_service.ACTIVITY_NAME"
+            android:value="com.hanif.mymanager.AutofillActivity"/>
 
         <activity
             android:name=".MainActivity"
@@ -65,6 +78,27 @@
             </intent-filter>
         </activity>
 
+        <!-- Same Activity class as MainActivity (needed because local_auth's
+             biometric prompt requires FlutterFragmentActivity, and the
+             fingerprint check in autofill_picker_screen.dart needs that
+             too) but launched with a different Dart entrypoint
+             (autofillEntryPoint in main.dart) via an activity-alias, which
+             lets one real Activity class serve two distinct manifest
+             components. android:exported="true" is required for the
+             system Autofill framework's own process to be able to launch
+             it via PendingIntent. -->
+        <activity-alias
+            android:name=".AutofillActivity"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/NormalTheme"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+                android:name="io.flutter.embedding.android.DartEntrypoint"
+                android:value="autofillEntryPoint"/>
+        </activity-alias>
+
         <!-- Home screen widget — today's pending/overdue overview -->
         <receiver
             android:name=".MyManagerWidgetProvider"
@@ -99,15 +133,30 @@
             </intent-filter>
         </receiver>
 
-        <!-- Password Vault Autofill Service. NOTE: the exact class name
-             here is my best-effort match based on the plugin's package
-             (com.keevault.flutter_autofill_service) and its Dart-facing
-             API naming convention — I could not fully verify this exact
-             string from the plugin's own source before writing this. If
-             "My Manager" doesn't show up as an Autofill service option
-             in Android Settings after installing, this class name is
-             the first thing to double check against the plugin's own
-             source/example on GitHub. -->
+        <!-- Password Vault Autofill Service.
+
+             CONFIRMED from reading the plugin's actual Kotlin source
+             (FlutterAutofillPlugin.kt): the plugin reads an
+             ACTIVITY_NAME meta-data (added above, on the <application>
+             tag) to find the UI Activity, and without it, defaults to a
+             non-existent example-app component — a very plausible past
+             cause of the crash right after selecting this app as the
+             Autofill service in Android Settings, since some devices
+             eagerly bind/probe the service on selection.
+
+             STILL UNCONFIRMED: this exact class name for the <service>
+             itself. GitHub blocks automated directory browsing, so I
+             could not find the file that actually extends
+             android.service.autofill.AutofillService (only the
+             MethodChannel-handling FlutterAutofillPluginImpl class, which
+             is a different thing). This name is a reasonable, convention-
+             based guess, not a verified fact.
+
+             If "My Manager" still crashes on selection after this fix:
+             connect over USB and run `adb logcat *:E` (or use Android
+             Studio's Logcat) at the exact moment of selecting it in
+             Settings — the crash stack trace will name the real missing
+             class directly, which settles this with certainty. -->
         <service
             android:name="com.keevault.flutter_autofill_service.AutofillService"
             android:label="My Manager Autofill"
