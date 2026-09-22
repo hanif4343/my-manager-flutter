@@ -173,8 +173,13 @@ void autofillEntryPoint() {
   runApp(const AutofillPickerApp());
 }
 
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
+
 class MyManagerApp extends StatefulWidget {
   const MyManagerApp({super.key});
+  static final navigatorKey = GlobalKey<NavigatorState>();
   static _MyManagerAppState? of(BuildContext context) =>
       context.findAncestorStateOfType<_MyManagerAppState>();
   @override State<MyManagerApp> createState() => _MyManagerAppState();
@@ -187,6 +192,58 @@ class _MyManagerAppState extends State<MyManagerApp> {
   void initState() {
     super.initState();
     _isDark = SettingsService.isDark;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkLastCrash());
+  }
+
+  /// MyManagerApplication.kt (Android's <application> class) writes any
+  /// uncaught crash — from the main UI, the autofill picker, or the
+  /// background autofill service — to this file before letting the
+  /// crash proceed normally. No PC/adb needed to see what happened:
+  /// it just shows up here on the very next launch.
+  Future<void> _checkLastCrash() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/last_crash.txt');
+      if (!await file.exists()) return;
+      final text = await file.readAsString();
+      if (!mounted) return;
+      final navContext = MyManagerApp.navigatorKey.currentContext;
+      if (navContext == null) return;
+      await showDialog(
+        context: navContext,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('আগের বার অ্যাপ ক্র্যাশ করেছিল'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: SelectableText(text, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: text));
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('কপি হয়েছে')));
+                }
+              },
+              child: const Text('কপি করো'),
+            ),
+            TextButton(
+              onPressed: () async {
+                try { await file.delete(); } catch (_) {}
+                if (ctx.mounted) Navigator.of(ctx).pop();
+              },
+              child: const Text('ঠিক আছে'),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {
+      // No crash file, or couldn't read it — nothing to show, and this
+      // check should never itself be able to crash the app.
+    }
   }
 
   void toggleTheme() => setState(() => _isDark = SettingsService.isDark);
@@ -194,6 +251,7 @@ class _MyManagerAppState extends State<MyManagerApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: MyManagerApp.navigatorKey,
       title: 'My Manager',
       debugShowCheckedModeBanner: false,
       theme: _isDark ? AppTheme.dark : AppTheme.light,
