@@ -27,11 +27,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _digestEnabled = true;
   int _digestHour = 8;
   int _digestMinute = 0;
+  bool? _autofillSavingEnabled;
+  bool? _autofillIMEEnabled;
 
   @override
   void initState() {
     super.initState();
     _loadDigestPrefs();
+    _loadAutofillPrefs();
+  }
+
+  Future<void> _loadAutofillPrefs() async {
+    try {
+      final prefs = await AutofillService().preferences;
+      if (mounted) setState(() {
+        _autofillSavingEnabled = prefs.enableSaving;
+        _autofillIMEEnabled = prefs.enableIMERequests;
+      });
+    } catch (_) {
+      // Plugin not ready yet / not supported on this device — the
+      // toggles just won't render, same as if autofill weren't set up.
+    }
+  }
+
+  Future<void> _setAutofillSaving(bool v) async {
+    try {
+      await AutofillService().setPreferences(AutofillPreferences(
+        enableDebug: false, enableSaving: v, enableIMERequests: _autofillIMEEnabled ?? false,
+      ));
+      setState(() => _autofillSavingEnabled = v);
+    } catch (_) {}
+  }
+
+  Future<void> _setAutofillIME(bool v) async {
+    try {
+      await AutofillService().setPreferences(AutofillPreferences(
+        enableDebug: false, enableSaving: _autofillSavingEnabled ?? true, enableIMERequests: v,
+      ));
+      setState(() => _autofillIMEEnabled = v);
+    } catch (_) {}
   }
 
   Future<void> _loadDigestPrefs() async {
@@ -242,6 +276,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
               }
             },
           ),
+          if (_autofillSavingEnabled != null) ...[
+            const SizedBox(height: 8),
+            _settingTile(
+              icon: Icons.save_outlined,
+              iconColor: AppTheme.accent,
+              title: 'নতুন লগইন সেভের প্রম্পট',
+              subtitle: 'অন্য অ্যাপে নতুন পাসওয়ার্ড লিখলে ভল্টে সেভ করার প্রস্তাব আসবে',
+              trailing: Switch(
+                value: _autofillSavingEnabled!,
+                activeColor: AppTheme.accent,
+                onChanged: _setAutofillSaving,
+              ),
+            ),
+          ],
+          if (_autofillIMEEnabled != null) ...[
+            const SizedBox(height: 8),
+            _settingTile(
+              icon: Icons.keyboard_outlined,
+              iconColor: AppTheme.accent,
+              title: 'কিবোর্ডে ইনলাইন সাজেশন',
+              subtitle: 'Android 12+ এ কিবোর্ডের উপরেই পাসওয়ার্ড সাজেশন দেখাবে (এক্সপেরিমেন্টাল)',
+              trailing: Switch(
+                value: _autofillIMEEnabled!,
+                activeColor: AppTheme.accent,
+                onChanged: _setAutofillIME,
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
 
           _sectionTitle('Daily Digest Notification'),
