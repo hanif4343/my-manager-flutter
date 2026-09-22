@@ -7,9 +7,9 @@ import '../widgets/app_theme.dart';
 
 /// Root widget for the autofillEntryPoint() — this is what's on screen
 /// when Android asks "does the user want to autofill this login form?"
-/// and launches our app to find out. Requires the same fingerprint/PIN
-/// check as opening the main Vault screen, since this is a second route
-/// into the same secrets.
+/// (or "should this new login be saved?") and launches our app to find
+/// out. Requires the same fingerprint/PIN check as opening the main
+/// Vault screen, since this is a second route into the same secrets.
 class AutofillPickerApp extends StatefulWidget {
   const AutofillPickerApp({super.key});
   @override State<AutofillPickerApp> createState() => _AutofillPickerAppState();
@@ -21,6 +21,8 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
   List<VaultEntry> _matches = [];
   List<VaultEntry> _all = [];
   bool _showAll = false;
+  SaveInfoMetadata? _saveInfo;
+  String? _saveSiteLabel;
 
   @override
   void initState() {
@@ -37,23 +39,51 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
     await _load();
   }
 
+  /// Reduces a hostname to its "registrable" part for matching, so
+  /// m.facebook.com / accounts.facebook.com / www.facebook.com all match
+  /// a Vault entry saved against plain facebook.com. Not a full public-
+  /// suffix-list implementation — just the last two dot-separated labels,
+  /// which covers the vast majority of real sites.
+  String _registrableDomain(String host) {
+    final parts = host.toLowerCase().split('.');
+    if (parts.length <= 2) return parts.join('.');
+    return parts.sublist(parts.length - 2).join('.');
+  }
+
   Future<void> _load() async {
+    // NOTE: fillRequestedInteractive is just a bool ("was this launch
+    // triggered by an interactive fill request") — the actual metadata
+    // (which app/site, and any pending save info) comes from the
+    // separate `autofillMetadata` property instead. An earlier version
+    // of this screen mistakenly tried to read metadata off
+    // fillRequestedInteractive, which meant matching never worked and
+    // every launch silently fell back to showing the entire vault.
     AutofillMetadata? metadata;
     try {
-      final dynamic raw = await AutofillService().fillRequestedInteractive;
-      if (raw is AutofillMetadata) {
-        metadata = raw;
-      }
+      metadata = await AutofillService().autofillMetadata;
     } catch (_) {
       // Not fatal — we just won't be able to narrow down by app/site,
       // and will show every login instead.
     }
 
+    final saveInfo = metadata?.saveInfo;
+    if (saveInfo != null) {
+      final domains = metadata?.webDomains?.map((d) => d.domain).toList() ?? const [];
+      final pkgs = metadata?.packageNames?.toList() ?? const [];
+      setState(() {
+        _saveInfo = saveInfo;
+        _saveSiteLabel = domains.isNotEmpty ? domains.first : (pkgs.isNotEmpty ? pkgs.first : null);
+        _loading = false;
+      });
+      return; // Save flow doesn't need the login list at all.
+    }
+
     final all = await VaultService.getAll();
     final logins = all.where((e) => e.type == 'login').toList();
 
-    final pkgs = metadata?.packageNames ?? const <String>[];
+    final pkgs = metadata?.packageNames ?? const <String>{};
     final domains = metadata?.webDomains?.map((d) => d.domain).toList() ?? const <String>[];
+    final wantedRegistrableDomains = domains.map(_registrableDomain).toSet();
 
     List<VaultEntry> matches = logins.where((e) {
       final url = (e.url ?? '').toLowerCase();
@@ -62,8 +92,11 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
         final needle = p.toLowerCase();
         if (url.contains(needle) || title.contains(needle)) return true;
       }
-      for (final d in domains) {
-        if (url.contains(d.toLowerCase())) return true;
+      if (url.isNotEmpty && wantedRegistrableDomains.isNotEmpty) {
+        // Pull a rough hostname out of the saved URL (works whether it
+        // was stored with a scheme, with a path, or as a bare domain).
+        final hostGuess = url.replaceFirst(RegExp(r'^[a-z]+://'), '').split('/').first;
+        if (wantedRegistrableDomains.contains(_registrableDomain(hostGuess))) return true;
       }
       return false;
     }).toList();
@@ -87,6 +120,27 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
     }
   }
 
+  Future<void> _saveNewLogin(String title, String username, String password) async {
+    final n = DateTime.now().millisecondsSinceEpoch;
+    await VaultService.insert(VaultEntry(
+      id: 'v_$n',
+      type: 'login',
+      title: title,
+      username: username.isEmpty ? null : username,
+      secret: password,
+      url: _saveSiteLabel,
+      createdAt: n,
+      updatedAt: n,
+    ));
+    try {
+      await AutofillService().onSaveComplete();
+    } catch (_) {
+      // The save already succeeded in our own Vault regardless of
+      // whether we could tell Android's autofill framework we're done.
+    }
+    if (mounted) Navigator.of(context).maybePop();
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -94,13 +148,13 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
       theme: AppTheme.dark,
       home: Scaffold(
         backgroundColor: AppTheme.bg,
-        appBar: AppBar(title: const Text('My Manager থেকে বাছো')),
+        appBar: AppBar(title: Text(_saveInfo != null ? 'নতুন লগইন সংরক্ষণ' : 'My Manager থেকে বাছো')),
         body: _authFailed
             ? Center(child: Text('যাচাই ব্যর্থ হয়েছে — আবার চেষ্টা করো',
                 style: TextStyle(color: AppTheme.textMuted)))
             : _loading
                 ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
-                : _buildList(),
+                : (_saveInfo != null ? _buildSaveFlow() : _buildList()),
       ),
     );
   }
@@ -139,5 +193,51 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
         ),
       ),
     ]);
+  }
+
+  Widget _buildSaveFlow() {
+    final usernameCtrl = TextEditingController(text: _saveInfo?.username ?? '');
+    final titleCtrl = TextEditingController(text: _saveSiteLabel ?? '');
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('My Manager-এর ভল্টে এই লগইনটা সংরক্ষণ করবে?',
+            style: TextStyle(color: AppTheme.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 20),
+        Text('নাম', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+        const SizedBox(height: 6),
+        TextField(controller: titleCtrl, style: TextStyle(color: AppTheme.textPrimary)),
+        const SizedBox(height: 16),
+        Text('ইউজারনেম', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+        const SizedBox(height: 6),
+        TextField(controller: usernameCtrl, style: TextStyle(color: AppTheme.textPrimary)),
+        const SizedBox(height: 16),
+        Text('পাসওয়ার্ড পাওয়া গেছে ✓', style: TextStyle(color: AppTheme.green, fontSize: 12)),
+        const Spacer(),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () async {
+                try { await AutofillService().onSaveComplete(); } catch (_) {}
+                if (mounted) Navigator.of(context).maybePop();
+              },
+              child: const Text('না থাক'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accent, foregroundColor: Colors.white),
+              onPressed: () => _saveNewLogin(
+                titleCtrl.text.trim().isEmpty ? 'নতুন লগইন' : titleCtrl.text.trim(),
+                usernameCtrl.text.trim(),
+                _saveInfo?.password ?? '',
+              ),
+              child: const Text('ভল্টে সংরক্ষণ করো'),
+            ),
+          ),
+        ]),
+      ]),
+    );
   }
 }
