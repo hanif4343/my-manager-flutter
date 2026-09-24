@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:workmanager/workmanager.dart';
@@ -172,10 +174,6 @@ void autofillEntryPoint() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const AutofillPickerApp());
 }
-
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'package:flutter/services.dart';
 
 class MyManagerApp extends StatefulWidget {
   const MyManagerApp({super.key});
