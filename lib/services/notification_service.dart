@@ -1,6 +1,7 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:flutter/material.dart';
 import '../db/db_helper.dart';
 
@@ -15,6 +16,17 @@ class NotificationService {
     if (_initialized) return;
 
     tz.initializeTimeZones();
+    // Without this, tz.local silently defaults to UTC and every
+    // zonedSchedule below fires 6 hours off in Bangladesh (e.g. an 8pm
+    // schedule actually lands at 2am local time).
+    try {
+      final dynamic tzResult = await FlutterTimezone.getLocalTimezone();
+      final String tzName = tzResult is String ? tzResult : (tzResult.identifier as String);
+      tz.setLocalLocation(tz.getLocation(tzName));
+    } catch (_) {
+      // Fall back to UTC rather than crashing — reminders will just
+      // fire at the wrong time instead of not existing at all.
+    }
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const settings = InitializationSettings(android: android);
