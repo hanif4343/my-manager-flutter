@@ -1,6 +1,7 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../db/cashbook_db.dart';
 
@@ -19,6 +20,24 @@ class CashbookNotificationService {
   static Future<void> _init() async {
     if (_initialized) return;
     tz.initializeTimeZones();
+    // Without this, tz.local silently defaults to UTC, and every
+    // zonedSchedule below fires 6 hours off in Bangladesh (a "8pm"
+    // schedule actually lands at 2am local time) — this was the exact
+    // bug behind the 8pm reminder never showing up.
+    try {
+      // flutter_timezone's return type has changed across versions —
+      // older ones give a plain String, newer ones a TimezoneInfo object
+      // with an .identifier field. Handling both dynamically avoids
+      // guessing wrong and failing the build over a package version
+      // detail that doesn't actually matter for what we need here.
+      final dynamic tzResult = await FlutterTimezone.getLocalTimezone();
+      final String tzName = tzResult is String ? tzResult : (tzResult.identifier as String);
+      tz.setLocalLocation(tz.getLocation(tzName));
+    } catch (_) {
+      // If this fails for some reason, fall back to UTC rather than
+      // crashing — the reminder will just fire at the wrong time
+      // instead of not existing at all.
+    }
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _plugin.initialize(const InitializationSettings(android: android));
     await _plugin
