@@ -133,42 +133,24 @@
             </intent-filter>
         </receiver>
 
-        <!-- Password Vault Autofill Service.
-
-             CONFIRMED from reading the plugin's actual Kotlin source
-             (FlutterAutofillPlugin.kt): the plugin reads an
-             ACTIVITY_NAME meta-data (added above, on the <application>
-             tag) to find the UI Activity, and without it, defaults to a
-             non-existent example-app component — a very plausible past
-             cause of the crash right after selecting this app as the
-             Autofill service in Android Settings, since some devices
-             eagerly bind/probe the service on selection.
-
-             STILL UNCONFIRMED: this exact class name for the <service>
-             itself. GitHub blocks automated directory browsing, so I
-             could not find the file that actually extends
-             android.service.autofill.AutofillService (only the
-             MethodChannel-handling FlutterAutofillPluginImpl class, which
-             is a different thing). This name is a reasonable, convention-
-             based guess, not a verified fact.
-
-             If "My Manager" still crashes on selection after this fix:
-             connect over USB and run `adb logcat *:E` (or use Android
-             Studio's Logcat) at the exact moment of selecting it in
-             Settings — the crash stack trace will name the real missing
-             class directly, which settles this with certainty. -->
-        <service
-            android:name="com.keevault.flutter_autofill_service.AutofillService"
-            android:label="My Manager Autofill"
-            android:permission="android.permission.BIND_AUTOFILL_SERVICE"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.service.autofill.AutofillService"/>
-            </intent-filter>
-            <meta-data
-                android:name="android.autofill"
-                android:resource="@xml/autofill_service_config"/>
-        </service>
+        <!-- Password Vault Autofill Service — CONFIRMED (from an actual
+             on-device test) that flutter_autofill_service already merges
+             in its own correct <service> declaration from its own
+             library manifest (it shows up in Android Settings as
+             "Flutter Autofill Service"). The <service> block that used
+             to be here was my own extra, guessed-at duplicate pointing
+             at a class name I could never fully verify — selecting IT
+             specifically (shown as "My Manager Autofill" in Settings,
+             distinct from the plugin's own working entry) was the actual
+             cause of the crash-loop. Removed entirely rather than fixed,
+             since the plugin's own entry already does the job; the
+             ACTIVITY_NAME meta-data and activity-alias above are
+             unaffected by this and still apply regardless of which
+             manifest declared the <service> itself. If a custom label
+             ("My Manager Autofill" instead of the generic "Flutter
+             Autofill Service") is wanted later, that needs a
+             tools:replace manifest-merge override on the plugin's own
+             component, not a second competing <service> block. -->
 
         <meta-data
             android:name="flutterEmbedding"
