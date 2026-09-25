@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:workmanager/workmanager.dart';
@@ -190,58 +188,10 @@ class _MyManagerAppState extends State<MyManagerApp> {
   void initState() {
     super.initState();
     _isDark = SettingsService.isDark;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkLastCrash());
-  }
-
-  /// MyManagerApplication.kt (Android's <application> class) writes any
-  /// uncaught crash — from the main UI, the autofill picker, or the
-  /// background autofill service — to this file before letting the
-  /// crash proceed normally. No PC/adb needed to see what happened:
-  /// it just shows up here on the very next launch.
-  Future<void> _checkLastCrash() async {
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/last_crash.txt');
-      if (!await file.exists()) return;
-      final text = await file.readAsString();
-      if (!mounted) return;
-      final navContext = MyManagerApp.navigatorKey.currentContext;
-      if (navContext == null) return;
-      await showDialog(
-        context: navContext,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Text('আগের বার অ্যাপ ক্র্যাশ করেছিল'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: SelectableText(text, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: text));
-                if (ctx.mounted) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('কপি হয়েছে')));
-                }
-              },
-              child: const Text('কপি করো'),
-            ),
-            TextButton(
-              onPressed: () async {
-                try { await file.delete(); } catch (_) {}
-                if (ctx.mounted) Navigator.of(ctx).pop();
-              },
-              child: const Text('ঠিক আছে'),
-            ),
-          ],
-        ),
-      );
-    } catch (_) {
-      // No crash file, or couldn't read it — nothing to show, and this
-      // check should never itself be able to crash the app.
-    }
+    // Crash log (if any) is now viewed on demand from Settings, not
+    // auto-popped-up here — a crash severe/early enough can happen
+    // before this widget ever gets a first frame, so a settings-page
+    // viewer is the more reliable place either way.
   }
 
   void toggleTheme() => setState(() => _isDark = SettingsService.isDark);
