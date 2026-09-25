@@ -6,6 +6,7 @@ import '../services/notification_service.dart';
 import '../services/drive_service.dart';
 import '../widgets/app_theme.dart';
 import 'package:flutter_autofill_service/flutter_autofill_service.dart';
+import 'crash_log_screen.dart';
 
 // Must match the constant of the same name in main.dart — kept as a
 // separate literal here (rather than importing main.dart) to avoid a
@@ -379,6 +380,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _settingTile(
             icon: Icons.storage_outlined, iconColor: AppTheme.green,
             title: 'Storage', subtitle: 'SQLite Local Database (v5)',
+          ),
+
+          const SizedBox(height: 16),
+          _sectionTitle('ডিবাগ'),
+          _settingTile(
+            icon: Icons.bug_report_outlined, iconColor: AppTheme.red,
+            title: 'ক্র্যাশ লগ', subtitle: 'অ্যাপ ক্র্যাশ করলে বিস্তারিত এখানে জমা থাকে — কপি করা যায়',
+            trailing: Icon(Icons.chevron_right, color: AppTheme.textMuted),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrashLogScreen())),
           ),
         ],
       ),
