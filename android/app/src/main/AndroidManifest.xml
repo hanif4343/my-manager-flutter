@@ -22,7 +22,21 @@
         android:name=".MyManagerApplication"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
+        android:importantForAutofill="noExcludeDescendants"
         android:theme="@style/LaunchTheme">
+
+        <!-- android:importantForAutofill="noExcludeDescendants" above:
+             once this app becomes the active system Autofill service, any
+             text field anywhere — including our own Vault's "add new
+             password" form — would otherwise also trigger an autofill
+             fill-request back to us. That is very likely what was
+             crashing the app the moment the person tapped into the title
+             field of a new Vault entry: typing in our own field asks our
+             own autofill service to look itself up, a self-referential
+             path the plugin probably never anticipated. This tells
+             Android to never treat any view in this app as fillable, so
+             that fill/save requests only ever come from OTHER apps —
+             exactly the actual use case, and never our own screens. -->
 
         <!-- Read by flutter_autofill_service (application-level meta-data,
              not tied to any one <activity> tag) to know which Activity to
