@@ -132,22 +132,41 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
       appBar: AppBar(
         title: const Text('পাসওয়ার্ড ভল্ট'),
         actions: [
-          IconButton(
-            icon: Icon(Icons.security, color: AppTheme.textSecondary),
-            tooltip: 'নিরাপত্তা যাচাই',
-            onPressed: () => _showSecurityCheck(),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'export') _exportCsv();
-              if (v == 'import') _importCsv();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'export', child: Text('📤 CSV এক্সপোর্ট')),
-              PopupMenuItem(value: 'import', child: Text('📥 CSV ইমপোর্ট')),
-            ],
-          ),
-        ],
+  IconButton(
+    icon: Icon(
+      Icons.security,
+      color: AppTheme.textSecondary,
+    ),
+    tooltip: 'নিরাপত্তা যাচাই',
+    onPressed: _showSecurityCheck,
+  ),
+
+  SizedBox(
+    width: 48,
+    child: PopupMenuButton<String>(
+      icon: Icon(
+        Icons.more_vert,
+        color: AppTheme.textSecondary,
+      ),
+      tooltip: 'আরও অপশন',
+      padding: EdgeInsets.zero,
+      onSelected: (v) {
+        if (v == 'export') _exportCsv();
+        if (v == 'import') _importCsv();
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem(
+          value: 'export',
+          child: Text('📤 CSV এক্সপোর্ট'),
+        ),
+        PopupMenuItem(
+          value: 'import',
+          child: Text('📥 CSV ইমপোর্ট'),
+        ),
+      ],
+    ),
+  ),
+],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
