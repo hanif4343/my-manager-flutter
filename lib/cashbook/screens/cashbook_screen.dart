@@ -115,6 +115,11 @@ class _CashbookScreenState extends State<CashbookScreen> {
   Future<void> _afterMutation() async {
     await _load();
     CashbookBackupService.backupSilently();
+    // Immediately re-check, so saving an entry cancels tonight's
+    // remaining reminders right away instead of waiting for the next
+    // time the app happens to open or resume.
+    unawaited(CashbookNotificationService.refresh()
+        .catchError((e) => debugPrint('Cashbook reminder refresh failed: $e')));
   }
 
   // Asked exactly once, ever — after that we respect whatever the person
