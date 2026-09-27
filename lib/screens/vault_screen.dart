@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:otp/otp.dart' as otplib;
 import '../models/vault_entry.dart';
 import '../services/vault_service.dart';
+import '../services/vault_csv_service.dart';
 import '../widgets/app_theme.dart';
 import 'vault_entry_form_screen.dart';
 
@@ -136,6 +137,16 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
             tooltip: 'নিরাপত্তা যাচাই',
             onPressed: () => _showSecurityCheck(),
           ),
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'export') _exportCsv();
+              if (v == 'import') _importCsv();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'export', child: Text('📤 CSV এক্সপোর্ট')),
+              PopupMenuItem(value: 'import', child: Text('📥 CSV ইমপোর্ট')),
+            ],
+          ),
         ],
       ),
       body: _loading
@@ -200,6 +211,47 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
+  }
+
+  Future<void> _exportCsv() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('CSV এক্সপোর্ট করবে?'),
+        content: Text(
+          'CSV ফাইলে সব পাসওয়ার্ড প্লেইন টেক্সটে (এনক্রিপশন ছাড়া) লেখা থাকবে — '
+          'Chrome বা Bitwarden-এর এক্সপোর্টও ঠিক এভাবেই কাজ করে। শেয়ার করার পর ফাইলটা যেখানে পাঠাচ্ছেন সেটা নিরাপদ কিনা নিশ্চিত হয়ে নিন।',
+          style: TextStyle(color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('বাতিল')),
+          TextButton(onPressed: () => Navigator.pop(context, true),
+              child: Text('বুঝেছি, এক্সপোর্ট করো', style: TextStyle(color: AppTheme.accent))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await VaultCsvService.exportCsv(_entries);
+  }
+
+  Future<void> _importCsv() async {
+    VaultCsvImportResult? result;
+    try {
+      result = await VaultCsvService.pickAndImport();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ফাইল পড়তে সমস্যা হয়েছে: $e')));
+      }
+      return;
+    }
+    if (result == null) return; // cancelled
+    await _load();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('✓ ${result.imported} টা এন্ট্রি যোগ হয়েছে'
+            '${result.skipped > 0 ? ' (${result.skipped}টা বাদ পড়েছে — নাম বা পাসওয়ার্ড খালি)' : ''}'),
+      ));
+    }
   }
 
   Future<void> _showSecurityCheck() async {
