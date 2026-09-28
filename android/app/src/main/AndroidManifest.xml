@@ -135,6 +135,11 @@
                 android:value="my_manager_quick_add_bubble"/>
         </service>
 
+        <!-- Reminder notifications' Done / Not yet buttons: this receiver
+             is what lets a button tap be handled while the app is closed. -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver"
+            android:exported="false"/>
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
             android:exported="false"/>
