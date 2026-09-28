@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../widgets/app_theme.dart';
 import '../services/settings_service.dart';
+import '../reminder/models/reminder.dart' show bn;
+import '../reminder/screens/reminder_screen.dart';
+import '../reminder/services/reminder_service.dart';
 
 class _Module {
   final String name;
@@ -10,7 +13,7 @@ class _Module {
   const _Module(this.name, this.icon, this.color, {this.ready = false});
 }
 
-const _readyModules = <String>{'ক্যাশবুক', 'ভল্ট', 'প্রজেক্ট', 'সেটিংস'};
+const _readyModules = <String>{'ক্যাশবুক', 'ভল্ট', 'প্রজেক্ট', 'রিমাইন্ডার', 'সেটিংস'};
 
 const _modules = [
   _Module('ক্যাশবুক', Icons.account_balance_wallet, Color(0xFF4F46E5), ready: true),
@@ -18,7 +21,7 @@ const _modules = [
   _Module('প্রজেক্ট', Icons.folder, Color(0xFFB45309), ready: true),
   _Module('পরিবার ও রুটিন', Icons.family_restroom, Color(0xFFDC4C4C)),
   _Module('পড়াশোনা', Icons.school, Color(0xFF38BDF8)),
-  _Module('রিমাইন্ডার ও বিল', Icons.notifications_active, Color(0xFFFBBF24)),
+  _Module('রিমাইন্ডার', Icons.notifications_active, Color(0xFFFBBF24), ready: true),
   _Module('ডকুমেন্ট ও তথ্য', Icons.folder_special, Color(0xFF4ADE80)),
   _Module('প্রোডাক্টিভিটি', Icons.checklist, Color(0xFFA78BFA)),
   _Module('কৃষি/সম্পত্তি', Icons.agriculture, Color(0xFF84CC16)),
@@ -50,12 +53,37 @@ class LifeHomeScreen extends StatefulWidget {
 
 class _LifeHomeScreenState extends State<LifeHomeScreen> {
   bool _isDark = SettingsService.isDark;
+  int _remCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRemCount();
+    ReminderService.changes.addListener(_loadRemCount);
+  }
+
+  @override
+  void dispose() {
+    ReminderService.changes.removeListener(_loadRemCount);
+    super.dispose();
+  }
+
+  Future<void> _loadRemCount() async {
+    try {
+      final c = await ReminderService.pendingTodayCount();
+      if (mounted && c != _remCount) setState(() => _remCount = c);
+    } catch (_) {}
+  }
 
   void _tap(BuildContext context, _Module m) {
     switch (m.name) {
       case 'প্রজেক্ট': widget.onOpenProjects(); return;
       case 'ভল্ট': widget.onOpenVault(); return;
       case 'ক্যাশবুক': widget.onOpenCashbook(); return;
+      case 'রিমাইন্ডার':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const ReminderScreen()))
+            .then((_) => _loadRemCount());
+        return;
       case 'সেটিংস': widget.onOpenSettings(); return;
     }
     showDialog(
@@ -133,7 +161,11 @@ class _LifeHomeScreenState extends State<LifeHomeScreen> {
               delegate: SliverChildBuilderDelegate(
                 (context, i) {
                   final m = _modules[i];
-                  return _ModuleCard(module: m, onTap: () => _tap(context, m));
+                  return _ModuleCard(
+                    module: m,
+                    badge: m.name == 'রিমাইন্ডার' ? _remCount : 0,
+                    onTap: () => _tap(context, m),
+                  );
                 },
                 childCount: _modules.length,
               ),
@@ -234,7 +266,8 @@ class _SunriseBannerPainter extends CustomPainter {
 class _ModuleCard extends StatelessWidget {
   final _Module module;
   final VoidCallback onTap;
-  const _ModuleCard({required this.module, required this.onTap});
+  final int badge;
+  const _ModuleCard({required this.module, required this.onTap, this.badge = 0});
 
   @override
   Widget build(BuildContext context) {
@@ -257,6 +290,18 @@ class _ModuleCard extends StatelessWidget {
                 ),
                 child: Icon(module.icon, color: module.ready ? module.color : AppTheme.textMuted, size: 22),
               ),
+              if (badge > 0)
+                Positioned(
+                  right: -6, top: -4,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    constraints: const BoxConstraints(minWidth: 18),
+                    decoration: BoxDecoration(color: AppTheme.red, borderRadius: BorderRadius.circular(10)),
+                    child: Text(bn(badge > 99 ? 99 : badge),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+                  ),
+                ),
               if (!module.ready)
                 Positioned(
                   right: -2, top: -2,
