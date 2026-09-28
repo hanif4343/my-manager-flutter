@@ -14,6 +14,8 @@ import 'share_intake_screen.dart';
 import 'vault_screen.dart';
 import '../cashbook/screens/cashbook_screen.dart';
 import 'life_home_screen.dart';
+import '../reminder/screens/reminder_screen.dart';
+import '../reminder/services/reminder_service.dart';
 
 /// Top-level shell: bottom navigation between Projects / Search / Vault /
 /// Settings. Vault is a first-class destination of its own — a password
@@ -43,6 +45,21 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _initShareListener();
     _initOverlayListener();
+    ReminderService.openRequest.addListener(_openReminders);
+    ReminderService.launchedFromReminder().then((launched) {
+      if (launched && mounted) _openReminders();
+    });
+  }
+
+  bool _reminderOpen = false;
+
+  /// Tapping a reminder notification's body opens the Reminder screen.
+  Future<void> _openReminders() async {
+    if (_reminderOpen || !mounted) return;
+    _reminderOpen = true;
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const ReminderScreen()));
+    _reminderOpen = false;
   }
 
   /// Listens for signals sent from the floating bubble (see
@@ -95,6 +112,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    ReminderService.openRequest.removeListener(_openReminders);
     _shareSub?.cancel();
     _overlaySub?.cancel();
     super.dispose();
@@ -105,6 +123,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       setState(() => _dashboardGen++);
       CashbookNotificationService.refresh();
+      ReminderService.rearmAll().catchError((_) {});
+      ReminderService.changes.value++;
     }
     // Refresh the home screen widget whenever the app leaves the
     // foreground — covers ideas added/edited/completed during the
