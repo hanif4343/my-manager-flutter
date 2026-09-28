@@ -4,6 +4,7 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:flutter/material.dart';
 import '../db/db_helper.dart';
+import '../reminder/services/reminder_service.dart';
 
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
@@ -33,9 +34,14 @@ class NotificationService {
 
     await _plugin.initialize(
       settings,
+      // Same callbacks as ReminderService — the plugin is a singleton and the
+      // last initialize() call wins, so every caller must register these or
+      // the reminder Done / Not yet buttons stop working.
       onDidReceiveNotificationResponse: (details) {
         debugPrint('Notification tapped: ${details.payload}');
+        ReminderService.onForeground(details);
       },
+      onDidReceiveBackgroundNotificationResponse: reminderBackgroundHandler,
     );
 
     await _plugin
