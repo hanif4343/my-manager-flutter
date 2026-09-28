@@ -12,9 +12,11 @@ import 'services/notification_service.dart';
 import 'services/settings_service.dart';
 import 'services/drive_service.dart';
 import 'cashbook/services/cashbook_notification_service.dart';
+import 'reminder/services/reminder_service.dart';
 
 const autoBackupTaskName = 'my_manager_auto_backup';
 const cashbookReminderTaskName = 'cashbook_reminder_check';
+const reminderRearmTaskName = 'reminder_rearm';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,6 +52,11 @@ void main() async {
   } catch (_) {
     // Notifications failing to set up shouldn't block the app either.
   }
+  // Reminder module: (re)arm the next few days of alarms for every saved
+  // reminder. Cheap and idempotent — also runs on resume and every 6h.
+  try {
+    await ReminderService.rearmAll();
+  } catch (_) {}
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
@@ -112,6 +119,13 @@ void main() async {
   } catch (_) {
     // Reminder scheduling failing shouldn't block the app from starting.
   }
+  try {
+    await Workmanager().registerPeriodicTask(
+      reminderRearmTaskName, reminderRearmTaskName,
+      frequency: const Duration(hours: 6),
+      existingWorkPolicy: ExistingWorkPolicy.keep,
+    );
+  } catch (_) {}
   runApp(const MyManagerApp());
   // Refresh the home screen widget on every cold start too, in case
   // something changed while the app wasn't running.
@@ -128,6 +142,10 @@ void main() async {
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     try {
+      if (task == reminderRearmTaskName) {
+        await ReminderService.rearmAll();
+        return true;
+      }
       if (task == cashbookReminderTaskName) {
         await CashbookNotificationService.backgroundCheck();
         return true;
