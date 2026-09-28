@@ -4,6 +4,7 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../db/cashbook_db.dart';
+import '../../reminder/services/reminder_service.dart';
 
 /// "রাত ৮টা থেকে শুরু করে প্রতি ৩০ মিনিটে মনে করিয়ে দাও, যতক্ষণ না আজ
 /// অন্তত একটা এন্ট্রি হয়" — implemented as a fixed chain of *exact*
@@ -55,7 +56,13 @@ class CashbookNotificationService {
       // the wrong time instead of not existing at all.
     }
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    await _plugin.initialize(const InitializationSettings(android: android));
+    // Reminder callbacks must be re-registered here: the plugin instance is
+    // shared app-wide and the last initialize() call wins.
+    await _plugin.initialize(
+      const InitializationSettings(android: android),
+      onDidReceiveNotificationResponse: ReminderService.onForeground,
+      onDidReceiveBackgroundNotificationResponse: reminderBackgroundHandler,
+    );
     final androidImpl = _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     await androidImpl?.requestNotificationsPermission();
