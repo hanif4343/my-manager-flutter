@@ -25,9 +25,23 @@ android {
         applicationId "com.hanif.mymanager"
         minSdk 29
         targetSdk 36
-        versionCode 5
-        versionName "5.0.0"
+        versionCode 6
+        versionName "5.0.1"
         multiDexEnabled true
+    }
+
+    // ক্র্যাশের মূল কারণ (ClassCastException: TinylogLoggingProvider cannot be
+    // cast to DynamicLevelLoggingProvider): flutter_autofill_service নিজের
+    // DynamicLevelLoggingProvider রেজিস্টার করে, আর tinylog-impl রেজিস্টার করে
+    // সাধারণ TinylogLoggingProvider। দুটোই একই
+    // META-INF/services/org.tinylog.provider.LoggingProvider ফাইলে merge হয়ে
+    // যায়, আর tinylog ভুল প্রোভাইডারটা বেছে নিলে AutofillService তৈরি হওয়ার
+    // মুহূর্তেই অ্যাপ ক্র্যাশ করে। এখানে app-এর নিজের ফাইলটাকেই একমাত্র
+    // সত্য ধরা হচ্ছে (src/main/resources/META-INF/services/... দেখো)।
+    packaging {
+        resources {
+            pickFirsts += ['META-INF/services/org.tinylog.provider.LoggingProvider']
+        }
     }
 
     signingConfigs {
