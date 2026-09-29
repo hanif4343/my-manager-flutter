@@ -55,6 +55,24 @@ class CashbookService {
   static bool get lockEnabled => SettingsService.getBool(_lockEnabledKey, defaultValue: true);
   static Future<void> setLockEnabled(bool v) => SettingsService.setBool(_lockEnabledKey, v);
 
+  // ── দৈনিক এন্ট্রি রিমাইন্ডার (কখন থেকে "আজকের হিসাব লেখো নি" নাগ শুরু হবে) ──
+  static const _reminderEnabledKey = 'cashbook_reminder_enabled';
+  static const _reminderHourKey = 'cashbook_reminder_hour';
+  static const _reminderMinuteKey = 'cashbook_reminder_minute';
+
+  static bool get reminderEnabled =>
+      SettingsService.getBool(_reminderEnabledKey, defaultValue: true);
+  static Future<void> setReminderEnabled(bool v) =>
+      SettingsService.setBool(_reminderEnabledKey, v);
+
+  /// ডিফল্ট রাত ৮:০০ — আগের ফিক্সড আচরণের সাথে ব্যাকওয়ার্ড-কম্প্যাটিবল।
+  static int get reminderHour => SettingsService.getInt(_reminderHourKey, defaultValue: 20);
+  static int get reminderMinute => SettingsService.getInt(_reminderMinuteKey, defaultValue: 0);
+  static Future<void> setReminderTime(int hour, int minute) async {
+    await SettingsService.setInt(_reminderHourKey, hour);
+    await SettingsService.setInt(_reminderMinuteKey, minute);
+  }
+
   // ── remembered account selection ─────────────────────
   // Persisted so the account switcher opens on whatever the person left
   // it on, across app restarts — not reset to a default every time.
