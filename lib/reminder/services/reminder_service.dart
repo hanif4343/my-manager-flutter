@@ -245,6 +245,53 @@ class ReminderService {
     }
   }
 
+  /// কোন ধরনের রিমাইন্ডারের জন্য কোন "action verb" — বডিটা যাতে শুকনো টাইটেলের
+  /// পুনরাবৃত্তি না হয়ে, কী করতে হবে সেটা নিজে থেকেই বলে দেয়।
+  static String _kindVerb(String kind) {
+    switch (kind) {
+      case 'post':
+        return 'পোস্ট করার সময় হয়ে গেছে';
+      case 'call':
+        return 'কল করার সময় হয়ে গেছে';
+      case 'give':
+        return 'দেওয়ার কথা ছিল, ভুলে যেও না';
+      case 'plan':
+        return 'প্ল্যান অনুযায়ী আজকের কাজ';
+      default:
+        return 'মনে করিয়ে দিচ্ছি';
+    }
+  }
+
+  /// টাইটেল + বডি — সময়/অবস্থা বুঝে ইমোজি ও ভাষা একটু বদলায়, যাতে
+  /// শুধু একঘেয়ে "রিমাইন্ডার: শিরোনাম" না হয়ে একটু "স্মার্ট" লাগে।
+  static (String, String) _smartContent(
+      Reminder r, DateTime when, {required bool snoozed}) {
+    final kind = kindOf(r.kind);
+    final hour = when.hour;
+    final greetEmoji = hour < 12
+        ? '☀️'
+        : hour < 17
+            ? '🌤️'
+            : hour < 20
+                ? '🌆'
+                : '🌙';
+
+    final title = snoozed
+        ? '🔔 রিমাইন্ডার (আবার মনে করাচ্ছি) • ${kind.emoji} ${r.title}'
+        : '🔔 রিমাইন্ডার • ${kind.emoji} ${r.title}';
+
+    final noteText = r.note.trim();
+    final lead = snoozed
+        ? '⏳ এখনো হয়নি? '
+        : '$greetEmoji ${_kindVerb(r.kind)}. ';
+    final tail = r.repeats ? '\n🔁 ${r.repeatLabel}' : '';
+    final body = noteText.isNotEmpty
+        ? '$lead\n📝 $noteText$tail'
+        : '$lead$tail'.trim();
+
+    return (title, body);
+  }
+
   static Future<void> _schedule({
     required int notifId,
     required Reminder r,
@@ -252,8 +299,7 @@ class ReminderService {
     required String occurrenceDate,
     bool snoozed = false,
   }) async {
-    final kind = kindOf(r.kind);
-    final body = r.note.trim().isNotEmpty ? r.note.trim() : kind.label;
+    final (title, body) = _smartContent(r, when, snoozed: snoozed);
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
         channelId,
@@ -265,9 +311,12 @@ class ReminderService {
         enableVibration: true,
         playSound: true,
         category: AndroidNotificationCategory.reminder,
+        subText: 'রিমাইন্ডার',
+        ticker: title,
         styleInformation: BigTextStyleInformation(
-          snoozed ? '⏳ আবার মনে করাচ্ছি\n$body' : body,
-          contentTitle: '${kind.emoji} ${r.title}',
+          body,
+          contentTitle: title,
+          summaryText: 'My Manager',
         ),
         actions: const [
           AndroidNotificationAction(actionDone, '✅ Done',
@@ -279,7 +328,6 @@ class ReminderService {
     );
     final tzTime = tz.TZDateTime.from(when, tz.local);
     final payload = _payload(r.id!, occurrenceDate, snooze: snoozed);
-    final title = '${kind.emoji} ${r.title}';
     try {
       await _plugin.zonedSchedule(
         notifId, title, body, tzTime, details,
