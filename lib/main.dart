@@ -186,8 +186,11 @@ void overlayMain() async {
 /// suggestions for a login field somewhere else on the device. Runs in
 /// its own separate Flutter engine, same pattern as overlayMain() above.
 @pragma('vm:entry-point')
-void autofillEntryPoint() {
+void autofillEntryPoint() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await SettingsService.init();
+  } catch (_) {}
   runApp(const AutofillPickerApp());
 }
 
