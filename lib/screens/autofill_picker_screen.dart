@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_autofill_service/flutter_autofill_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/vault_entry.dart';
 import '../services/vault_service.dart';
 import '../services/auth_service.dart';
@@ -29,6 +30,14 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
   final _usernameCtrl = TextEditingController();
   bool _saving = false;
 
+  // দ্রুত করার জন্য: সাম্প্রতিক যাচাইয়ের পর এই সময়ের মধ্যে আবার
+  // ফিঙ্গারপ্রিন্ট/PIN চাইবে না।
+  static const _authGraceSeconds = 120;
+  static const _lastAuthKey = 'af_last_auth_ms';
+  final _searchCtrl = TextEditingController();
+  String _siteKey = '';
+  String? _lastUsedId;
+
   @override
   void initState() {
     super.initState();
@@ -39,6 +48,7 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
   void dispose() {
     _titleCtrl.dispose();
     _usernameCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -51,12 +61,34 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
 
   Future<void> _init() async {
     setState(() { _loading = true; _authFailed = false; });
-    final ok = await AuthService.authenticate(reason: 'Autofill-এর জন্য যাচাই করো');
-    if (!ok) {
-      if (mounted) setState(() { _authFailed = true; _loading = false; });
+
+    AutofillMetadata? metadata;
+    try {
+      metadata = await AutofillService().autofillMetadata;
+    } catch (_) {}
+
+    // সেভ ফ্লো-তে ভল্টের কিছু দেখানো হয় না, শুধু নতুন এন্ট্রি যোগ হয় —
+    // তাই এখানে যাচাই ছাড়াই সরাসরি সেভ স্ক্রিন, এক ধাপ কম।
+    if (metadata?.saveInfo != null) {
+      _showSave(metadata!);
       return;
     }
-    await _load();
+
+    // পাসওয়ার্ড বাছাইয়ের আগে যাচাই — তবে ২ মিনিটের মধ্যে আগেই যাচাই
+    // হয়ে থাকলে আবার নয়।
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final last = prefs.getInt(_lastAuthKey) ?? 0;
+    final fresh = DateTime.now().millisecondsSinceEpoch - last < _authGraceSeconds * 1000;
+    if (!fresh) {
+      final ok = await AuthService.authenticate(reason: 'Autofill-এর জন্য যাচাই করো');
+      if (!ok) {
+        if (mounted) setState(() { _authFailed = true; _loading = false; });
+        return;
+      }
+      await prefs.setInt(_lastAuthKey, DateTime.now().millisecondsSinceEpoch);
+    }
+    await _load(metadata, prefs);
   }
 
   String _registrableDomain(String host) {
@@ -85,27 +117,21 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
         .where((t) => t.length >= 4 && !skip.contains(t)).toSet();
   }
 
-  Future<void> _load() async {
-    AutofillMetadata? metadata;
-    try {
-      metadata = await AutofillService().autofillMetadata;
-    } catch (_) {}
+  void _showSave(AutofillMetadata metadata) {
+    final saveInfo = metadata.saveInfo!;
+    final domains = metadata.webDomains?.map((d) => d.domain).toList() ?? const <String>[];
+    final pkgs = metadata.packageNames?.toList() ?? const <String>[];
+    final label = domains.isNotEmpty ? domains.first : (pkgs.isNotEmpty ? pkgs.first : null);
+    _titleCtrl.text = label ?? '';
+    _usernameCtrl.text = saveInfo.username ?? '';
+    if (mounted) setState(() {
+      _saveInfo = saveInfo;
+      _saveSiteLabel = label;
+      _loading = false;
+    });
+  }
 
-    final saveInfo = metadata?.saveInfo;
-    if (saveInfo != null) {
-      final domains = metadata?.webDomains?.map((d) => d.domain).toList() ?? const <String>[];
-      final pkgs = metadata?.packageNames?.toList() ?? const <String>[];
-      final label = domains.isNotEmpty ? domains.first : (pkgs.isNotEmpty ? pkgs.first : null);
-      _titleCtrl.text = label ?? '';
-      _usernameCtrl.text = saveInfo.username ?? '';
-      if (mounted) setState(() {
-        _saveInfo = saveInfo;
-        _saveSiteLabel = label;
-        _loading = false;
-      });
-      return;
-    }
-
+  Future<void> _load(AutofillMetadata? metadata, SharedPreferences prefs) async {
     final all = await VaultService.getAll();
     final logins = all.where((e) => e.type == 'login').toList();
 
@@ -115,6 +141,11 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
     final wantedLabels = wantedDomains.map((d) => d.split('.').first).toSet();
     final pkgTokens = <String>{};
     for (final p in pkgs) { pkgTokens.addAll(_packageTokens(p)); }
+
+    _siteKey = wantedDomains.isNotEmpty
+        ? wantedDomains.first
+        : (pkgs.isNotEmpty ? pkgs.first : '');
+    _lastUsedId = _siteKey.isEmpty ? null : prefs.getString('af_last_$_siteKey');
 
     final matches = logins.where((e) {
       final url = (e.url ?? '').toLowerCase();
@@ -135,20 +166,39 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
       return false;
     }).toList();
 
-    if (mounted) setState(() {
-      _all = logins;
-      _matches = matches;
-      _loading = false;
-    });
+    // সবচেয়ে আগে: এই সাইটে শেষবার যেটা ব্যবহার হয়েছিল; তারপর নতুন আপডেট
+    // হওয়াগুলো।
+    int rank(VaultEntry e) => e.id == _lastUsedId ? 0 : 1;
+    int cmp(VaultEntry a, VaultEntry b) {
+      final r = rank(a).compareTo(rank(b));
+      return r != 0 ? r : b.updatedAt.compareTo(a.updatedAt);
+    }
+    matches.sort(cmp);
+    logins.sort(cmp);
+
+    _all = logins;
+    _matches = matches;
+
+    // মাত্র একটাই মিল থাকলে কোনো ট্যাপ ছাড়াই সরাসরি ফিল।
+    if (matches.length == 1) {
+      final ok = await _select(matches.first);
+      if (ok) return;
+    }
+    if (mounted) setState(() => _loading = false);
   }
 
-  Future<void> _select(VaultEntry e) async {
+  Future<bool> _select(VaultEntry e) async {
     try {
+      if (_siteKey.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('af_last_$_siteKey', e.id);
+      }
       await AutofillService().resultWithDatasets([
         PwDataset(label: e.title, username: e.username ?? '', password: e.secret),
       ]);
+      return true;
     } catch (_) {
-      _finish();
+      return false;
     }
   }
 
@@ -221,15 +271,39 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
   }
 
   Widget _buildList() {
-    final list = _showAll || _matches.isEmpty ? _all : _matches;
-    if (list.isEmpty) {
+    final base = _showAll || _matches.isEmpty ? _all : _matches;
+    final q = _searchCtrl.text.trim().toLowerCase();
+    final list = q.isEmpty
+        ? base
+        : _all.where((e) =>
+            e.title.toLowerCase().contains(q) ||
+            (e.username ?? '').toLowerCase().contains(q) ||
+            (e.url ?? '').toLowerCase().contains(q)).toList();
+    if (_all.isEmpty) {
       return Center(child: Text('ভল্টে কোনো লগইন নেই',
           style: TextStyle(color: AppTheme.textMuted)));
     }
     return Column(children: [
-      if (_matches.isNotEmpty && !_showAll)
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        child: TextField(
+          controller: _searchCtrl,
+          onChanged: (_) => setState(() {}),
+          style: TextStyle(color: AppTheme.textPrimary),
+          decoration: InputDecoration(
+            hintText: 'খোঁজো (নাম / ইউজারনেম)...',
+            hintStyle: TextStyle(color: AppTheme.textMuted),
+            prefixIcon: Icon(Icons.search, color: AppTheme.textMuted, size: 20),
+            isDense: true,
+            filled: true, fillColor: AppTheme.bg2,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppTheme.border)),
+          ),
+        ),
+      ),
+      if (q.isEmpty && _matches.isNotEmpty && !_showAll && _matches.length < _all.length)
         Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Row(children: [
             Expanded(child: Text('এই অ্যাপ/সাইটের সাথে মিলে যাওয়া এন্ট্রি',
                 style: TextStyle(color: AppTheme.textSecondary, fontSize: 12))),
@@ -239,10 +313,10 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
             ),
           ]),
         ),
-      if (_matches.isEmpty)
+      if (q.isEmpty && _matches.isEmpty)
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Text('মিলে যাওয়া এন্ট্রি পাওয়া যায়নি — সব লগইন দেখানো হচ্ছে',
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Text('মিলে যাওয়া এন্ট্রি নেই — সব লগইন দেখানো হচ্ছে',
               style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
         ),
       Expanded(
@@ -250,11 +324,19 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
           itemCount: list.length,
           itemBuilder: (_, i) {
             final e = list[i];
+            final isLast = e.id == _lastUsedId;
             return ListTile(
-              leading: Icon(Icons.lock_outline, color: AppTheme.textSecondary),
+              dense: true,
+              leading: Icon(isLast ? Icons.history : Icons.lock_outline,
+                  color: isLast ? AppTheme.accent : AppTheme.textSecondary),
               title: Text(e.title, style: TextStyle(color: AppTheme.textPrimary)),
-              subtitle: Text(e.username ?? '', style: TextStyle(color: AppTheme.textMuted)),
-              onTap: () => _select(e),
+              subtitle: Text(
+                  '${e.username ?? ''}${isLast ? '  · শেষবার ব্যবহৃত' : ''}',
+                  style: TextStyle(color: AppTheme.textMuted)),
+              onTap: () async {
+                final ok = await _select(e);
+                if (!ok) _finish();
+              },
             );
           },
         ),
