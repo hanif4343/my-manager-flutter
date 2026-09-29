@@ -132,41 +132,22 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
       appBar: AppBar(
         title: const Text('পাসওয়ার্ড ভল্ট'),
         actions: [
-  IconButton(
-    icon: Icon(
-      Icons.security,
-      color: AppTheme.textSecondary,
-    ),
-    tooltip: 'নিরাপত্তা যাচাই',
-    onPressed: _showSecurityCheck,
-  ),
-
-  SizedBox(
-    width: 48,
-    child: PopupMenuButton<String>(
-      icon: Icon(
-        Icons.more_vert,
-        color: AppTheme.textSecondary,
-      ),
-      tooltip: 'আরও অপশন',
-      padding: EdgeInsets.zero,
-      onSelected: (v) {
-        if (v == 'export') _exportCsv();
-        if (v == 'import') _importCsv();
-      },
-      itemBuilder: (_) => const [
-        PopupMenuItem(
-          value: 'export',
-          child: Text('📤 CSV এক্সপোর্ট'),
-        ),
-        PopupMenuItem(
-          value: 'import',
-          child: Text('📥 CSV ইমপোর্ট'),
-        ),
-      ],
-    ),
-  ),
-],
+          IconButton(
+            icon: Icon(Icons.security, color: AppTheme.textSecondary),
+            tooltip: 'নিরাপত্তা যাচাই',
+            onPressed: () => _showSecurityCheck(),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'export') _exportCsv();
+              if (v == 'import') _importCsv();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'export', child: Text('📤 CSV এক্সপোর্ট')),
+              PopupMenuItem(value: 'import', child: Text('📥 CSV ইমপোর্ট')),
+            ],
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
@@ -254,23 +235,62 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _importCsv() async {
+    var progressShown = false;
+    void closeProgress() {
+      if (progressShown && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        progressShown = false;
+      }
+    }
+
     VaultCsvImportResult? result;
     try {
-      result = await VaultCsvService.pickAndImport();
+      result = await VaultCsvService.pickAndImport(onFilePicked: () {
+        if (!mounted) return;
+        progressShown = true;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const AlertDialog(
+            content: Row(children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Expanded(child: Text('ইমপোর্ট হচ্ছে...')),
+            ]),
+          ),
+        );
+      });
     } catch (e) {
+      closeProgress();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ফাইল পড়তে সমস্যা হয়েছে: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ইমপোর্ট ব্যর্থ হয়েছে: $e')));
       }
       return;
     }
+    closeProgress();
     if (result == null) return; // cancelled
     await _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('✓ ${result.imported} টা এন্ট্রি যোগ হয়েছে'
-            '${result.skipped > 0 ? ' (${result.skipped}টা বাদ পড়েছে — নাম বা পাসওয়ার্ড খালি)' : ''}'),
-      ));
+    if (!mounted) return;
+
+    final r = result;
+    final String message;
+    if (!r.headerRecognized) {
+      message = 'ফাইলের প্রথম সারিতে কলামের নাম চেনা যায়নি।\n\n'
+          'প্রথম সারিতে অন্তত "name" (বা title/url) আর "password" থাকতে হবে — '
+          'যেমন: name,url,username,password,note';
+    } else {
+      message = '✓ ${r.imported} টা নতুন এন্ট্রি যোগ হয়েছে\n'
+          '${r.duplicates > 0 ? '• ${r.duplicates} টা আগে থেকেই ভল্টে ছিল (বাদ)\n' : ''}'
+          '${r.skipped > 0 ? '• ${r.skipped} টা বাদ পড়েছে (নাম বা পাসওয়ার্ড খালি — যেমন Passkey)\n' : ''}';
     }
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('CSV ইমপোর্ট'),
+        content: Text(message.trim()),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('ঠিক আছে'))],
+      ),
+    );
   }
 
   Future<void> _showSecurityCheck() async {
