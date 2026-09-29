@@ -5,6 +5,8 @@ import 'package:otp/otp.dart' as otplib;
 import '../models/vault_entry.dart';
 import '../services/vault_service.dart';
 import '../services/vault_csv_service.dart';
+import '../services/vault_backup_service.dart';
+import 'vault_backup_sheet.dart';
 import '../widgets/app_theme.dart';
 import 'vault_entry_form_screen.dart';
 
@@ -21,6 +23,11 @@ const _typeLabels = {
 };
 
 class VaultScreen extends StatefulWidget {
+  /// ফাইল পিকার / শেয়ার / Google সাইন-ইনের মতো বাইরের স্ক্রিন খোলার সময়
+  /// true থাকে, যাতে অ্যাপ 'paused' হলেও ভল্ট অটো-লকে বন্ধ হয়ে অপারেশনের
+  /// মাঝপথে না কাটে।
+  static bool suppressAutoLock = false;
+
   const VaultScreen({super.key});
   @override State<VaultScreen> createState() => _VaultScreenState();
 }
@@ -29,6 +36,8 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
   List<VaultEntry> _entries = [];
   bool _loading = true;
   String _query = '';
+  int _changedSinceBackup = 0;
+  int _lastBackupMs = 0;
 
   @override
   void initState() {
@@ -48,7 +57,7 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
     // Auto-lock: if the app is backgrounded while the vault is open,
     // kick back out to wherever it was opened from. Coming back in
     // means going through fingerprint/PIN again.
-    if (state == AppLifecycleState.paused && mounted) {
+    if (state == AppLifecycleState.paused && mounted && !VaultScreen.suppressAutoLock) {
       Navigator.of(context).pop();
     }
   }
@@ -56,7 +65,12 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
   Future<void> _load() async {
     final list = await VaultService.getAll();
     list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    if (mounted) setState(() { _entries = list; _loading = false; });
+    final last = VaultBackupService.lastBackupMs();
+    final changed = list.where((e) => e.updatedAt > last).length;
+    if (mounted) setState(() {
+      _entries = list; _loading = false;
+      _lastBackupMs = last; _changedSinceBackup = changed;
+    });
   }
 
   List<VaultEntry> get _filtered {
@@ -141,8 +155,10 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
             onSelected: (v) {
               if (v == 'export') _exportCsv();
               if (v == 'import') _importCsv();
+              if (v == 'backup') _openBackup();
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'backup', child: Text('🔐 এনক্রিপ্টেড ব্যাকআপ / রিস্টোর')),
               PopupMenuItem(value: 'export', child: Text('📤 CSV এক্সপোর্ট')),
               PopupMenuItem(value: 'import', child: Text('📥 CSV ইমপোর্ট')),
             ],
@@ -152,6 +168,7 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
           : Column(children: [
+              _backupBanner(),
               Padding(
                 padding: const EdgeInsets.all(14),
                 child: TextField(
@@ -209,6 +226,47 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
         onPressed: () => _openForm(),
         backgroundColor: AppTheme.accent,
         child: const Icon(Icons.add, color: Colors.white),
+      ),
+    );
+  }
+
+  Future<void> _openBackup() async {
+    await showVaultBackupSheet(context);
+    if (mounted) await _load();
+  }
+
+  /// ব্যাকআপ নেই / অনেক দিন আগের / নতুন পরিবর্তন জমেছে → নরম সতর্কবার্তা।
+  Widget _backupBanner() {
+    if (_entries.isEmpty) return const SizedBox.shrink();
+    final days = _lastBackupMs == 0
+        ? 9999
+        : DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(_lastBackupMs)).inDays;
+    final needs = _lastBackupMs == 0 || days >= 30 || (_changedSinceBackup > 0 && days >= 3);
+    if (!needs) return const SizedBox.shrink();
+    final text = _lastBackupMs == 0
+        ? 'ভল্টের কোনো ব্যাকআপ নেই — ফোন হারালে বা রিসেট হলে সব পাসওয়ার্ড চলে যাবে'
+        : (_changedSinceBackup > 0
+            ? 'শেষ ব্যাকআপের পর $_changedSinceBackupটা এন্ট্রি নতুন/বদলেছে ($days দিন আগে)'
+            : 'শেষ ব্যাকআপ $days দিন আগে');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+      child: Material(
+        color: AppTheme.yellow.withOpacity(0.13),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: _openBackup,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(children: [
+              Icon(Icons.shield_outlined, color: AppTheme.yellow, size: 20),
+              const SizedBox(width: 10),
+              Expanded(child: Text(text,
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5, height: 1.35))),
+              Text('ব্যাকআপ', style: TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w700, fontSize: 12.5)),
+            ]),
+          ),
+        ),
       ),
     );
   }
