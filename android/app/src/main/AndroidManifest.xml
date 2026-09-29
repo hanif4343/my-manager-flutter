@@ -92,26 +92,20 @@
             </intent-filter>
         </activity>
 
-        <!-- Same Activity class as MainActivity (needed because local_auth's
-             biometric prompt requires FlutterFragmentActivity, and the
-             fingerprint check in autofill_picker_screen.dart needs that
-             too) but launched with a different Dart entrypoint
-             (autofillEntryPoint in main.dart) via an activity-alias, which
-             lets one real Activity class serve two distinct manifest
-             components. android:exported="true" is required for the
-             system Autofill framework's own process to be able to launch
-             it via PendingIntent. -->
-        <activity-alias
+        <!-- Autofill picker / save UI: একটা আসল আলাদা Activity (alias নয়),
+             নিজের খালি taskAffinity সহ — যাতে অন্য অ্যাপের উপরেই খোলে,
+             মূল My Manager টাস্ক টেনে না আনে। Dart entrypoint
+             AutofillActivity.kt থেকে "autofillEntryPoint" সেট হয়।
+             exported=true লাগে কারণ সিস্টেমের autofill প্রসেস PendingIntent
+             দিয়ে এটা চালু করে। -->
+        <activity
             android:name=".AutofillActivity"
-            android:targetActivity=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTask"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
             android:theme="@style/NormalTheme"
-            android:windowSoftInputMode="adjustResize">
-            <meta-data
-                android:name="io.flutter.embedding.android.DartEntrypoint"
-                android:value="autofillEntryPoint"/>
-        </activity-alias>
+            android:windowSoftInputMode="adjustResize"/>
 
         <!-- Home screen widget — today's pending/overdue overview -->
         <receiver
