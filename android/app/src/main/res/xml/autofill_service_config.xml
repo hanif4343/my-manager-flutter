@@ -1,42 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- THE ROOT CAUSE of "selecting Flutter Autofill Service in phone Settings
-     crashes the app, and it won't even open afterward until switched back
-     to Google":
-
-     This file has no <meta-data> reference anywhere in our own
-     AndroidManifest.xml — it's picked up purely because it has the exact
-     same resource name (res/xml/autofill_service_config.xml) as the file
-     the flutter_autofill_service plugin's own library manifest points its
-     <service android:name="android.autofill" .../> meta-data at. Gradle's
-     resource merger lets an app-module resource silently replace a
-     library-module resource of the same type+name, so whatever this file
-     says becomes the *entire* live config for the OS-registered autofill
-     service — with no visible wiring in our own manifest to warn future
-     readers that it's even in play.
-
-     It previously said android:settingsActivity="com.hanif.mymanager.MainActivity".
-     Per Android's own autofill-services docs, settingsActivity is OPTIONAL,
-     and — critically — on several OEM Settings UIs (MIUI/Xiaomi, Vivo,
-     ColorOS/Oppo, Realme: exactly the brands this app's battery-exemption
-     prompt already has to work around elsewhere) picking a service in
-     system Settings does NOT just bind it quietly; the OS immediately
-     launches whatever Activity is named here, via an explicit Intent
-     started from the Settings app/task — not a normal launcher tap.
-
-     We were pointing that straight at MainActivity: a singleTask,
-     exported, multi-intent-filter Activity that on a normal cold start
-     boots the full Flutter engine and main() (WorkManager registration,
-     overlay-bubble restore, notification init, share-intent listeners...).
-     Launched instead from that abnormal Settings-triggered path, this can
-     throw where a normal launch wouldn't, and because MainActivity is
-     singleTask, the broken instance is what a later tap on the home-screen
-     icon resumes — so the app stays unable to open until the autofill
-     service is switched away, which is exactly the symptom reported.
-
-     Fix: declare no settingsActivity at all. Nothing about this app
-     requires a system-triggered setup screen — enabling and configuring
-     autofill is already done from inside the app's own Settings tab
-     (AutofillService().requestSetAutofillService(), see settings_screen.dart)
-     — so there's nothing to lose by leaving the OS with no Activity to
-     auto-launch here, and doing so removes this crash trigger entirely. -->
-<autofill-service xmlns:android="http://schemas.android.com/apk/res/android" />
+<!-- এই ফাইলটা flutter_autofill_service-এর নিজের একই নামের ফাইলকে
+     রিপ্লেস করে, তাই এটাই সিস্টেমের আসল autofill কনফিগ।
+     settingsActivity ইচ্ছে করেই নেই (সেটিংসে সার্ভিস বাছলে অনেক ফোনে সেই
+     Activity সরাসরি চালু হয়ে ক্র্যাশ করত)।
+     compatibility-package: Android 13 বা তার আগের ব্রাউজারে
+     (Chrome, Brave, Edge, Firefox ইত্যাদি) ওয়েবসাইটের লগইন ফিল্ডে
+     autofill কাজ করার জন্য লাগে। -->
+<autofill-service xmlns:android="http://schemas.android.com/apk/res/android">
+    <compatibility-package android:name="com.android.chrome" android:maxLongVersionCode="10000000000"/>
+    <compatibility-package android:name="com.chrome.beta" android:maxLongVersionCode="10000000000"/>
+    <compatibility-package android:name="com.brave.browser" android:maxLongVersionCode="10000000000"/>
+    <compatibility-package android:name="com.microsoft.emmx" android:maxLongVersionCode="10000000000"/>
+    <compatibility-package android:name="org.mozilla.firefox" android:maxLongVersionCode="10000000000"/>
+    <compatibility-package android:name="com.sec.android.app.sbrowser" android:maxLongVersionCode="10000000000"/>
+    <compatibility-package android:name="com.opera.browser" android:maxLongVersionCode="10000000000"/>
+    <compatibility-package android:name="com.vivaldi.browser" android:maxLongVersionCode="10000000000"/>
+    <compatibility-package android:name="com.duckduckgo.mobile.android" android:maxLongVersionCode="10000000000"/>
+</autofill-service>
