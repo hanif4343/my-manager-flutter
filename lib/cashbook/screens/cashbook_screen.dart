@@ -149,6 +149,63 @@ class _CashbookScreenState extends State<CashbookScreen> {
     }
   }
 
+  // ── দৈনিক এন্ট্রি রিমাইন্ডার সময় ────────────────────────
+  Future<void> _openReminderTimeDialog() async {
+    bool enabled = CashbookService.reminderEnabled;
+    TimeOfDay time = TimeOfDay(
+        hour: CashbookService.reminderHour, minute: CashbookService.reminderMinute);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setSt) {
+        return AlertDialog(
+          title: const Text('⏰ এন্ট্রি রিমাইন্ডার'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('প্রতিদিন মনে করিয়ে দাও'),
+              subtitle: const Text('সেই সময় থেকে রাত ১১:৩০ পর্যন্ত প্রতি ৩০ মিনিটে, '
+                  'যতক্ষণ না আজকের একটা এন্ট্রি হয়'),
+              value: enabled,
+              onChanged: (v) => setSt(() => enabled = v),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              enabled: enabled,
+              leading: const Icon(Icons.access_time),
+              title: const Text('শুরুর সময়'),
+              trailing: Text(time.format(ctx), style: const TextStyle(fontWeight: FontWeight.w700)),
+              onTap: !enabled
+                  ? null
+                  : () async {
+                      final picked = await showTimePicker(context: ctx, initialTime: time);
+                      if (picked != null) setSt(() => time = picked);
+                    },
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('বাতিল')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('সেভ')),
+          ],
+        );
+      }),
+    );
+
+    if (saved == true) {
+      await CashbookService.setReminderEnabled(enabled);
+      await CashbookService.setReminderTime(time.hour, time.minute);
+      await CashbookNotificationService.refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(enabled
+              ? '✅ রিমাইন্ডার সেট হয়েছে — ${time.format(context)} থেকে'
+              : '🔕 এন্ট্রি রিমাইন্ডার বন্ধ করা হলো'),
+        ));
+      }
+    }
+  }
+
   // ── account ───────────────────────────────────────────
   Future<void> _addAccount() async {
     final ctrl = TextEditingController();
@@ -388,12 +445,14 @@ class _CashbookScreenState extends State<CashbookScreen> {
               if (v == 'import') _importLegacy();
               if (v == 'restore') _restoreFromBackup();
               if (v == 'vouchers') _openVoucherGallery();
+              if (v == 'reminder_time') _openReminderTimeDialog();
             },
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'pdf', child: Text('📄 PDF এক্সপোর্ট')),
               const PopupMenuItem(value: 'excel', child: Text('📊 Excel এক্সপোর্ট')),
               const PopupMenuItem(value: 'account', child: Text('➕ নতুন হিসাব যোগ')),
               const PopupMenuItem(value: 'vouchers', child: Text('🖼️ সব ভাউচার দেখো')),
+              const PopupMenuItem(value: 'reminder_time', child: Text('⏰ এন্ট্রি রিমাইন্ডার সময়')),
               const PopupMenuItem(value: 'import', child: Text('📥 পুরনো ব্যাকআপ ইমপোর্ট করো')),
               const PopupMenuItem(value: 'restore', child: Text('☁️ ব্যাকআপ থেকে ফিরিয়ে আনো')),
             ],
