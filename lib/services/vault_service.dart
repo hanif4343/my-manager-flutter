@@ -62,6 +62,51 @@ class VaultService {
     await _saveAll(list);
   }
 
+  /// ব্যাকআপ থেকে রিস্টোরের জন্য মার্জ: একবার পড়ে, একবার লেখে।
+  ///  • একই id আছে ও ব্যাকআপের এন্ট্রি নতুন → আপডেট
+  ///  • একই id আছে ও পুরোনো/সমান → বাদ
+  ///  • id আলাদা কিন্তু হুবহু একই তথ্য → বাদ (ডুপ্লিকেট)
+  ///  • নয়তো নতুন যোগ
+  /// strict read: ভল্ট পার্স না হলে এক্সেপশন ছোঁড়ে, চুপচাপ ওভাররাইট করে না।
+  /// রিটার্ন: [যোগ, আপডেট, বাদ]
+  static Future<List<int>> mergeMany(List<VaultEntry> incoming) async {
+    final raw = await _storage.read(key: _key);
+    final List<VaultEntry> list;
+    if (raw == null || raw.isEmpty) {
+      list = [];
+    } else {
+      final decoded = jsonDecode(raw) as List;
+      list = decoded.map((e) => VaultEntry.fromJson(e as Map<String, dynamic>)).toList();
+    }
+    final byId = <String, int>{};
+    for (var i = 0; i < list.length; i++) { byId[list[i].id] = i; }
+    String sig(VaultEntry e) =>
+        '${e.type}\u0001${e.title}\u0001${e.username ?? ''}\u0001${e.secret}\u0001${e.url ?? ''}';
+    final sigs = list.map(sig).toSet();
+
+    var added = 0, updated = 0, skipped = 0;
+    for (final e in incoming) {
+      final idx = byId[e.id];
+      if (idx != null) {
+        if (e.updatedAt > list[idx].updatedAt) {
+          list[idx] = e;
+          updated++;
+        } else {
+          skipped++;
+        }
+      } else if (sigs.contains(sig(e))) {
+        skipped++;
+      } else {
+        list.add(e);
+        byId[e.id] = list.length - 1;
+        sigs.add(sig(e));
+        added++;
+      }
+    }
+    if (added > 0 || updated > 0) await _saveAll(list);
+    return [added, updated, skipped];
+  }
+
   static Future<void> update(VaultEntry entry) async {
     final list = await getAll();
     final idx = list.indexWhere((e) => e.id == entry.id);
