@@ -42,6 +42,26 @@ class VaultService {
     await _saveAll(list);
   }
 
+  /// Bulk add for CSV import: one read and one write for the whole
+  /// batch (calling [insert] per entry would re-read and re-encrypt the
+  /// entire vault hundreds of times). Uses a *strict* read — unlike
+  /// [getAll], which swallows errors and returns an empty list — so if
+  /// the stored vault ever failed to parse, this throws instead of
+  /// quietly overwriting every existing entry with just the new ones.
+  static Future<void> insertMany(List<VaultEntry> entries) async {
+    if (entries.isEmpty) return;
+    final raw = await _storage.read(key: _key);
+    final List<VaultEntry> list;
+    if (raw == null || raw.isEmpty) {
+      list = [];
+    } else {
+      final decoded = jsonDecode(raw) as List; // throws if corrupt — intentional
+      list = decoded.map((e) => VaultEntry.fromJson(e as Map<String, dynamic>)).toList();
+    }
+    list.addAll(entries);
+    await _saveAll(list);
+  }
+
   static Future<void> update(VaultEntry entry) async {
     final list = await getAll();
     final idx = list.indexWhere((e) => e.id == entry.id);
