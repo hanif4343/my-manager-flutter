@@ -4,6 +4,7 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../db/cashbook_db.dart';
+import 'cashbook_service.dart';
 import '../../reminder/services/reminder_service.dart';
 
 /// "রাত ৮টা থেকে শুরু করে প্রতি ৩০ মিনিটে মনে করিয়ে দাও, যতক্ষণ না আজ
@@ -27,12 +28,23 @@ class CashbookNotificationService {
   static bool _initialized = false;
   static const _channelId = 'cashbook_reminder_channel';
 
-  // 8:00pm through 11:30pm, every 30 minutes — each slot is its own
-  // notification ID so they can be scheduled/cancelled independently.
-  static const _slots = [
-    (20, 0), (20, 30), (21, 0), (21, 30),
-    (22, 0), (22, 30), (23, 0), (23, 30),
-  ];
+  // সেটিংসে ব্যবহারকারীর দেওয়া সময় থেকে শুরু করে, প্রতি ৩০ মিনিটে, রাত ১১:৩০
+  // পর্যন্ত (বা শুরুর সময় তার পরে হলে অন্তত একটা স্লট) — প্রতিটা স্লট নিজের
+  // নোটিফিকেশন আইডি নিয়ে আলাদাভাবে শিডিউল/বাতিল হয়।
+  static List<(int, int)> get _slots {
+    final startH = CashbookService.reminderHour.clamp(0, 23);
+    final startM = CashbookService.reminderMinute >= 30 ? 30 : 0;
+    var totalMin = startH * 60 + startM;
+    const lastMin = 23 * 60 + 30; // রাত ১১:৩০
+    final slots = <(int, int)>[];
+    while (totalMin <= lastMin && slots.length < 8) {
+      slots.add((totalMin ~/ 60, totalMin % 60));
+      totalMin += 30;
+    }
+    if (slots.isEmpty) slots.add((23, 30)); // দিন প্রায় শেষ হলেও একটা স্লট থাকুক
+    return slots;
+  }
+
   static int _idFor(int hour, int minute) => 7700 + hour * 2 + (minute == 30 ? 1 : 0);
 
   static Future<void> _init() async {
@@ -78,15 +90,21 @@ class CashbookNotificationService {
     _initialized = true;
   }
 
+  // পুরো দিনের যেকোনো সম্ভাব্য স্লট (0:00–23:30) বাতিল করে — যাতে
+  // ব্যবহারকারী রিমাইন্ডারের সময় বদলালে আগের সময়ের বসানো নোটিফিকেশনও
+  // ঠিকভাবে মুছে যায়, শুধু আজকের স্লট-তালিকার সাথে মিলে গেলে নয়।
   static Future<void> _cancelAllSlots() async {
-    for (final (h, m) in _slots) {
-      await _plugin.cancel(_idFor(h, m));
+    for (var h = 0; h < 24; h++) {
+      await _plugin.cancel(_idFor(h, 0));
+      await _plugin.cancel(_idFor(h, 30));
     }
   }
 
   static Future<void> refresh() async {
     await _init();
     await _cancelAllSlots();
+
+    if (!CashbookService.reminderEnabled) return; // ব্যবহারকারী বন্ধ রেখেছে
 
     final hasEntry = await CashbookDB.hasEntryToday();
     if (hasEntry) return; // today's already logged — nothing to nag about
@@ -127,7 +145,11 @@ class CashbookNotificationService {
   /// WorkManager's own timing looseness no longer matters for whether
   /// the reminder fires on time, only for whether it gets armed at all.
   static Future<void> backgroundCheck() async {
-    if (DateTime.now().hour < 20) return;
+    if (!CashbookService.reminderEnabled) return;
+    final now = DateTime.now();
+    final startMin = CashbookService.reminderHour * 60 +
+        (CashbookService.reminderMinute >= 30 ? 30 : 0);
+    if (now.hour * 60 + now.minute < startMin) return;
     await refresh();
   }
 
