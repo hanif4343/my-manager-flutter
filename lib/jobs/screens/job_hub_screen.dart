@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../../reminder/models/reminder.dart' show bn, dateOnly, formatDateBn;
 import '../../widgets/app_theme.dart';
 import '../models/job_models.dart';
+import '../../services/drive_service.dart' show DriveBackupResult;
 import '../services/app_launcher.dart';
+import '../services/job_backup_service.dart';
 import '../services/job_service.dart';
 
 /// সরকারি চাকরির প্রস্তুতির "ম্যানেজার" দিক: সার্কুলার/ডেডলাইন, ডকুমেন্ট,
@@ -22,6 +24,9 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
   List<Circular> _circulars = [];
   List<JobDoc> _docs = [];
   bool _loading = true;
+  bool _bkBusy = false;
+  String? _bkStatus;
+  bool _bkError = false;
 
   @override
   void initState() {
@@ -241,7 +246,118 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
           ),
         ]),
       ),
+      _sectionTitle('ব্যাকআপ'),
+      _backupCard(),
     ]);
+  }
+
+  Widget _backupCard() {
+    final last = JobBackupService.lastBackupAt;
+    return _card(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.cloud_done_outlined, color: AppTheme.accent),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'সার্কুলার, ডকুমেন্ট ও টার্গেট Google Drive-এ নিজে সেভ হয় (সাইন-ইন থাকলে)।'
+              '${last != null ? '\nএই সেশনে শেষ ব্যাকআপ: ${last.hour}:${last.minute.toString().padLeft(2, '0')}' : ''}',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5, height: 1.4),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _bkBusy ? null : _backupNow,
+              icon: const Icon(Icons.cloud_upload_outlined, size: 18),
+              label: const Text('এখনই ব্যাকআপ'),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _bkBusy ? null : _restoreBackup,
+              icon: const Icon(Icons.cloud_download_outlined, size: 18),
+              label: const Text('ফিরিয়ে আনো'),
+            ),
+          ),
+        ]),
+        if (_bkBusy)
+          const Padding(
+            padding: EdgeInsets.only(top: 10),
+            child: LinearProgressIndicator(color: AppTheme.accent),
+          ),
+        if (_bkStatus != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(_bkStatus!,
+                style: TextStyle(
+                    color: _bkError ? AppTheme.red : AppTheme.green,
+                    fontSize: 12.5, height: 1.4)),
+          ),
+      ]),
+    );
+  }
+
+  Future<void> _backupNow() async {
+    setState(() { _bkBusy = true; _bkStatus = null; });
+    String msg;
+    var err = false;
+    try {
+      final r = await JobBackupService.backupNow();
+      switch (r) {
+        case DriveBackupResult.success:
+          msg = '✅ Google Drive-এ ব্যাকআপ হয়েছে';
+          break;
+        case DriveBackupResult.notSignedIn:
+          msg = 'Google Account দিয়ে সাইন ইন করা যায়নি';
+          err = true;
+          break;
+        default:
+          msg = 'ব্যাকআপ ব্যর্থ — ইন্টারনেট আছে কিনা দেখো';
+          err = true;
+      }
+    } catch (e) {
+      msg = 'ব্যাকআপ ব্যর্থ: $e';
+      err = true;
+    }
+    if (mounted) setState(() { _bkBusy = false; _bkStatus = msg; _bkError = err; });
+  }
+
+  Future<void> _restoreBackup() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.bg2,
+        title: const Text('Drive থেকে ফিরিয়ে আনবে?'),
+        content: const Text('ব্যাকআপের সার্কুলার ও ডকুমেন্ট বর্তমান ডাটার সাথে মার্জ হবে — বর্তমান কিছু মুছবে না। সার্কুলারের রিমাইন্ডার নতুন করে বসবে।'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('বাতিল')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: Text('ফিরিয়ে আনো', style: TextStyle(color: AppTheme.accent))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() { _bkBusy = true; _bkStatus = null; });
+    String msg;
+    var err = false;
+    try {
+      final r = await JobBackupService.restoreFromDrive();
+      if (r == null) {
+        msg = 'Drive-এ চাকরি হাবের ব্যাকআপ পাওয়া যায়নি, বা সাইন-ইন হয়নি';
+        err = true;
+      } else {
+        msg = '✅ ফিরে এসেছে: ${bn(r.circulars)}টা সার্কুলার, ${bn(r.docs)}টা ডকুমেন্ট আপডেট';
+      }
+    } catch (e) {
+      msg = 'রিস্টোর ব্যর্থ: $e';
+      err = true;
+    }
+    await _load();
+    if (mounted) setState(() { _bkBusy = false; _bkStatus = msg; _bkError = err; });
   }
 
   Widget _sectionTitle(String t) => Padding(
