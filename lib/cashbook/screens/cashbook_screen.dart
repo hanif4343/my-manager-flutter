@@ -1003,12 +1003,61 @@ class _CashbookScreenState extends State<CashbookScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
       children: [
+        _debtSummary(),
+        const SizedBox(height: 16),
         Text('দেনা-পাওনা', style: AppTheme.title(size: 15)),
         const SizedBox(height: 4),
         Text('কাউকে ধার দিয়েছো বা কারো থেকে ধার নিয়েছো — সব একজায়গায়', style: AppTheme.caption()),
         const SizedBox(height: 14),
         for (final d in sorted) _debtCard(d),
       ],
+    );
+  }
+
+  /// মোট দেনা / মোট পাওনা / নিট — শুধু যেগুলো এখনো মেটানো হয়নি সেগুলোর হিসাব।
+  Widget _debtSummary() {
+    double oweTotal = 0, getTotal = 0;
+    int oweN = 0, getN = 0;
+    for (final d in _debts) {
+      if (d.cleared) continue;
+      if (d.type == 'lend') { getTotal += d.amount; getN++; } else { oweTotal += d.amount; oweN++; }
+    }
+    final net = getTotal - oweTotal;
+    Widget box(String label, double v, int n, Color c) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(12)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(label, style: AppTheme.caption()),
+              const SizedBox(height: 4),
+              Text(_fmt(v), style: TextStyle(color: c, fontSize: 17, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 2),
+              Text('$nজন', style: AppTheme.caption()),
+            ]),
+          ),
+        );
+    final netColor = net == 0 ? AppTheme.textSecondary : (net > 0 ? AppTheme.green : AppTheme.red);
+    final netLabel = net == 0 ? 'হিসাব সমান' : (net > 0 ? 'নিট আমি পাবো' : 'নিট আমি দেবো');
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.bg2,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(children: [
+        Row(children: [
+          box('মোট পাওনা (আমি পাবো)', getTotal, getN, AppTheme.green),
+          const SizedBox(width: 10),
+          box('মোট দেনা (আমি দেবো)', oweTotal, oweN, AppTheme.red),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Text(netLabel, style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
+          const Spacer(),
+          Text(_fmt(net.abs()), style: TextStyle(color: netColor, fontSize: 18, fontWeight: FontWeight.w800)),
+        ]),
+      ]),
     );
   }
 
