@@ -4,6 +4,7 @@ import '../services/settings_service.dart';
 import '../reminder/models/reminder.dart' show bn;
 import '../reminder/screens/reminder_screen.dart';
 import '../reminder/services/reminder_service.dart';
+import '../jobs/screens/job_hub_screen.dart';
 
 class _Module {
   final String name;
@@ -13,21 +14,16 @@ class _Module {
   const _Module(this.name, this.icon, this.color, {this.ready = false});
 }
 
-const _readyModules = <String>{'ক্যাশবুক', 'ভল্ট', 'প্রজেক্ট', 'রিমাইন্ডার', 'সেটিংস'};
+const _readyModules = <String>{'ক্যাশবুক', 'ভল্ট', 'প্রজেক্ট', 'চাকরি হাব', 'রিমাইন্ডার', 'সেটিংস'};
 
 const _modules = [
   _Module('ক্যাশবুক', Icons.account_balance_wallet, Color(0xFF4F46E5), ready: true),
   _Module('ভল্ট', Icons.lock, Color(0xFF15803D), ready: true),
   _Module('প্রজেক্ট', Icons.folder, Color(0xFFB45309), ready: true),
-  _Module('পরিবার ও রুটিন', Icons.family_restroom, Color(0xFFDC4C4C)),
-  _Module('পড়াশোনা', Icons.school, Color(0xFF38BDF8)),
+  _Module('চাকরি হাব', Icons.work_outline_rounded, Color(0xFF38BDF8), ready: true),
   _Module('রিমাইন্ডার', Icons.notifications_active, Color(0xFFFBBF24), ready: true),
+  _Module('পরিবার ও রুটিন', Icons.family_restroom, Color(0xFFDC4C4C)),
   _Module('ডকুমেন্ট ও তথ্য', Icons.folder_special, Color(0xFF4ADE80)),
-  _Module('প্রোডাক্টিভিটি', Icons.checklist, Color(0xFFA78BFA)),
-  _Module('কৃষি/সম্পত্তি', Icons.agriculture, Color(0xFF84CC16)),
-  _Module('ঋণ-দেনা', Icons.handshake, Color(0xFFF472B6)),
-  _Module('সামাজিক', Icons.groups, Color(0xFF38BDF8)),
-  _Module('ব্যবসা', Icons.storefront, Color(0xFFF97316)),
   _Module('সেটিংস', Icons.settings, Color(0xFF9A9AA5), ready: true),
 ];
 
@@ -82,6 +78,11 @@ class _LifeHomeScreenState extends State<LifeHomeScreen> {
       case 'ক্যাশবুক': widget.onOpenCashbook(); return;
       case 'রিমাইন্ডার':
         Navigator.push(context, MaterialPageRoute(builder: (_) => const ReminderScreen()))
+            .then((_) => _loadRemCount());
+        return;
+      case 'চাকরি হাব':
+        Navigator.push(context, MaterialPageRoute(
+            builder: (_) => JobHubScreen(onOpenVault: widget.onOpenVault)))
             .then((_) => _loadRemCount());
         return;
       case 'সেটিংস': widget.onOpenSettings(); return;
