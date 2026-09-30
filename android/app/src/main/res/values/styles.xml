@@ -9,4 +9,13 @@
     <style name="NormalTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+
+    <!-- Autofill picker: স্বচ্ছ উইন্ডো, যাতে অন্য অ্যাপের উপরে নিচ থেকে
+         উঠে আসা কার্ডের মতো দেখায়, পুরো স্ক্রিন ঢেকে না। -->
+    <style name="AutofillTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
 </resources>
