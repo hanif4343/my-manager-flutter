@@ -236,11 +236,35 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
             ]),
             const SizedBox(height: 8),
 
-            // category — single-line horizontal scroll, not a wrap
+            // category — এক লাইনে অনুভূমিক; যেকোনো চিপ চেপে ধরে ডানে-বামে টেনে
+            // জায়গা বদলানো যায়, ক্রম সেভ থাকে। "+ নতুন" ডানে ফিক্সড।
             SizedBox(
               height: 34,
-              child: ListView(scrollDirection: Axis.horizontal, children: [
-                ..._categories.map((c) => Padding(padding: const EdgeInsets.only(right: 6), child: _catChip(c))),
+              child: Row(children: [
+                Expanded(
+                  child: ReorderableListView(
+                    scrollDirection: Axis.horizontal,
+                    buildDefaultDragHandles: true,
+                    proxyDecorator: (child, index, animation) =>
+                        Material(color: Colors.transparent, child: child),
+                    onReorder: (oldIndex, newIndex) {
+                      if (newIndex > oldIndex) newIndex -= 1;
+                      setState(() {
+                        final item = _categories.removeAt(oldIndex);
+                        _categories.insert(newIndex, item);
+                      });
+                      CashbookService.saveCategoryOrder(_categories.map((c) => c.id).toList());
+                    },
+                    children: [
+                      for (final c in _categories)
+                        Padding(
+                          key: ValueKey('cat_${c.id}'),
+                          padding: const EdgeInsets.only(right: 6),
+                          child: _catChip(c),
+                        ),
+                    ],
+                  ),
+                ),
                 ActionChip(
                   label: const Text('+ নতুন', style: TextStyle(fontSize: 12)),
                   onPressed: _addCategory,
