@@ -125,7 +125,7 @@ class JobService {
     final r = Reminder(title: title, note: note, kind: 'plan', date: date, times: times);
     r.id = await ReminderDB.insert(r);
     await ReminderService.rearm(r);
-    ReminderService._notify();
+    ReminderService.changes.value++;
     return r.id!;
   }
 
@@ -216,7 +216,7 @@ class JobService {
       );
       r.id = await ReminderDB.insert(r);
       await ReminderService.rearm(r);
-      ReminderService._notify();
+      ReminderService.changes.value++;
       await SettingsService.setInt(_kWeeklyRem, r.id!);
     }
     await SettingsService.setBool(_kWeeklyOn, on);
