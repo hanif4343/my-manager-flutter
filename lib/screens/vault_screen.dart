@@ -36,6 +36,7 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
   List<VaultEntry> _entries = [];
   bool _loading = true;
   String _query = '';
+  String _cat = 'login'; // 'login' | 'token' | 'note' | 'card' | 'wifi' | 'all'
   int _changedSinceBackup = 0;
   int _lastBackupMs = 0;
 
@@ -73,10 +74,56 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
     });
   }
 
+  static const _catOrder = ['login', 'token', 'note', 'card', 'wifi'];
+  static const _catChipLabels = {
+    'login': 'পাসওয়ার্ড', 'token': 'টোকেন/API', 'note': 'নোট',
+    'card': 'কার্ড', 'wifi': 'WiFi',
+  };
+
+  int _countOf(String t) => _entries.where((e) => e.type == t).length;
+
+  /// ক্যাটাগরি-ভিত্তিক তালিকা: সব একসাথে না দেখিয়ে একটা করে দেখায়।
+  List<VaultEntry> get _inCategory =>
+      _cat == 'all' ? _entries : _entries.where((e) => e.type == _cat).toList();
+
+  Widget _categoryChips() {
+    final cats = _catOrder.where((t) => t == 'login' || _countOf(t) > 0).toList();
+    return SizedBox(
+      height: 40,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        children: [
+          for (final t in cats) _chip(t, '${_catChipLabels[t]} ${_countOf(t)}'),
+          _chip('all', 'সব ${_entries.length}'),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String key, String label) {
+    final sel = _cat == key;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label, style: TextStyle(
+            color: sel ? Colors.white : AppTheme.textSecondary,
+            fontSize: 12.5, fontWeight: FontWeight.w600)),
+        selected: sel,
+        showCheckmark: false,
+        selectedColor: AppTheme.accent,
+        backgroundColor: AppTheme.bg2,
+        side: BorderSide(color: sel ? AppTheme.accent : AppTheme.border),
+        onSelected: (_) => setState(() => _cat = key),
+      ),
+    );
+  }
+
   List<VaultEntry> get _filtered {
-    if (_query.trim().isEmpty) return _entries;
+    final base = _inCategory;
+    if (_query.trim().isEmpty) return base;
     final q = _query.toLowerCase();
-    return _entries.where((e) =>
+    return base.where((e) =>
         e.title.toLowerCase().contains(q) ||
         (e.username?.toLowerCase().contains(q) ?? false) ||
         (e.url?.toLowerCase().contains(q) ?? false)).toList();
@@ -85,7 +132,16 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
   Future<void> _openForm({VaultEntry? entry}) async {
     await Navigator.push(context, MaterialPageRoute(
         builder: (_) => VaultEntryFormScreen(entry: entry)));
-    _load();
+    await _load();
+    // নতুন/বদলানো এন্ট্রি যেন হারিয়ে না যায়: যেই ক্যাটাগরিতে সেভ হলো
+    // সেটাতেই চলে যাও।
+    if (mounted && _entries.isNotEmpty && _cat != 'all') {
+      final latest = _entries.reduce((a, b) => a.updatedAt >= b.updatedAt ? a : b);
+      if (latest.type != _cat &&
+          DateTime.now().millisecondsSinceEpoch - latest.updatedAt < 60000) {
+        setState(() => _cat = latest.type);
+      }
+    }
   }
 
   Future<void> _delete(VaultEntry entry) async {
@@ -185,11 +241,15 @@ class _VaultScreenState extends State<VaultScreen> with WidgetsBindingObserver {
                   ),
                 ),
               ),
+              _categoryChips(),
+              const SizedBox(height: 8),
               Expanded(
                 child: _filtered.isEmpty
                     ? Center(child: Text(
                         _entries.isEmpty ? 'ভল্ট খালি — নিচের + বাটনে ট্যাপ করে শুরু করো'
-                                          : 'কিছু পাওয়া যায়নি',
+                            : (_query.trim().isEmpty && _cat != 'all'
+                                ? 'এই ক্যাটাগরিতে কিছু নেই'
+                                : 'কিছু পাওয়া যায়নি'),
                         style: TextStyle(color: AppTheme.textMuted)))
                     : ListView.builder(
                         padding: const EdgeInsets.symmetric(horizontal: 14),
