@@ -5,12 +5,37 @@ import '../../reminder/services/reminder_service.dart';
 import '../../services/settings_service.dart';
 import '../db/job_db.dart';
 import '../models/job_models.dart';
+import 'job_backup_service.dart';
 
 /// চাকরি হাবের লজিক। সার্কুলারের তারিখ থেকে রিমাইন্ডার নিজে তৈরি হয় —
 /// বিদ্যমান রিমাইন্ডার ইঞ্জিন (নোটিফিকেশন, Done/Not yet, স্নুজ) ব্যবহার করে,
 /// তাই রিমাইন্ডার স্ক্রিনেও এগুলো দেখা যায়।
 class JobService {
   static final ValueNotifier<int> changes = ValueNotifier(0);
+
+  /// UI রিফ্রেশ + Drive-এ চুপচাপ ব্যাকআপ (ডিবাউন্সড)।
+  static void _notify() {
+    changes.value++;
+    JobBackupService.backupSilently();
+  }
+
+  static const _profileKeys = [
+    _kPost, _kGrade, _kSalary, _kAgeOut, _kExamName, _kExamDate,
+  ];
+
+  static Map<String, String> profileMap() => {
+        for (final k in _profileKeys) k: SettingsService.getString(k),
+      };
+
+  /// ব্যাকআপ থেকে প্রোফাইল ফেরত — লোকালে যেটা ফাঁকা শুধু সেটাই ভরে।
+  static Future<void> restoreProfile(Map<String, dynamic> m) async {
+    for (final k in _profileKeys) {
+      final v = m[k];
+      if (v is String && v.isNotEmpty && SettingsService.getString(k).isEmpty) {
+        await SettingsService.setString(k, v);
+      }
+    }
+  }
 
   // ── প্রোফাইল (SharedPreferences) ──
   static const _kPost = 'job_target_post';
@@ -31,7 +56,7 @@ class JobService {
     await SettingsService.setString(_kPost, post);
     await SettingsService.setString(_kGrade, grade);
     await SettingsService.setString(_kSalary, salary);
-    changes.value++;
+    _notify();
   }
 
   static DateTime? _date(String key) {
@@ -44,13 +69,13 @@ class JobService {
 
   static Future<void> setAgeOut(DateTime? d) async {
     await SettingsService.setString(_kAgeOut, d == null ? '' : Reminder.ymd(d));
-    changes.value++;
+    _notify();
   }
 
   static Future<void> setExam(String name, DateTime? d) async {
     await SettingsService.setString(_kExamName, name);
     await SettingsService.setString(_kExamDate, d == null ? '' : Reminder.ymd(d));
-    changes.value++;
+    _notify();
   }
 
   // ── সার্কুলার ──
@@ -73,7 +98,7 @@ class JobService {
     }
     await _syncReminders(c);
     await JobDB.update(c);
-    changes.value++;
+    _notify();
   }
 
   static Future<void> setStatus(Circular c, String status) async {
@@ -85,7 +110,7 @@ class JobService {
     await _deleteReminders(c.deadlineRem);
     await _deleteReminders(c.examRem);
     if (c.id != null) await JobDB.delete(c.id!);
-    changes.value++;
+    _notify();
   }
 
   static Future<void> _deleteReminders(List<int> ids) async {
@@ -100,7 +125,7 @@ class JobService {
     final r = Reminder(title: title, note: note, kind: 'plan', date: date, times: times);
     r.id = await ReminderDB.insert(r);
     await ReminderService.rearm(r);
-    ReminderService.changes.value++;
+    ReminderService._notify();
     return r.id!;
   }
 
@@ -150,18 +175,18 @@ class JobService {
   static Future<List<JobDoc>> docs() => JobDB.docs();
   static Future<void> addDoc(String title) async {
     await JobDB.insertDoc(title);
-    changes.value++;
+    _notify();
   }
 
   static Future<void> setDocDone(JobDoc d, bool done) async {
     d.done = done;
     await JobDB.setDocDone(d.id!, done);
-    changes.value++;
+    _notify();
   }
 
   static Future<void> deleteDoc(JobDoc d) async {
     await JobDB.deleteDoc(d.id!);
-    changes.value++;
+    _notify();
   }
 
   // ── সাপ্তাহিক রিভিউ ──
@@ -191,10 +216,10 @@ class JobService {
       );
       r.id = await ReminderDB.insert(r);
       await ReminderService.rearm(r);
-      ReminderService.changes.value++;
+      ReminderService._notify();
       await SettingsService.setInt(_kWeeklyRem, r.id!);
     }
     await SettingsService.setBool(_kWeeklyOn, on);
-    changes.value++;
+    _notify();
   }
 }
