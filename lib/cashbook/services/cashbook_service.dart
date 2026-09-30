@@ -7,10 +7,12 @@ import '../../services/settings_service.dart';
 /// (lock on/off) the screens need to check.
 class CashbookService {
   static const _customCategoriesKey = 'cashbook_custom_categories';
+  static const _categoryOrderKey = 'cashbook_category_order';
   static const _lockEnabledKey = 'cashbook_lock_enabled';
 
   /// Built-in categories first, then whatever the user has added from the
-  /// entry form's "+ নতুন" chip, in the order they were added.
+  /// entry form's "+ নতুন" chip — unless the person has rearranged them
+  /// (long-press & drag), in which case their saved order wins.
   static List<CashbookCategory> getCategories() {
     final raw = SettingsService.getString(_customCategoriesKey, defaultValue: '[]');
     List<dynamic> list;
@@ -22,8 +24,29 @@ class CashbookService {
     final custom = list
         .map((m) => CashbookCategory.fromJson(Map<String, dynamic>.from(m)))
         .toList();
-    return [...defaultCashbookCategories, ...custom];
+    final all = [...defaultCashbookCategories, ...custom];
+
+    // ব্যবহারকারীর সাজানো ক্রম (চেপে ধরে সরালে সেভ হয়)। ক্রমে নেই এমন
+    // (নতুন যোগ হওয়া) ক্যাটাগরি শেষে যোগ হয়।
+    List<dynamic> order;
+    try {
+      order = jsonDecode(SettingsService.getString(_categoryOrderKey, defaultValue: '[]')) as List<dynamic>;
+    } catch (_) {
+      order = [];
+    }
+    if (order.isEmpty) return all;
+    final byId = <String, CashbookCategory>{for (final c in all) c.id: c};
+    final ordered = <CashbookCategory>[];
+    for (final id in order) {
+      final c = byId.remove(id);
+      if (c != null) ordered.add(c);
+    }
+    ordered.addAll(byId.values);
+    return ordered;
   }
+
+  static Future<void> saveCategoryOrder(List<String> ids) =>
+      SettingsService.setString(_categoryOrderKey, jsonEncode(ids));
 
   static Future<CashbookCategory> addCategory(String name, {String icon = '🏷️'}) async {
     final raw = SettingsService.getString(_customCategoriesKey, defaultValue: '[]');
