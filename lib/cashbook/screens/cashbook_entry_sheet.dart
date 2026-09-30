@@ -257,6 +257,9 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
             TextField(
               controller: _noteCtrl,
               decoration: InputDecoration(
+                // ফাঁকা বক্স যেন টেক্সট-বক্স বলে বোঝা যায়
+                hintText: 'Note (ঐচ্ছিক)',
+                hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 14),
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: 13, horizontal: 13),
                 filled: true, fillColor: AppTheme.bg3,
