@@ -4,6 +4,7 @@ import '../models/cashbook_account.dart';
 import '../models/cashbook_entry.dart';
 import '../models/cashbook_budget.dart';
 import '../models/cashbook_debt.dart';
+import '../services/cashbook_widget_service.dart';
 
 /// The Cashbook is deliberately kept out of mymanager.db — its own file
 /// (cashbook.db), its own version history, its own migrations. Nothing
@@ -143,6 +144,16 @@ class CashbookDB {
     }
   }
 
+  /// চলতি মাসের খাতা (না থাকলে বানায়) — হোম উইজেট ও দ্রুত-এন্ট্রি এটাই ব্যবহার করে।
+  static Future<CashbookAccount> currentMonthAccount() async {
+    await ensureCurrentMonthLedger();
+    final now = DateTime.now();
+    final name = '${_ledgerMonthNames[now.month - 1]}-${_toBnDigits(now.year)}';
+    final d = await db;
+    final rows = await d.query('accounts', where: 'name=?', whereArgs: [name], limit: 1);
+    return CashbookAccount.fromMap(rows.first);
+  }
+
   // ── ENTRIES ───────────────────────────────────────────
   static Future<List<CashbookEntry>> getEntries({int? accountId}) async {
     final d = await db;
@@ -166,17 +177,21 @@ class CashbookDB {
 
   static Future<int> insertEntry(CashbookEntry e) async {
     final d = await db;
-    return d.insert('entries', e.toMap());
+    final id = await d.insert('entries', e.toMap());
+    CashbookWidgetService.refresh(); // হোম উইজেট হালনাগাদ (best-effort)
+    return id;
   }
 
   static Future<void> updateEntry(CashbookEntry e) async {
     final d = await db;
     await d.update('entries', e.toMap(), where: 'id=?', whereArgs: [e.id]);
+    CashbookWidgetService.refresh();
   }
 
   static Future<void> deleteEntry(int id) async {
     final d = await db;
     await d.delete('entries', where: 'id=?', whereArgs: [id]);
+    CashbookWidgetService.refresh();
   }
 
   static String todayIso() => DateTime.now().toIso8601String().substring(0, 10);
