@@ -15,7 +15,9 @@ import 'members_tab.dart';
 /// "আজকের ওভারভিউ"।
 class FamilyHomeScreen extends StatefulWidget {
   final VoidCallback onOpenVault;
-  const FamilyHomeScreen({super.key, required this.onOpenVault});
+  /// কোন ট্যাবে খুলবে (০ ওভারভিউ, ১ সদস্য, ২ তারিখ, ৩ বিল, ৪ জরুরি)।
+  final int initialTab;
+  const FamilyHomeScreen({super.key, required this.onOpenVault, this.initialTab = 0});
   @override State<FamilyHomeScreen> createState() => _FamilyHomeScreenState();
 }
 
@@ -25,7 +27,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen> with SingleTickerPr
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 5, vsync: this);
+    _tab = TabController(length: 5, vsync: this, initialIndex: widget.initialTab.clamp(0, 4));
   }
 
   @override
