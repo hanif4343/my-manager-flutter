@@ -124,6 +124,29 @@
                 android:resource="@xml/my_manager_widget_info"/>
         </receiver>
 
+        <!-- ক্যাশবুক হোম-স্ক্রিন উইজেট (ব্যালেন্স + দ্রুত জমা/খরচ) -->
+        <receiver
+            android:name=".CashbookWidgetProvider"
+            android:exported="false"
+            android:label="ক্যাশবুক">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/cashbook_widget_info"/>
+        </receiver>
+
+        <!-- উইজেট থেকে খোলা দ্রুত-এন্ট্রি শিট: স্বচ্ছ, নিজের খালি taskAffinity, রিসেন্টসে আসে না -->
+        <activity
+            android:name=".CashbookQuickAddActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@style/AutofillTheme"
+            android:windowSoftInputMode="adjustResize"/>
+
         <!-- Floating bubble overlay service (flutter_overlay_window) -->
         <service
             android:name="flutter.overlay.window.flutter_overlay_window.OverlayService"
