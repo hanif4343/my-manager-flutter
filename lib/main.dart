@@ -51,8 +51,8 @@ void main() async {
   CashbookWidgetService.refresh();
   try {
     await NotificationService.init();
-    // Schedule daily digest every morning at 8:00 AM
-    await NotificationService.scheduleDailyDigest(hour: 8, minute: 0);
+    // সকালের "আজকের ম্যানেজার" নোটিফিকেশন (সময়/চালু-বন্ধ সেটিংস থেকে)
+    await NotificationService.scheduleDailyDigest();
   } catch (_) {
     // Notifications failing to set up shouldn't block the app either.
   }
@@ -148,6 +148,11 @@ void callbackDispatcher() {
     try {
       if (task == reminderRearmTaskName) {
         await ReminderService.rearmAll();
+        // সকালের ডাইজেস্টের বিষয়বস্তু তাজা রাখো (প্রতি ৬ ঘণ্টায়)।
+        try {
+          await SettingsService.init();
+          await NotificationService.scheduleDailyDigest();
+        } catch (_) {}
         return true;
       }
       if (task == cashbookReminderTaskName) {
