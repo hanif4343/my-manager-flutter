@@ -5,6 +5,7 @@ import '../reminder/models/reminder.dart' show bn;
 import '../reminder/screens/reminder_screen.dart';
 import '../reminder/services/reminder_service.dart';
 import '../jobs/screens/job_hub_screen.dart';
+import '../family/screens/family_home_screen.dart';
 
 class _Module {
   final String name;
@@ -14,7 +15,7 @@ class _Module {
   const _Module(this.name, this.icon, this.color, {this.ready = false});
 }
 
-const _readyModules = <String>{'ক্যাশবুক', 'ভল্ট', 'প্রজেক্ট', 'চাকরি হাব', 'রিমাইন্ডার', 'সেটিংস'};
+const _readyModules = <String>{'ক্যাশবুক', 'ভল্ট', 'প্রজেক্ট', 'চাকরি হাব', 'পরিবার', 'রিমাইন্ডার', 'সেটিংস'};
 
 const _modules = [
   _Module('ক্যাশবুক', Icons.account_balance_wallet, Color(0xFF4F46E5), ready: true),
@@ -22,7 +23,7 @@ const _modules = [
   _Module('প্রজেক্ট', Icons.folder, Color(0xFFB45309), ready: true),
   _Module('চাকরি হাব', Icons.work_outline_rounded, Color(0xFF38BDF8), ready: true),
   _Module('রিমাইন্ডার', Icons.notifications_active, Color(0xFFFBBF24), ready: true),
-  _Module('পরিবার ও রুটিন', Icons.family_restroom, Color(0xFFDC4C4C)),
+  _Module('পরিবার', Icons.family_restroom, Color(0xFFDC4C4C), ready: true),
   _Module('ডকুমেন্ট ও তথ্য', Icons.folder_special, Color(0xFF4ADE80)),
   _Module('সেটিংস', Icons.settings, Color(0xFF9A9AA5), ready: true),
 ];
@@ -83,6 +84,11 @@ class _LifeHomeScreenState extends State<LifeHomeScreen> {
       case 'চাকরি হাব':
         Navigator.push(context, MaterialPageRoute(
             builder: (_) => JobHubScreen(onOpenVault: widget.onOpenVault)))
+            .then((_) => _loadRemCount());
+        return;
+      case 'পরিবার':
+        Navigator.push(context, MaterialPageRoute(
+            builder: (_) => FamilyHomeScreen(onOpenVault: widget.onOpenVault)))
             .then((_) => _loadRemCount());
         return;
       case 'সেটিংস': widget.onOpenSettings(); return;
