@@ -54,6 +54,7 @@ class _TodayScreenState extends State<TodayScreen> {
       case TodayTarget.familyDates: return ('পরিবার', 2);
       case TodayTarget.cashbook: return ('ক্যাশবুক', 0);
       case TodayTarget.projects: return ('প্রজেক্ট', 0);
+      case TodayTarget.backup: return ('ব্যাকআপ', 0);
     }
   }
 
