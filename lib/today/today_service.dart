@@ -8,9 +8,12 @@ import '../jobs/models/job_models.dart';
 import '../jobs/services/job_service.dart';
 import '../reminder/db/reminder_db.dart';
 import '../reminder/models/reminder.dart';
+import '../services/settings_service.dart';
+import '../services/vault_backup_service.dart';
+import '../services/vault_service.dart';
 
 /// আইটেমটা ট্যাপ করলে কোন মডিউলে যাবে।
-enum TodayTarget { reminders, jobs, familyBills, familyDates, cashbook, projects }
+enum TodayTarget { reminders, jobs, familyBills, familyDates, cashbook, projects, backup }
 
 class TodayItem {
   final String emoji;
@@ -78,7 +81,7 @@ class TodayService {
 
   /// [asOf] দিলে সেই দিনের হিসাবে (সকালের নোটিফিকেশন আগের রাতে বানানো হলে
   /// "আর ৩ দিন" যেন সকালে "আর ২ দিন" হয়ে যায়)। ডিফল্ট: আজ।
-  static Future<TodaySummary> build({DateTime? asOf}) async {
+  static Future<TodaySummary> build({DateTime? asOf, bool includeBackupHints = true}) async {
     final now = DateTime.now();
     final day = dateOnly(asOf ?? now);
     final isToday = day == dateOnly(now);
@@ -95,6 +98,7 @@ class TodayService {
     await safe(() => _family(items, day));
     await safe(() => _cashbook(items, day, isToday));
     await safe(() => _projects(items, day));
+    if (includeBackupHints) await safe(() => _backupHints(items));
 
     // স্থিতিশীল সাজানো: জরুরি → শিগগির → তথ্য।
     final ordered = <TodayItem>[
@@ -109,7 +113,7 @@ class TodayService {
 
   /// অন্য মডিউল (চাকরি/পরিবার) নিজেরা যেসব রিমাইন্ডার বানায় সেগুলো আলাদা
   /// আইটেম হিসেবেই আসে — এখানে দ্বিতীয়বার দেখালে ডুপ্লিকেট হতো।
-  static Future<Set<int>> _managedIds() async {
+  static Future<Set<int>> managedReminderIds({bool includeWeekly = false}) async {
     final s = <int>{};
     try {
       for (final c in await JobDB.all()) {
@@ -128,12 +132,17 @@ class TodayService {
         s.addAll(b.rem);
       }
     } catch (_) {}
+    if (includeWeekly) {
+      // চাকরি হাবের "সাপ্তাহিক রিভিউ" রিমাইন্ডার।
+      final w = SettingsService.getInt('job_weekly_rem', defaultValue: 0);
+      if (w != 0) s.add(w);
+    }
     return s;
   }
 
   static Future<void> _reminders(List<TodayItem> out, DateTime day) async {
     final all = await ReminderDB.all();
-    final managed = await _managedIds();
+    final managed = await managedReminderIds();
     final mine = all.where((r) => r.id == null || !managed.contains(r.id)).toList();
 
     final overdue = mine.where((r) => r.isOverdue(day)).toList();
@@ -305,5 +314,25 @@ class TodayService {
       out.add(TodayItem('📌', '${bn(soon)} টা টাস্কের ডেডলাইন আজ-কালের মধ্যে', '', 1, TodayTarget.projects));
     }
     out.add(TodayItem('📋', '${bn(active.length)} টা প্রজেক্ট টাস্ক চলমান', '', 1, TodayTarget.projects));
+  }
+
+  // ───────────────── ব্যাকআপ স্মরণ ─────────────────
+
+  /// শুধু স্থানীয়ভাবে জানা যায় এমন সতর্কতা (ভল্ট): ব্যাকআপ নেই বা ৩০ দিনের বেশি পুরোনো।
+  /// ভল্টের পাসওয়ার্ড হারালে ফেরত আনার উপায় নেই, তাই এটাই সবচেয়ে গুরুত্বপূর্ণ।
+  static Future<void> _backupHints(List<TodayItem> out) async {
+    final vault = await VaultService.getAll();
+    if (vault.isEmpty) return;
+    final ms = VaultBackupService.lastBackupMs();
+    if (ms == 0) {
+      out.add(const TodayItem('🔐', 'ভল্টের কোনো ব্যাকআপ নেই',
+          'ফোন হারালে বা রিসেট হলে সব পাসওয়ার্ড চলে যাবে', 1, TodayTarget.backup));
+      return;
+    }
+    final days = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(ms)).inDays;
+    if (days >= 30) {
+      out.add(TodayItem('🔐', 'ভল্টের শেষ ব্যাকআপ ${bn(days)} দিন আগের',
+          'নতুন পাসওয়ার্ড যোগ হয়ে থাকলে আবার ব্যাকআপ নাও', 1, TodayTarget.backup));
+    }
   }
 }
