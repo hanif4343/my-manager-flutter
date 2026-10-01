@@ -32,6 +32,21 @@ class CashbookBackupService {
     }
   }
 
+  /// হাতে-চালানো ব্যাকআপ (ব্যাকআপ কেন্দ্রের জন্য) — ফলাফল জানায়।
+  static Future<DriveBackupResult> backupNow() async {
+    final drive = DriveService.instance;
+    if (!drive.isSignedIn) return DriveBackupResult.notSignedIn;
+    final data = await CashbookDB.exportAll();
+    final json = jsonEncode({
+      'version': 1,
+      'exported_at': DateTime.now().toIso8601String(),
+      ...data,
+    });
+    final r = await drive.backupJson(_fileName, json);
+    if (r == DriveBackupResult.success) lastBackupAt = DateTime.now();
+    return r;
+  }
+
   static Future<bool> restoreFromDrive() async {
     final drive = DriveService.instance;
     if (!drive.isSignedIn) return false;
