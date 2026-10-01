@@ -6,6 +6,8 @@ import '../reminder/screens/reminder_screen.dart';
 import '../reminder/services/reminder_service.dart';
 import '../jobs/screens/job_hub_screen.dart';
 import '../family/screens/family_home_screen.dart';
+import '../today/today_card.dart';
+import '../today/today_screen.dart';
 
 class _Module {
   final String name;
@@ -51,6 +53,7 @@ class LifeHomeScreen extends StatefulWidget {
 class _LifeHomeScreenState extends State<LifeHomeScreen> {
   bool _isDark = SettingsService.isDark;
   int _remCount = 0;
+  int _todayTick = 0; // বদলালে আজকের কার্ড নতুন করে লোড হয়
 
   @override
   void initState() {
@@ -72,6 +75,41 @@ class _LifeHomeScreenState extends State<LifeHomeScreen> {
     } catch (_) {}
   }
 
+  void _refreshToday() {
+    if (mounted) setState(() => _todayTick++);
+  }
+
+  /// আজকের ম্যানেজার স্ক্রিন থেকে কোনো আইটেমে ট্যাপ করলে — ট্যাব-বদলানো মডিউলগুলোর
+  /// (প্রজেক্ট/ভল্ট/ক্যাশবুক) আগে এই স্ক্রিন বন্ধ করে, বাকিগুলো উপরে খোলে।
+  void _openFromToday(BuildContext todayCtx, String module, int tab) {
+    switch (module) {
+      case 'প্রজেক্ট':
+        Navigator.pop(todayCtx);
+        widget.onOpenProjects();
+        return;
+      case 'ক্যাশবুক':
+        Navigator.pop(todayCtx);
+        widget.onOpenCashbook();
+        return;
+      case 'ভল্ট':
+        Navigator.pop(todayCtx);
+        widget.onOpenVault();
+        return;
+      case 'রিমাইন্ডার':
+        Navigator.push(todayCtx, MaterialPageRoute(builder: (_) => const ReminderScreen()))
+            .then((_) { _loadRemCount(); _refreshToday(); });
+        return;
+      case 'চাকরি হাব':
+        Navigator.push(todayCtx, MaterialPageRoute(
+            builder: (_) => JobHubScreen(onOpenVault: widget.onOpenVault, initialTab: tab)));
+        return;
+      case 'পরিবার':
+        Navigator.push(todayCtx, MaterialPageRoute(
+            builder: (_) => FamilyHomeScreen(onOpenVault: widget.onOpenVault, initialTab: tab)));
+        return;
+    }
+  }
+
   void _tap(BuildContext context, _Module m) {
     switch (m.name) {
       case 'প্রজেক্ট': widget.onOpenProjects(); return;
@@ -84,12 +122,12 @@ class _LifeHomeScreenState extends State<LifeHomeScreen> {
       case 'চাকরি হাব':
         Navigator.push(context, MaterialPageRoute(
             builder: (_) => JobHubScreen(onOpenVault: widget.onOpenVault)))
-            .then((_) => _loadRemCount());
+            .then((_) { _loadRemCount(); _refreshToday(); });
         return;
       case 'পরিবার':
         Navigator.push(context, MaterialPageRoute(
             builder: (_) => FamilyHomeScreen(onOpenVault: widget.onOpenVault)))
-            .then((_) => _loadRemCount());
+            .then((_) { _loadRemCount(); _refreshToday(); });
         return;
       case 'সেটিংস': widget.onOpenSettings(); return;
     }
@@ -158,6 +196,15 @@ class _LifeHomeScreenState extends State<LifeHomeScreen> {
                 ]),
               ),
             ]),
+          ),
+          SliverToBoxAdapter(
+            child: TodayCard(
+              key: ValueKey(_todayTick),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => TodayScreen(onOpen: _openFromToday)),
+              ).then((_) => _refreshToday()),
+            ),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
