@@ -297,6 +297,30 @@ class DriveService {
     }
   }
 
+  // ── সব ব্যাকআপ ফাইলের শেষ পরিবর্তনের সময় (ব্যাকআপ কেন্দ্রের জন্য) ───────
+  /// MyManager_Backup ফোল্ডারের প্রতিটা ফাইলের নাম → Drive-এ শেষ আপডেটের সময়।
+  /// একটাই অনুরোধ। সাইন-ইন না থাকলে বা ব্যর্থ হলে ফাঁকা ম্যাপ।
+  Future<Map<String, DateTime>> listBackupTimes() async {
+    if (!isSignedIn) return {};
+    try {
+      await _initApi();
+      _backupFolderId ??= await _ensureFolder();
+      if (_backupFolderId == null) return {};
+      final q = "'${_backupFolderId!}' in parents and trashed=false";
+      final list = await _driveApi!.files.list(q: q, $fields: 'files(name,modifiedTime)', pageSize: 100);
+      final out = <String, DateTime>{};
+      for (final f in list.files ?? const <drive.File>[]) {
+        if (f.name != null && f.modifiedTime != null) {
+          out[f.name!] = f.modifiedTime!.toLocal();
+        }
+      }
+      return out;
+    } catch (e) {
+      lastError = e.toString();
+      return {};
+    }
+  }
+
   // ── LAST BACKUP TIME ──────────────────────────────────
   Future<DateTime?> getLastBackupTime() async {
     if (!isSignedIn || _backupFolderId == null) return null;
