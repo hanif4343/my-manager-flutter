@@ -16,6 +16,7 @@ import '../cashbook/screens/cashbook_screen.dart';
 import 'life_home_screen.dart';
 import '../reminder/screens/reminder_screen.dart';
 import '../reminder/services/reminder_service.dart';
+import '../services/notification_service.dart';
 
 /// Top-level shell: bottom navigation between Projects / Search / Vault /
 /// Settings. Vault is a first-class destination of its own — a password
@@ -124,6 +125,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       setState(() => _dashboardGen++);
       CashbookNotificationService.refresh();
       ReminderService.rearmAll().catchError((_) {});
+      NotificationService.scheduleDailyDigest().catchError((_) {});
       ReminderService.changes.value++;
     }
     // Refresh the home screen widget whenever the app leaves the
