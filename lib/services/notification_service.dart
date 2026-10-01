@@ -3,8 +3,9 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:flutter/material.dart';
-import '../db/db_helper.dart';
 import '../reminder/services/reminder_service.dart';
+import '../today/today_service.dart';
+import 'settings_service.dart';
 
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
@@ -104,69 +105,55 @@ class NotificationService {
         const NotificationDetails(android: androidDetails));
   }
 
-  /// Schedule (or reschedule) the daily digest at [hour]:[minute].
-  /// Reads live DB data at fire time via a background entrypoint is not
-  /// feasible in flutter_local_notifications alone, so we schedule it now
-  /// with a summary built from the current DB state, then re-schedule every
-  /// time the app opens.
-  static Future<void> scheduleDailyDigest({int hour = 8, int minute = 0}) async {
+  /// সকালের "আজকের ম্যানেজার" নোটিফিকেশন: রিমাইন্ডার, চাকরির ডেডলাইন, বিল,
+  /// জন্মদিন, বাজেট, প্রজেক্ট — সব মডিউল মিলিয়ে (TodayService)। সময় ও চালু/বন্ধ
+  /// সেটিংসের Daily digest থেকে আসে (ডিফল্ট সকাল ৮টা)।
+  ///
+  /// বিষয়বস্তু শিডিউল করার মুহূর্তে হিসাব করা হয় (ফায়ারের দিনের হিসাবে), তাই এটা
+  /// একবারের নোটিফিকেশন — অ্যাপ খুললে, রিজিউম হলে আর প্রতি ৬ ঘণ্টার ব্যাকগ্রাউন্ড
+  /// টাস্কে নতুন করে বসে। জরুরি/আসন্ন কিছু না থাকলে কোনো নোটিফিকেশন যায় না।
+  static Future<void> scheduleDailyDigest({int? hour, int? minute}) async {
     await init();
-
-    // Cancel old digest first
     await _plugin.cancel(_digestId);
 
-    // Build summary from current DB state
-    final ideas = await DBHelper.getAllActiveIdeas();
+    if (!SettingsService.getBool('digest_enabled', defaultValue: true)) return;
+    final h = hour ?? SettingsService.getInt('digest_hour', defaultValue: 8);
+    final m = minute ?? SettingsService.getInt('digest_minute', defaultValue: 0);
+
     final now = DateTime.now();
+    var fireAt = DateTime(now.year, now.month, now.day, h, m);
+    if (!fireAt.isAfter(now)) fireAt = fireAt.add(const Duration(days: 1));
 
-    final pending = ideas.where((i) => i.status != 'done').length;
+    final summary = await TodayService.build(asOf: fireAt);
+    if (!summary.worthNotifying) return;
 
-    // Ideas whose deadline is today or tomorrow
-    final upcoming = ideas.where((i) {
-      if (i.deadline == null) return false;
-      final d = DateTime.fromMillisecondsSinceEpoch(i.deadline!);
-      final diff = d.difference(now).inDays;
-      return diff >= 0 && diff <= 1;
-    }).length;
-
-    final overdue = ideas.where((i) => i.isOverdue).length;
-
-    if (pending == 0 && upcoming == 0) return; // nothing to notify about
-
-    final parts = <String>[];
-    if (pending > 0) parts.add('$pending টা task pending');
-    if (upcoming > 0) parts.add('$upcoming টা deadline আসছে');
-    if (overdue > 0) parts.add('$overdue টা overdue ⚠️');
-    final body = parts.join(', ');
-
-    // Schedule for next occurrence of hour:minute
-    var scheduled = DateTime(now.year, now.month, now.day, hour, minute);
-    if (scheduled.isBefore(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
-    }
-
-    const androidDetails = AndroidNotificationDetails(
+    final androidDetails = AndroidNotificationDetails(
       'daily_digest_channel',
       'Daily Digest',
       channelDescription: 'প্রতিদিনের কাজের সারসংক্ষেপ',
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       icon: '@mipmap/ic_launcher',
+      styleInformation: BigTextStyleInformation(
+        summary.notificationBody(),
+        contentTitle: '${TodaySummary.greeting(h)} আজকের ম্যানেজার',
+        summaryText: summary.notificationShort,
+      ),
     );
 
     await _plugin.zonedSchedule(
       _digestId,
-      '📋 আজকের কাজ',
-      body,
-      tz.TZDateTime.from(scheduled, tz.local),
-      const NotificationDetails(android: androidDetails),
+      '${TodaySummary.greeting(h)} আজকের ম্যানেজার',
+      summary.notificationShort,
+      tz.TZDateTime.from(fireAt, tz.local),
+      NotificationDetails(android: androidDetails),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time, // repeat daily
+      payload: 'today_digest',
     );
 
-    debugPrint('Daily digest scheduled at $hour:$minute → $body');
+    debugPrint('Morning digest scheduled for $fireAt → ${summary.notificationShort}');
   }
 
   static Future<void> cancelDailyDigest() async {
