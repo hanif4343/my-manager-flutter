@@ -16,14 +16,17 @@ import '../widgets/calculator_sheet.dart';
 class CashbookEntrySheet extends StatefulWidget {
   final int accountId;
   final CashbookEntry? entry;
-  const CashbookEntrySheet({super.key, required this.accountId, this.entry});
+  /// নতুন এন্ট্রিতে শুরুতে 'in' (জমা) না 'out' (খরচ) বাছা থাকবে — উইজেট থেকে আসে।
+  final String? initialType;
+  const CashbookEntrySheet({super.key, required this.accountId, this.entry, this.initialType});
 
-  static Future<bool?> show(BuildContext context, {required int accountId, CashbookEntry? entry}) {
+  static Future<bool?> show(BuildContext context,
+      {required int accountId, CashbookEntry? entry, String? initialType}) {
     return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => CashbookEntrySheet(accountId: accountId, entry: entry),
+      builder: (_) => CashbookEntrySheet(accountId: accountId, entry: entry, initialType: initialType),
     );
   }
 
@@ -47,7 +50,7 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
   void initState() {
     super.initState();
     final e = widget.entry;
-    _type = e?.type ?? 'out';
+    _type = e?.type ?? widget.initialType ?? 'out';
     _amountCtrl.text = e != null ? _trimZero(e.amount) : '';
     _noteCtrl.text = e?.note ?? '';
     _date = e != null ? DateTime.parse(e.date) : DateTime.now();
