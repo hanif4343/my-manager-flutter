@@ -13,7 +13,9 @@ import '../services/job_service.dart';
 class JobHubScreen extends StatefulWidget {
   /// ভল্ট ট্যাবে যাওয়ার কলব্যাক (পোর্টালের লগইনের জন্য)।
   final VoidCallback onOpenVault;
-  const JobHubScreen({super.key, required this.onOpenVault});
+  /// কোন ট্যাবে খুলবে (০ ওভারভিউ, ১ সার্কুলার, ২ ডকুমেন্ট) — আজকের ম্যানেজার থেকে আসে।
+  final int initialTab;
+  const JobHubScreen({super.key, required this.onOpenVault, this.initialTab = 0});
   @override State<JobHubScreen> createState() => _JobHubScreenState();
 }
 
@@ -31,7 +33,7 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this)..addListener(() => setState(() {}));
+    _tab = TabController(length: 3, vsync: this, initialIndex: widget.initialTab.clamp(0, 2))..addListener(() => setState(() {}));
     _load();
   }
 
