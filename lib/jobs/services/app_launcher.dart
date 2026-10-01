@@ -12,6 +12,18 @@ class AppLauncher {
     }
   }
 
+  /// ডায়ালার খোলে (নম্বর বসানো অবস্থায়) — সরাসরি কল করে না, তাই কোনো
+  /// পারমিশন লাগে না; ব্যবহারকারী নিজে কল বাটনে চাপে।
+  static Future<bool> dial(String number) async {
+    final n = number.replaceAll(RegExp(r'[^0-9+*#]'), '');
+    if (n.isEmpty) return false;
+    try {
+      return (await _ch.invokeMethod<bool>('dial', {'number': n})) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<bool> openUrl(String url) async {
     var u = url.trim();
     if (u.isEmpty) return false;
