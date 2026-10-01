@@ -12,6 +12,8 @@ import 'services/notification_service.dart';
 import 'services/settings_service.dart';
 import 'services/drive_service.dart';
 import 'cashbook/services/cashbook_notification_service.dart';
+import 'cashbook/services/cashbook_widget_service.dart';
+import 'cashbook/screens/cashbook_quick_add_app.dart';
 import 'reminder/services/reminder_service.dart';
 
 const autoBackupTaskName = 'my_manager_auto_backup';
@@ -45,6 +47,8 @@ void main() async {
   try {
     await SettingsService.init();
   } catch (_) {}
+  // হোম-স্ক্রিন ক্যাশবুক উইজেট হালনাগাদ (নতুন মাসের খাতাও এখানে বানানো হয়)।
+  CashbookWidgetService.refresh();
   try {
     await NotificationService.init();
     // Schedule daily digest every morning at 8:00 AM
@@ -192,6 +196,17 @@ void autofillEntryPoint() async {
     await SettingsService.init();
   } catch (_) {}
   runApp(const AutofillPickerApp());
+}
+
+/// ক্যাশবুক হোম-উইজেটের "＋ জমা / − খরচ" থেকে খোলা দ্রুত-এন্ট্রি শিট
+/// (CashbookQuickAddActivity)। নিজের আলাদা Flutter engine-এ চলে।
+@pragma('vm:entry-point')
+void cashbookQuickAddEntryPoint() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await SettingsService.init();
+  } catch (_) {}
+  await runCashbookQuickAdd();
 }
 
 class MyManagerApp extends StatefulWidget {
