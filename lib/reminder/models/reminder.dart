@@ -1,6 +1,6 @@
 /// একটা রিমাইন্ডার — হেডিং + নোট + এক বা একাধিক সময় + (ঐচ্ছিক) রিপিট।
 ///
-/// * [repeat]: none | daily | weekly | monthly
+/// * [repeat]: none | daily | weekly | monthly | yearly
 /// * [done]: এক-বারের রিমাইন্ডার শেষ হলে (বা রিপিট সিরিজ বন্ধ করলে) true
 /// * [lastDoneDate]: রিপিট রিমাইন্ডারে "কোন তারিখেরটা শেষ" — সেই দিনের
 ///   নোটিফিকেশন আর আসে না, পরের দিন থেকে আবার আসে।
@@ -42,6 +42,7 @@ const reminderRepeats = {
   'daily': 'প্রতিদিন',
   'weekly': 'প্রতি সপ্তাহে',
   'monthly': 'প্রতি মাসে',
+  'yearly': 'প্রতি বছর',
 };
 
 (int, int) parseHm(String s) {
@@ -159,6 +160,9 @@ class Reminder {
         return d.weekday == start.weekday;
       case 'monthly':
         return d.day == start.day;
+      case 'yearly':
+        // ২৯ ফেব্রুয়ারির তারিখ লিপ-ইয়ার ছাড়া আসে না — সাধারণ ক্ষেত্রে সমস্যা নেই।
+        return d.month == start.month && d.day == start.day;
       default:
         return d == start;
     }
@@ -194,6 +198,8 @@ class Reminder {
         return 'প্রতি ${weekdayBn(date)}বার';
       case 'monthly':
         return 'প্রতি মাসের ${bn(date.day)} তারিখ';
+      case 'yearly':
+        return 'প্রতি বছর ${bn(date.day)} ${_bnMonths[date.month - 1]}';
       default:
         return reminderRepeats[repeat] ?? '';
     }
