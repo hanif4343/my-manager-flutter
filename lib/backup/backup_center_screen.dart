@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../cashbook/services/cashbook_backup_service.dart';
+import '../docs/db/docs_db.dart';
+import '../docs/screens/docs_backup_sheet.dart';
+import '../docs/services/docs_backup_service.dart';
 import '../family/services/family_backup_service.dart';
 import '../jobs/services/job_backup_service.dart';
 import '../reminder/models/reminder.dart' show bn;
@@ -20,6 +23,9 @@ class _Mod {
   /// true হলে পরিবর্তনের সাথে সাথে নিজে ব্যাকআপ হয় — তাই বয়স দেখে লাল করা হয় না।
   final bool auto;
   final bool replacesOnRestore;
+
+  /// ভল্ট ও ডকুমেন্ট: পাসওয়ার্ড লাগে, তাই নিজস্ব শিট খোলে — Drive থেকে সরাসরি নয়।
+  bool get special => id == 'vault' || id == 'docs';
   const _Mod(this.id, this.emoji, this.title, this.desc, this.file,
       {this.auto = false, this.replacesOnRestore = false});
 }
@@ -35,6 +41,7 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
   static const _vaultFile = 'mymanager_vault.mmvault';
 
   Map<String, DateTime> _times = {};
+  int _docCount = 0;
   bool _loading = true;
   String? _busyId; // 'all' বা মডিউলের id
   final Map<String, (String, bool)> _msg = {}; // id → (লেখা, ত্রুটি?)
@@ -53,6 +60,9 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
         const _Mod('reminders', '⏰', 'রিমাইন্ডার', 'তোমার নিজের বানানো রিমাইন্ডার',
             ReminderBackupService.fileName),
         const _Mod('vault', '🔐', 'ভল্ট (পাসওয়ার্ড)', 'এনক্রিপ্টেড — ব্যাকআপ পাসওয়ার্ড লাগে', _vaultFile),
+        if (_docCount > 0)
+          const _Mod('docs', '🗂️', 'ডকুমেন্ট ও সনদ',
+              'এনক্রিপ্টেড ছবি/PDF — পাসওয়ার্ডসহ ফাইল বানিয়ে Drive/Files-এ রাখো', ''),
       ];
 
   @override
@@ -74,7 +84,11 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
   Future<void> _loadTimes() async {
     if (mounted) setState(() => _loading = true);
     final t = await DriveService.instance.listBackupTimes();
-    if (mounted) setState(() { _times = t; _loading = false; });
+    int docs = 0;
+    try {
+      docs = (await DocsDB.all()).length;
+    } catch (_) {}
+    if (mounted) setState(() { _times = t; _docCount = docs; _loading = false; });
   }
 
   Future<void> _connect() async {
@@ -88,6 +102,10 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
   // ───────────────── সময় ও অবস্থা ─────────────────
 
   DateTime? _lastOf(_Mod m) {
+    if (m.id == 'docs') {
+      final ms = DocsBackupService.lastBackupMs();
+      return ms == 0 ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+    }
     var t = _times[m.file];
     if (m.id == 'vault') {
       final ms = VaultBackupService.lastBackupMs();
@@ -177,6 +195,11 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
       await _loadTimes();
       return;
     }
+    if (m.id == 'docs') {
+      await showDocsBackupSheet(context);
+      await _loadTimes();
+      return;
+    }
     setState(() { _busyId = m.id; _msg.remove(m.id); });
     await _backupOne(m);
     if (mounted) setState(() => _busyId = null);
@@ -187,7 +210,7 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
     setState(() { _busyId = 'all'; _msg.clear(); });
     var ok = 0, fail = 0;
     for (final m in _mods) {
-      if (m.id == 'vault') continue;
+      if (m.special) continue;
       (await _backupOne(m)) ? ok++ : fail++;
     }
     if (mounted) {
@@ -401,7 +424,7 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
             Container(
               width: 5,
               decoration: BoxDecoration(
-                color: signedIn || m.id == 'vault' ? color : AppTheme.textMuted,
+                color: signedIn || m.special ? color : AppTheme.textMuted,
                 borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
               ),
             ),
@@ -421,7 +444,7 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
                           width: 18, height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accent))
                     else
-                      Text(signedIn || m.id == 'vault' ? status : '—',
+                      Text(signedIn || m.special ? status : '—',
                           style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700)),
                   ]),
                   const SizedBox(height: 4),
@@ -430,14 +453,14 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
                   Row(children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: busy || _busyId != null || (!signedIn && m.id != 'vault')
+                        onPressed: busy || _busyId != null || (!signedIn && !m.special)
                             ? null
                             : () => _backupTap(m),
                         icon: const Icon(Icons.cloud_upload_outlined, size: 18),
-                        label: Text(m.id == 'vault' ? 'ব্যাকআপ / রিস্টোর' : 'ব্যাকআপ নাও'),
+                        label: Text(m.special ? 'ব্যাকআপ / রিস্টোর' : 'ব্যাকআপ নাও'),
                       ),
                     ),
-                    if (m.id != 'vault') ...[
+                    if (!m.special) ...[
                       const SizedBox(width: 8),
                       Expanded(
                         child: OutlinedButton.icon(
