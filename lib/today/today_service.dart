@@ -1,4 +1,5 @@
 import '../cashbook/db/cashbook_db.dart';
+import '../docs/db/docs_db.dart';
 import '../cashbook/services/cashbook_service.dart';
 import '../db/db_helper.dart';
 import '../family/db/family_db.dart';
@@ -13,7 +14,7 @@ import '../services/vault_backup_service.dart';
 import '../services/vault_service.dart';
 
 /// আইটেমটা ট্যাপ করলে কোন মডিউলে যাবে।
-enum TodayTarget { reminders, jobs, familyBills, familyDates, cashbook, projects, backup }
+enum TodayTarget { reminders, jobs, familyBills, familyDates, cashbook, projects, backup, docs }
 
 class TodayItem {
   final String emoji;
@@ -98,6 +99,7 @@ class TodayService {
     await safe(() => _family(items, day));
     await safe(() => _cashbook(items, day, isToday));
     await safe(() => _projects(items, day));
+    await safe(() => _docs(items, day));
     if (includeBackupHints) await safe(() => _backupHints(items));
 
     // স্থিতিশীল সাজানো: জরুরি → শিগগির → তথ্য।
@@ -130,6 +132,11 @@ class TodayService {
       }
       for (final b in await FamilyDB.bills()) {
         s.addAll(b.rem);
+      }
+    } catch (_) {}
+    try {
+      for (final d in await DocsDB.all()) {
+        s.addAll(d.rem);
       }
     } catch (_) {}
     if (includeWeekly) {
@@ -314,6 +321,28 @@ class TodayService {
       out.add(TodayItem('📌', '${bn(soon)} টা টাস্কের ডেডলাইন আজ-কালের মধ্যে', '', 1, TodayTarget.projects));
     }
     out.add(TodayItem('📋', '${bn(active.length)} টা প্রজেক্ট টাস্ক চলমান', '', 1, TodayTarget.projects));
+  }
+
+  // ───────────────── ডকুমেন্ট ─────────────────
+
+  /// মেয়াদ শেষ হয়ে গেছে বা ৩০ দিনের মধ্যে শেষ হবে এমন ডকুমেন্ট।
+  static Future<void> _docs(List<TodayItem> out, DateTime day) async {
+    final all = await DocsDB.all();
+    final list = all.where((d) => d.expiry != null).toList()
+      ..sort((a, b) => a.expiry!.compareTo(b.expiry!));
+    var shown = 0;
+    for (final d in list) {
+      final n = dateOnly(d.expiry!).difference(day).inDays;
+      if (n > 30 || shown >= 4) continue;
+      shown++;
+      out.add(TodayItem(
+        '📄',
+        '${d.title}-এর মেয়াদ ${n < 0 ? '${bn(-n)} দিন আগে শেষ হয়েছে' : (n == 0 ? 'আজ শেষ!' : 'আর ${bn(n)} দিনে শেষ')}',
+        'নবায়নের ব্যবস্থা নাও',
+        n <= 7 ? 2 : 1,
+        TodayTarget.docs,
+      ));
+    }
   }
 
   // ───────────────── ব্যাকআপ স্মরণ ─────────────────
