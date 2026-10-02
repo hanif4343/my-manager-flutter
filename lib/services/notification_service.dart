@@ -124,7 +124,7 @@ class NotificationService {
     var fireAt = DateTime(now.year, now.month, now.day, h, m);
     if (!fireAt.isAfter(now)) fireAt = fireAt.add(const Duration(days: 1));
 
-    final summary = await TodayService.build(asOf: fireAt);
+    final summary = await TodayService.build(asOf: fireAt, includeBackupHints: false);
     if (!summary.worthNotifying) return;
 
     final androidDetails = AndroidNotificationDetails(
