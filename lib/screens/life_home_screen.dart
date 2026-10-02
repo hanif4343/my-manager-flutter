@@ -6,6 +6,7 @@ import '../reminder/screens/reminder_screen.dart';
 import '../reminder/services/reminder_service.dart';
 import '../jobs/screens/job_hub_screen.dart';
 import '../family/screens/family_home_screen.dart';
+import '../backup/backup_center_screen.dart';
 import '../today/today_card.dart';
 import '../today/today_screen.dart';
 
@@ -17,7 +18,7 @@ class _Module {
   const _Module(this.name, this.icon, this.color, {this.ready = false});
 }
 
-const _readyModules = <String>{'ক্যাশবুক', 'ভল্ট', 'প্রজেক্ট', 'চাকরি হাব', 'পরিবার', 'রিমাইন্ডার', 'সেটিংস'};
+const _readyModules = <String>{'ক্যাশবুক', 'ভল্ট', 'প্রজেক্ট', 'চাকরি হাব', 'পরিবার', 'রিমাইন্ডার', 'ব্যাকআপ', 'সেটিংস'};
 
 const _modules = [
   _Module('ক্যাশবুক', Icons.account_balance_wallet, Color(0xFF4F46E5), ready: true),
@@ -27,6 +28,7 @@ const _modules = [
   _Module('রিমাইন্ডার', Icons.notifications_active, Color(0xFFFBBF24), ready: true),
   _Module('পরিবার', Icons.family_restroom, Color(0xFFDC4C4C), ready: true),
   _Module('ডকুমেন্ট ও তথ্য', Icons.folder_special, Color(0xFF4ADE80)),
+  _Module('ব্যাকআপ', Icons.cloud_sync_rounded, Color(0xFF38BDF8), ready: true),
   _Module('সেটিংস', Icons.settings, Color(0xFF9A9AA5), ready: true),
 ];
 
@@ -107,6 +109,9 @@ class _LifeHomeScreenState extends State<LifeHomeScreen> {
         Navigator.push(todayCtx, MaterialPageRoute(
             builder: (_) => FamilyHomeScreen(onOpenVault: widget.onOpenVault, initialTab: tab)));
         return;
+      case 'ব্যাকআপ':
+        Navigator.push(todayCtx, MaterialPageRoute(builder: (_) => const BackupCenterScreen()));
+        return;
     }
   }
 
@@ -128,6 +133,10 @@ class _LifeHomeScreenState extends State<LifeHomeScreen> {
         Navigator.push(context, MaterialPageRoute(
             builder: (_) => FamilyHomeScreen(onOpenVault: widget.onOpenVault)))
             .then((_) { _loadRemCount(); _refreshToday(); });
+        return;
+      case 'ব্যাকআপ':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const BackupCenterScreen()))
+            .then((_) => _refreshToday());
         return;
       case 'সেটিংস': widget.onOpenSettings(); return;
     }
