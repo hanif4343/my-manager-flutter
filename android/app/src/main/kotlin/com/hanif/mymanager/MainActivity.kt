@@ -11,6 +11,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        ScreenTimeBridge.register(flutterEngine, applicationContext)
         // চাকরি হাব থেকে SmartStudyBD খোলা / সার্কুলারের লিংক খোলা।
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.hanif.mymanager/launcher")
             .setMethodCallHandler { call, result ->
