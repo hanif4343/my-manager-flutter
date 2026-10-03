@@ -25,8 +25,8 @@ android {
         applicationId "com.hanif.mymanager"
         minSdk 29
         targetSdk 36
-        versionCode 14
-        versionName "5.0.9"
+        versionCode 15
+        versionName "5.1.0"
         multiDexEnabled true
     }
 
@@ -71,6 +71,8 @@ dependencies {
     // Required for the LaunchTheme/NormalTheme Theme.AppCompat parent above
     // (local_auth's biometric/PIN prompt needs an AppCompat theme).
     implementation 'androidx.appcompat:appcompat:1.6.1'
+    // ScreenTimeWorker (স্ক্রিন টাইম সতর্কবার্তা) — প্রজেক্টের জোর-করা ভার্সনের সাথে মেলানো
+    implementation 'androidx.work:work-runtime-ktx:2.8.1'
 }
 
 // workmanager and home_widget each pull in a different version of
