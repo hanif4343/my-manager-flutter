@@ -8,6 +8,7 @@ import '../jobs/screens/job_hub_screen.dart';
 import '../family/screens/family_home_screen.dart';
 import '../backup/backup_center_screen.dart';
 import '../docs/screens/docs_home_screen.dart';
+import '../screentime/screen_time_screen.dart';
 import '../today/today_card.dart';
 import '../today/today_screen.dart';
 
@@ -19,7 +20,7 @@ class _Module {
   const _Module(this.name, this.icon, this.color, {this.ready = false});
 }
 
-const _readyModules = <String>{'ক্যাশবুক', 'ভল্ট', 'প্রজেক্ট', 'চাকরি হাব', 'পরিবার', 'ডকুমেন্ট ও তথ্য', 'রিমাইন্ডার', 'ব্যাকআপ', 'সেটিংস'};
+const _readyModules = <String>{'ক্যাশবুক', 'ভল্ট', 'প্রজেক্ট', 'চাকরি হাব', 'পরিবার', 'ডকুমেন্ট ও তথ্য', 'স্ক্রিন টাইম', 'রিমাইন্ডার', 'ব্যাকআপ', 'সেটিংস'};
 
 const _modules = [
   _Module('ক্যাশবুক', Icons.account_balance_wallet, Color(0xFF4F46E5), ready: true),
@@ -29,6 +30,7 @@ const _modules = [
   _Module('রিমাইন্ডার', Icons.notifications_active, Color(0xFFFBBF24), ready: true),
   _Module('পরিবার', Icons.family_restroom, Color(0xFFDC4C4C), ready: true),
   _Module('ডকুমেন্ট ও তথ্য', Icons.folder_special, Color(0xFF4ADE80), ready: true),
+  _Module('স্ক্রিন টাইম', Icons.phone_android_rounded, Color(0xFFF59E0B), ready: true),
   _Module('ব্যাকআপ', Icons.cloud_sync_rounded, Color(0xFF38BDF8), ready: true),
   _Module('সেটিংস', Icons.settings, Color(0xFF9A9AA5), ready: true),
 ];
@@ -116,6 +118,9 @@ class _LifeHomeScreenState extends State<LifeHomeScreen> {
       case 'ডকুমেন্ট ও তথ্য':
         Navigator.push(todayCtx, MaterialPageRoute(builder: (_) => const DocsHomeScreen()));
         return;
+      case 'স্ক্রিন টাইম':
+        Navigator.push(todayCtx, MaterialPageRoute(builder: (_) => const ScreenTimeScreen()));
+        return;
     }
   }
 
@@ -144,6 +149,10 @@ class _LifeHomeScreenState extends State<LifeHomeScreen> {
         return;
       case 'ডকুমেন্ট ও তথ্য':
         Navigator.push(context, MaterialPageRoute(builder: (_) => const DocsHomeScreen()))
+            .then((_) => _refreshToday());
+        return;
+      case 'স্ক্রিন টাইম':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const ScreenTimeScreen()))
             .then((_) => _refreshToday());
         return;
       case 'সেটিংস': widget.onOpenSettings(); return;
