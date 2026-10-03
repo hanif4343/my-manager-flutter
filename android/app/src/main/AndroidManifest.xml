@@ -1,4 +1,7 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- স্ক্রিন টাইম: অ্যাপ-ভিত্তিক ব্যবহারের সময় পড়ার জন্য (সেটিংসে "Usage access" থেকে ব্যবহারকারী নিজে দেন) -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
@@ -20,6 +23,17 @@
     <!-- চাকরি হাব থেকে SmartStudyBD খুঁজে পাওয়ার জন্য (Android 11+ প্যাকেজ ভিজিবিলিটি) -->
     <queries>
         <package android:name="com.hanif.smartstudy"/>
+        <package android:name="com.google.android.apps.wellbeing"/>
+        <package android:name="com.samsung.android.forest"/>
+        <!-- অ্যাপের নাম (লেবেল) দেখানোর জন্য ইনস্টল করা সব লঞ্চেবল অ্যাপ দেখতে পাওয়া -->
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.LAUNCHER"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN"/>
+            <category android:name="android.intent.category.HOME"/>
+        </intent>
     </queries>
 
     <application
