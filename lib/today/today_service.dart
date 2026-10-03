@@ -1,5 +1,6 @@
 import '../cashbook/db/cashbook_db.dart';
 import '../docs/db/docs_db.dart';
+import '../screentime/screen_time_service.dart';
 import '../cashbook/services/cashbook_service.dart';
 import '../db/db_helper.dart';
 import '../family/db/family_db.dart';
@@ -14,7 +15,7 @@ import '../services/vault_backup_service.dart';
 import '../services/vault_service.dart';
 
 /// আইটেমটা ট্যাপ করলে কোন মডিউলে যাবে।
-enum TodayTarget { reminders, jobs, familyBills, familyDates, cashbook, projects, backup, docs }
+enum TodayTarget { reminders, jobs, familyBills, familyDates, cashbook, projects, backup, docs, screenTime }
 
 class TodayItem {
   final String emoji;
@@ -100,6 +101,7 @@ class TodayService {
     await safe(() => _cashbook(items, day, isToday));
     await safe(() => _projects(items, day));
     await safe(() => _docs(items, day));
+    await safe(() => _screenTime(items, day, isToday));
     if (includeBackupHints) await safe(() => _backupHints(items));
 
     // স্থিতিশীল সাজানো: জরুরি → শিগগির → তথ্য।
@@ -343,6 +345,30 @@ class TodayService {
         TodayTarget.docs,
       ));
     }
+  }
+
+  // ───────────────── স্ক্রিন টাইম ─────────────────
+
+  /// আজ পড়া বনাম অপচয়। অনুমতি না থাকলে বা ব্যাকগ্রাউন্ড আইসোলেটে (চ্যানেল নেই) চুপচাপ বাদ।
+  static Future<void> _screenTime(List<TodayItem> out, DateTime day, bool isToday) async {
+    if (!isToday) return;
+    if (!await ScreenTimeService.hasAccess()) return;
+    final t = await ScreenTimeService.day(day);
+    if (t.totalMs == 0) return;
+    final limit = ScreenTimeService.wasteLimitMin * 60000;
+    final goal = ScreenTimeService.studyGoalMin * 60000;
+    var level = 0;
+    String sub;
+    if (t.wasteMs >= limit) {
+      level = 2;
+      sub = 'অপচয়ের সীমা ${fmtMs(limit)} পেরিয়ে গেছে';
+    } else if (t.wasteMs > t.studyMs * 2 && t.wasteMs > 3600000) {
+      level = 1;
+      sub = 'পড়ার চেয়ে অনেক বেশি সময় অপচয়ে';
+    } else {
+      sub = 'পড়ার লক্ষ্য ${fmtMs(goal)}';
+    }
+    out.add(TodayItem('📱', 'আজ পড়া ${fmtMs(t.studyMs)} · অপচয় ${fmtMs(t.wasteMs)}', sub, level, TodayTarget.screenTime));
   }
 
   // ───────────────── ব্যাকআপ স্মরণ ─────────────────
