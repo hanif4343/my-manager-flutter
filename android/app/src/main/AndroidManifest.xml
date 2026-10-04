@@ -138,6 +138,29 @@
                 android:resource="@xml/my_manager_widget_info"/>
         </receiver>
 
+        <!-- স্ক্রিন প্রহরী: অপচয়ের অ্যাপ খুললে "থামো" স্ক্রিন (Accessibility সেবা — ব্যবহারকারী নিজে চালু করেন) -->
+        <service
+            android:name=".ScreenGuardService"
+            android:exported="true"
+            android:label="My Manager স্ক্রিন প্রহরী"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/screen_guard_config"/>
+        </service>
+
+        <activity
+            android:name=".StopActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:showWhenLocked="false"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"/>
+
         <!-- ক্যাশবুক হোম-স্ক্রিন উইজেট (ব্যালেন্স + দ্রুত জমা/খরচ) -->
         <receiver
             android:name=".CashbookWidgetProvider"
