@@ -55,6 +55,15 @@ object ScreenTimeBridge {
                         result.success(true)
                     }
                     "openWellbeing" -> result.success(openWellbeing(ctx))
+                    "guardStatus" -> result.success(guardStatus(ctx))
+                    "openAccessibilitySettings" -> {
+                        startActivity(ctx, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        result.success(true)
+                    }
+                    "openOverlaySettings" -> {
+                        startActivity(ctx, Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")))
+                        result.success(true)
+                    }
                     "openAppNotifications" -> {
                         val pkg = call.argument<String>("package") ?: ""
                         startActivity(ctx, Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -72,6 +81,22 @@ object ScreenTimeBridge {
                 result.error("ST_ERR", e.message, null)
             }
         }
+    }
+
+    /** প্রহরীর অবস্থা: Accessibility সেবা চালু? অন্য অ্যাপের উপরে দেখানোর অনুমতি? আজ কতবার থামানো হলো? */
+    private fun guardStatus(ctx: Context): Map<String, Any> {
+        val enabledList = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+        val accessibility = enabledList.contains(ctx.packageName + "/") && enabledList.contains("ScreenGuardService")
+        val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val cal = Calendar.getInstance()
+        val today = "%04d-%02d-%02d".format(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
+        val sameDay = sp.getString("guard_day", "") == today
+        return mapOf(
+            "accessibility" to accessibility,
+            "overlay" to Settings.canDrawOverlays(ctx),
+            "blocked" to (if (sameDay) sp.getInt("blocked", 0) else 0),
+            "graceUsed" to (if (sameDay) sp.getInt("grace_used", 0) else 0),
+        )
     }
 
     private fun startActivity(ctx: Context, i: Intent) {
