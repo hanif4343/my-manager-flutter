@@ -65,6 +65,10 @@ class ScreenTimeService {
   static const _kWasteLimit = 'st_waste_limit_min';
   static const _kNudge = 'st_nudge_on';
   static const _kManual = 'st_manual'; // {"yyyy-MM-dd": মিনিট}
+  static const _kBlock = 'st_block_on';
+  static const _kWindows = 'st_windows'; // [{"s": শুরুর মিনিট, "e": শেষের মিনিট}]
+  static const _kGraceMax = 'st_grace_max';
+  static const _kGraceMin = 'st_grace_min';
 
   // ───────────── অনুমতি ─────────────
 
@@ -93,6 +97,55 @@ class ScreenTimeService {
     await SettingsService.setInt(_kWasteLimit, wasteMin);
     await SettingsService.setBool(_kNudge, nudge);
     await syncConfig();
+  }
+
+  // ───────────── স্ক্রিন প্রহরী ("থামো" স্ক্রিন) ─────────────
+
+  static bool get blockOn => SettingsService.getBool(_kBlock, defaultValue: false);
+  static int get graceMax => SettingsService.getInt(_kGraceMax, defaultValue: 2);
+  static int get graceMin => SettingsService.getInt(_kGraceMin, defaultValue: 5);
+
+  /// পড়ার সময়ের জানালা: (শুরু, শেষ) — দিনের মিনিটে (০..১৪৩৯)।
+  static List<(int, int)> get windows {
+    try {
+      return (jsonDecode(SettingsService.getString(_kWindows)) as List)
+          .map((e) => ((e['s'] as num).toInt(), (e['e'] as num).toInt()))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> saveGuard({bool? on, List<(int, int)>? windows, int? graceMax, int? graceMin}) async {
+    if (on != null) await SettingsService.setBool(_kBlock, on);
+    if (windows != null) {
+      await SettingsService.setString(_kWindows, jsonEncode(windows.map((w) => {'s': w.$1, 'e': w.$2}).toList()));
+    }
+    if (graceMax != null) await SettingsService.setInt(_kGraceMax, graceMax);
+    if (graceMin != null) await SettingsService.setInt(_kGraceMin, graceMin);
+    await syncConfig();
+  }
+
+  /// {accessibility: সেবা চালু?, overlay: অনুমতি আছে?, blocked: আজ কতবার থামানো, graceUsed: আজ কতবার ছাড়পত্র}
+  static Future<Map<String, dynamic>> guardStatus() async {
+    try {
+      final r = await _ch.invokeMethod<Map<dynamic, dynamic>>('guardStatus');
+      return Map<String, dynamic>.from(r ?? {});
+    } catch (_) {
+      return {'accessibility': false, 'overlay': false, 'blocked': 0, 'graceUsed': 0};
+    }
+  }
+
+  static Future<void> openAccessibilitySettings() async {
+    try {
+      await _ch.invokeMethod('openAccessibilitySettings');
+    } catch (_) {}
+  }
+
+  static Future<void> openOverlaySettings() async {
+    try {
+      await _ch.invokeMethod('openOverlaySettings');
+    } catch (_) {}
   }
 
   // ───────────── হাতে পড়ার সময় (বই/খাতা) ─────────────
@@ -239,6 +292,10 @@ class ScreenTimeService {
         'study': study,
         'waste': waste,
         'manual': {'day': dayKey(now), 'min': manualMinutes(now)},
+        'blockEnabled': blockOn,
+        'windows': windows.map((w) => {'s': w.$1, 'e': w.$2}).toList(),
+        'graceMax': graceMax,
+        'graceMin': graceMin,
       };
       await _ch.invokeMethod('saveConfig', {'json': jsonEncode(cfg)});
     } catch (_) {}
