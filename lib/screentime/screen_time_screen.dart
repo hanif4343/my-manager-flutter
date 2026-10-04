@@ -16,6 +16,7 @@ class _ScreenTimeScreenState extends State<ScreenTimeScreen> with WidgetsBinding
   bool _loading = false;
   int _range = 0; // 0 আজ, 1 গতকাল, 2 ৭ দিন
   List<DayTotals> _days = [];
+  Map<String, dynamic> _guard = {};
 
   @override
   void initState() {
@@ -33,7 +34,13 @@ class _ScreenTimeScreenState extends State<ScreenTimeScreen> with WidgetsBinding
   /// সেটিংস থেকে অনুমতি দিয়ে ফিরে এলে নিজে আবার দেখে।
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && !_access) _init();
+    if (state == AppLifecycleState.resumed) {
+      if (!_access) {
+        _init();
+      } else {
+        _loadGuard(); // সেটিংস থেকে অনুমতি দিয়ে ফিরলে অবস্থা হালনাগাদ
+      }
+    }
   }
 
   Future<void> _init() async {
@@ -46,7 +53,13 @@ class _ScreenTimeScreenState extends State<ScreenTimeScreen> with WidgetsBinding
     }
   }
 
+  Future<void> _loadGuard() async {
+    final g = await ScreenTimeService.guardStatus();
+    if (mounted) setState(() => _guard = g);
+  }
+
   Future<void> _load() async {
+    _loadGuard();
     setState(() => _loading = true);
     final now = DateTime.now();
     final days = <DayTotals>[];
@@ -181,6 +194,8 @@ class _ScreenTimeScreenState extends State<ScreenTimeScreen> with WidgetsBinding
               )
             else
               for (final a in apps.take(15)) _appTile(a, study + waste + neutral),
+            const SizedBox(height: 10),
+            _guardCard(),
             const SizedBox(height: 10),
             _wellbeingCard(),
           ],
@@ -516,6 +531,158 @@ class _ScreenTimeScreenState extends State<ScreenTimeScreen> with WidgetsBinding
       b.write(i >= 0 ? '$i' : c);
     }
     return b.toString();
+  }
+
+  // ───────────── স্ক্রিন প্রহরী ─────────────
+
+  String _hm(int m) {
+    final h = m ~/ 60, mm = m % 60;
+    final ap = h < 4 ? 'রাত' : (h < 12 ? 'সকাল' : (h < 15 ? 'দুপুর' : (h < 18 ? 'বিকাল' : (h < 20 ? 'সন্ধ্যা' : 'রাত'))));
+    return '${bn(h.toString().padLeft(2, '0'))}:${bn(mm.toString().padLeft(2, '0'))} ($ap)';
+  }
+
+  Future<void> _addWindow() async {
+    final s = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 9, minute: 0), helpText: 'পড়া শুরুর সময়');
+    if (s == null || !mounted) return;
+    final e = await showTimePicker(context: context, initialTime: TimeOfDay(hour: (s.hour + 3) % 24, minute: s.minute), helpText: 'পড়া শেষের সময়');
+    if (e == null) return;
+    final list = [...ScreenTimeService.windows, (s.hour * 60 + s.minute, e.hour * 60 + e.minute)];
+    await ScreenTimeService.saveGuard(windows: list);
+    if (mounted) setState(() {});
+  }
+
+  Widget _statusRow(bool ok, String label, VoidCallback onFix) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(children: [
+        Icon(ok ? Icons.check_circle_rounded : Icons.error_outline_rounded, size: 20, color: ok ? AppTheme.green : AppTheme.yellow),
+        const SizedBox(width: 8),
+        Expanded(child: Text(label, style: TextStyle(color: AppTheme.textSecondary, fontSize: 13))),
+        if (!ok) TextButton(onPressed: onFix, child: const Text('চালু করো')),
+      ]),
+    );
+  }
+
+  Widget _guardCard() {
+    final acc = _guard['accessibility'] == true;
+    final ov = _guard['overlay'] == true;
+    final ready = acc && ov;
+    final on = ScreenTimeService.blockOn;
+    final blocked = (_guard['blocked'] as num?)?.toInt() ?? 0;
+    final wins = ScreenTimeService.windows;
+    final graceMax = ScreenTimeService.graceMax;
+    final graceMin = ScreenTimeService.graceMin;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.bg2,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: on && ready ? AppTheme.green.withOpacity(0.6) : AppTheme.border),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Text('🛑', style: TextStyle(fontSize: 22)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('থামো স্ক্রিন (প্রহরী)',
+                style: TextStyle(color: AppTheme.textPrimary, fontSize: 15, fontWeight: FontWeight.w800)),
+          ),
+          Switch(
+            value: on,
+            activeColor: AppTheme.accent,
+            onChanged: (v) async {
+              await ScreenTimeService.saveGuard(on: v);
+              if (mounted) setState(() {});
+            },
+          ),
+        ]),
+        Text(
+          'অপচয়ের সীমা পেরোলে, অথবা নিচের "পড়ার সময়ে", ফেসবুক-ইউটিউব-গেম খুললেই সামনে "থামো" স্ক্রিন আসবে — '
+          'পড়তে যাওয়া, হোমে ফেরা, বা সীমিত বার কয়েক মিনিটের ছাড়পত্র (১০ সেকেন্ড ভেবে নিতে হয়)।',
+          style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5, height: 1.45),
+        ),
+        const SizedBox(height: 12),
+        _statusRow(acc, 'Accessibility সেবা চালু (কোন অ্যাপ খুলল তা জানতে)', ScreenTimeService.openAccessibilitySettings),
+        _statusRow(ov, '"অন্য অ্যাপের উপরে দেখানো" অনুমতি', ScreenTimeService.openOverlaySettings),
+        if (!acc)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Accessibility সেটিংসে গিয়ে "ইনস্টল করা অ্যাপ/সেবা" থেকে "My Manager স্ক্রিন প্রহরী" বেছে চালু করো। '
+              'এটা শুধু অ্যাপের নাম জানে — স্ক্রিনের লেখা পড়ে না, কিছু ফোনের বাইরে যায় না।',
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.45),
+            ),
+          ),
+        const Divider(height: 22),
+        Row(children: [
+          Expanded(
+            child: Text('পড়ার সময় (এই সময়ে সবসময় থামাবে)',
+                style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5, fontWeight: FontWeight.w700)),
+          ),
+          TextButton.icon(onPressed: _addWindow, icon: const Icon(Icons.add, size: 18), label: const Text('সময়')),
+        ]),
+        if (wins.isEmpty)
+          Text('কোনো নির্দিষ্ট সময় নেই — শুধু অপচয়ের সীমা পেরোলে থামাবে।',
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5)),
+        for (var i = 0; i < wins.length; i++)
+          Container(
+            margin: const EdgeInsets.only(top: 6),
+            padding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
+            decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(10)),
+            child: Row(children: [
+              Expanded(child: Text('${_hm(wins[i].$1)} – ${_hm(wins[i].$2)}',
+                  style: TextStyle(color: AppTheme.textPrimary, fontSize: 13))),
+              IconButton(
+                icon: Icon(Icons.close_rounded, size: 18, color: AppTheme.textMuted),
+                onPressed: () async {
+                  final l = [...wins]..removeAt(i);
+                  await ScreenTimeService.saveGuard(windows: l);
+                  if (mounted) setState(() {});
+                },
+              ),
+            ]),
+          ),
+        const Divider(height: 22),
+        Text('ছাড়পত্র: দিনে সর্বোচ্চ ${bn(graceMax)} বার, প্রতিবার ${bn(graceMin)} মিনিট',
+            style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          Text('বার:', style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5)),
+          for (final v in [0, 1, 2, 3, 5])
+            ChoiceChip(
+              label: Text(bn(v)),
+              selected: graceMax == v,
+              showCheckmark: false,
+              visualDensity: VisualDensity.compact,
+              onSelected: (_) async {
+                await ScreenTimeService.saveGuard(graceMax: v);
+                if (mounted) setState(() {});
+              },
+            ),
+          const SizedBox(width: 8),
+          Text('মিনিট:', style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5)),
+          for (final v in [3, 5, 10])
+            ChoiceChip(
+              label: Text(bn(v)),
+              selected: graceMin == v,
+              showCheckmark: false,
+              visualDensity: VisualDensity.compact,
+              onSelected: (_) async {
+                await ScreenTimeService.saveGuard(graceMin: v);
+                if (mounted) setState(() {});
+              },
+            ),
+        ]),
+        const SizedBox(height: 10),
+        Text(
+          on && !ready
+              ? '⚠️ প্রহরী চালু আছে কিন্তু ওপরের অনুমতি বাকি — ততক্ষণ থামানো কাজ করবে না।'
+              : (blocked > 0 ? '🛑 আজ ${bn(blocked)} বার থামানো হয়েছে' : (on ? '✅ প্রস্তুত — এখন পর্যন্ত থামানোর দরকার হয়নি' : 'বন্ধ আছে')),
+          style: TextStyle(color: on && !ready ? AppTheme.yellow : AppTheme.textSecondary, fontSize: 12.5),
+        ),
+      ]),
+    );
   }
 
   // ───────────── Digital Wellbeing কার্ড ─────────────
