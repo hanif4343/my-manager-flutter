@@ -56,7 +56,7 @@ class StopActivity : Activity() {
             setPadding(dp(28), dp(64), dp(28), dp(32))
         }
 
-        fun text(t: String, size: Float, color: String, bold: Boolean = false, top: Int = 0): TextView =
+        fun text(t: String, size: Float, color: String = "#FFFFFF", bold: Boolean = false, top: Int = 0): TextView =
             TextView(this).apply {
                 text = t
                 textSize = size
