@@ -56,6 +56,10 @@ class _OverlayBubbleState extends State<OverlayBubble> {
   // updated locally as the person drags.
   Offset? _pos;
 
+  // সেভের ফলাফল বাবলের ভেতরেই দেখানো — আগে ব্যর্থ হলে কিছুই বোঝা যেত না।
+  String? _status;
+  bool _statusIsError = false;
+
   @override
   void initState() {
     super.initState();
@@ -122,16 +126,33 @@ class _OverlayBubbleState extends State<OverlayBubble> {
     _loadIdeas(id);
   }
 
+  void _flash(String msg, {bool error = false}) {
+    if (!mounted) return;
+    setState(() { _status = msg; _statusIsError = error; });
+    Future.delayed(Duration(seconds: error ? 6 : 2), () {
+      if (mounted && _status == msg) setState(() => _status = null);
+    });
+  }
+
   Future<void> _addIdea() async {
     final title = _newIdeaCtrl.text.trim();
     if (title.isEmpty || _selectedProjectId == null) return;
-    _newIdeaCtrl.clear();
     final n = DateTime.now().millisecondsSinceEpoch;
-    await DBHelper.insertIdea(Idea(
-      projectId: _selectedProjectId!, title: title,
-      createdAt: n, updatedAt: n,
-    ));
-    await FlutterOverlayWindow.shareData('idea_added');
+    try {
+      await DBHelper.insertIdea(Idea(
+        projectId: _selectedProjectId!, title: title,
+        createdAt: n, updatedAt: n,
+      ));
+    } catch (e) {
+      // আগে এখানে লেখা আগেই মুছে ফেলা হতো — সেভ ব্যর্থ হলে লেখাটা হারিয়ে যেত। এখন লেখা থাকে।
+      _flash('সেভ হয়নি: $e', error: true);
+      return;
+    }
+    _newIdeaCtrl.clear();
+    _flash('✓ সেভ হয়েছে');
+    try {
+      await FlutterOverlayWindow.shareData('idea_added');
+    } catch (_) {}
     WidgetService.update();
     // Stays open — quick-capture doesn't have to mean one-and-done.
     _loadIdeas(_selectedProjectId!);
@@ -152,20 +173,28 @@ class _OverlayBubbleState extends State<OverlayBubble> {
     if (idea == null) return;
     final title = _editTitleCtrl.text.trim();
     if (title.isEmpty) return;
-    await DBHelper.updateIdea(Idea(
-      id: idea.id, projectId: idea.projectId, title: title,
-      description: _editDescCtrl.text.trim().isEmpty ? null : _editDescCtrl.text.trim(),
-      status: idea.status,
-      priority: idea.priority, isArchived: idea.isArchived,
-      deadline: idea.deadline, createdAt: idea.createdAt,
-      updatedAt: DateTime.now().millisecondsSinceEpoch,
-    ));
+    try {
+      await DBHelper.updateIdea(Idea(
+        id: idea.id, projectId: idea.projectId, title: title,
+        description: _editDescCtrl.text.trim().isEmpty ? null : _editDescCtrl.text.trim(),
+        status: idea.status,
+        priority: idea.priority, isArchived: idea.isArchived,
+        deadline: idea.deadline, createdAt: idea.createdAt,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+    } catch (e) {
+      _flash('এডিট সেভ হয়নি: $e', error: true);
+      return;
+    }
     setState(() => _editingIdea = null);
+    _flash('✓ সেভ হয়েছে');
     // Tells the main app engine a change happened, so it can refresh
     // immediately — matters because the overlay can float *over* the
     // main app without ever actually backgrounding it, so the app's own
     // "refresh when resumed" logic never fires in that case.
-    await FlutterOverlayWindow.shareData('idea_updated');
+    try {
+      await FlutterOverlayWindow.shareData('idea_updated');
+    } catch (_) {}
     WidgetService.update();
     // Re-sorts to the top too, since it's now the most recently touched.
     _loadIdeas(idea.projectId);
@@ -391,6 +420,15 @@ class _OverlayBubbleState extends State<OverlayBubble> {
                     ),
                   ),
                 ]),
+                if (_status != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(_status!,
+                        maxLines: 3, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: _statusIsError ? AppTheme.red : AppTheme.green,
+                            fontSize: 11.5, fontWeight: FontWeight.w600)),
+                  ),
                 const SizedBox(height: 10),
                  Text('সাম্প্রতিক আইডিয়া', style: TextStyle(
                     color: AppTheme.textSecondary, fontSize: 11.5, fontWeight: FontWeight.w700)),
