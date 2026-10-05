@@ -66,7 +66,17 @@ class ScreenGuardService : AccessibilityService() {
 
         // ── শর্ত ২: সীমা পেরিয়েছে? ──
         val overLimit = limitMs > 0 && cacheWaste >= limitMs
-        if (windowText == null && !overLimit) return
+
+        // ── শর্ত ৩: "আগে পড়ো" — আজ ন্যূনতম এতটুকু না পড়লে অপচয়ের অ্যাপ বন্ধ ──
+        val studyFirstMs = cfg.optLong("studyFirstMin", 0) * 60_000
+        val needStudy = studyFirstMs > 0 && cacheStudy < studyFirstMs
+
+        if (windowText == null && !overLimit && !needStudy) return
+        val reasonStr = when {
+            windowText != null -> "window"
+            needStudy -> "studyfirst"
+            else -> "limit"
+        }
 
         // দিনের হিসাব (ছাড়পত্র + কতবার থামানো হলো)
         val today = "%04d-%02d-%02d".format(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
@@ -81,7 +91,8 @@ class ScreenGuardService : AccessibilityService() {
         val i = Intent(this, StopActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
             putExtra("pkg", pkg)
-            putExtra("reason", if (windowText != null) "window" else "limit")
+            putExtra("reason", reasonStr)
+            putExtra("need", studyFirstMs)
             putExtra("windowText", windowText ?: "")
             putExtra("waste", cacheWaste)
             putExtra("study", cacheStudy)
