@@ -67,6 +67,7 @@ class ScreenTimeService {
   static const _kManual = 'st_manual'; // {"yyyy-MM-dd": মিনিট}
   static const _kBlock = 'st_block_on';
   static const _kWindows = 'st_windows'; // [{"s": শুরুর মিনিট, "e": শেষের মিনিট}]
+  static const _kStudyFirst = 'st_study_first_min';
   static const _kGraceMax = 'st_grace_max';
   static const _kGraceMin = 'st_grace_min';
 
@@ -102,6 +103,8 @@ class ScreenTimeService {
   // ───────────── স্ক্রিন প্রহরী ("থামো" স্ক্রিন) ─────────────
 
   static bool get blockOn => SettingsService.getBool(_kBlock, defaultValue: false);
+  /// "আগে পড়ো": আজ এতক্ষণ না পড়লে অপচয়ের অ্যাপ থামবে (০ = বন্ধ)। ডিফল্ট ৩০ মিনিট।
+  static int get studyFirstMin => SettingsService.getInt(_kStudyFirst, defaultValue: 30);
   static int get graceMax => SettingsService.getInt(_kGraceMax, defaultValue: 2);
   static int get graceMin => SettingsService.getInt(_kGraceMin, defaultValue: 5);
 
@@ -116,7 +119,8 @@ class ScreenTimeService {
     }
   }
 
-  static Future<void> saveGuard({bool? on, List<(int, int)>? windows, int? graceMax, int? graceMin}) async {
+  static Future<void> saveGuard({bool? on, List<(int, int)>? windows, int? graceMax, int? graceMin, int? studyFirst}) async {
+    if (studyFirst != null) await SettingsService.setInt(_kStudyFirst, studyFirst);
     if (on != null) await SettingsService.setBool(_kBlock, on);
     if (windows != null) {
       await SettingsService.setString(_kWindows, jsonEncode(windows.map((w) => {'s': w.$1, 'e': w.$2}).toList()));
@@ -134,6 +138,24 @@ class ScreenTimeService {
     } catch (_) {
       return {'accessibility': false, 'overlay': false, 'blocked': 0, 'graceUsed': 0};
     }
+  }
+
+  /// "থামো" স্ক্রিনের নমুনা দেখায় (আসল সীমা/ছাড়পত্রে প্রভাব নেই)।
+  static Future<void> previewStop() async {
+    try {
+      final t = await day(DateTime.now());
+      await _ch.invokeMethod('previewStop', {
+        'reason': studyFirstMin > 0 ? 'studyfirst' : 'limit',
+        'label': 'Facebook',
+        'study': t.studyMs,
+        'need': studyFirstMin * 60000,
+        'waste': t.wasteMs,
+        'limit': wasteLimitMin * 60000,
+        'goal': studyGoalMin * 60000,
+        'graceLeft': graceMax > 0 ? graceMax : 1,
+        'graceMin': graceMin,
+      });
+    } catch (_) {}
   }
 
   static Future<void> openAccessibilitySettings() async {
@@ -296,6 +318,7 @@ class ScreenTimeService {
         'windows': windows.map((w) => {'s': w.$1, 'e': w.$2}).toList(),
         'graceMax': graceMax,
         'graceMin': graceMin,
+        'studyFirstMin': studyFirstMin,
       };
       await _ch.invokeMethod('saveConfig', {'json': jsonEncode(cfg)});
     } catch (_) {}
