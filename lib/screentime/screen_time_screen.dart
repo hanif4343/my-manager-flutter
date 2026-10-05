@@ -563,6 +563,41 @@ class _ScreenTimeScreenState extends State<ScreenTimeScreen> with WidgetsBinding
     );
   }
 
+  /// এখন ঠিক কোন কোন নিয়মে থামাবে — এক নজরে।
+  Widget _rulesBox(bool active) {
+    final sf = ScreenTimeService.studyFirstMin;
+    final lim = ScreenTimeService.wasteLimitMin;
+    final wins = ScreenTimeService.windows;
+    final lines = <String>[
+      if (sf > 0) '📚 আজ ${fmtMs(sf * 60000)} না পড়া পর্যন্ত',
+      if (lim > 0) '🗑️ আজ অপচয় ${fmtMs(lim * 60000)} পেরোলে',
+      for (final w in wins) '⏰ পড়ার সময় ${_hm(w.$1)} – ${_hm(w.$2)}',
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: (active ? AppTheme.green : AppTheme.textMuted).withOpacity(0.10),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(
+          active ? 'এখন ফেসবুক-ইউটিউব-ইমো-গেম খুললে থামবে, যখন:' : 'প্রহরী চালু হলে (সব অনুমতি সহ) থামবে, যখন:',
+          style: TextStyle(color: AppTheme.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 4),
+        if (lines.isEmpty)
+          Text('কোনো নিয়ম চালু নেই', style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5))
+        else
+          for (final l in lines)
+            Text('• $l', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5, height: 1.5)),
+        const SizedBox(height: 4),
+        Text('যেকোনো একটা মিললেই থামবে। এর বাইরে কিছু হলে থামবে না।',
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5)),
+      ]),
+    );
+  }
+
   Widget _guardCard() {
     final acc = _guard['accessibility'] == true;
     final ov = _guard['overlay'] == true;
@@ -602,6 +637,8 @@ class _ScreenTimeScreenState extends State<ScreenTimeScreen> with WidgetsBinding
           'পড়তে যাওয়া, হোমে ফেরা, বা সীমিত বার কয়েক মিনিটের ছাড়পত্র (১০ সেকেন্ড ভেবে নিতে হয়)।',
           style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5, height: 1.45),
         ),
+        const SizedBox(height: 10),
+        _rulesBox(on && ready),
         const SizedBox(height: 12),
         _statusRow(acc, 'Accessibility সেবা চালু (কোন অ্যাপ খুলল তা জানতে)', ScreenTimeService.openAccessibilitySettings),
         _statusRow(ov, '"অন্য অ্যাপের উপরে দেখানো" অনুমতি', ScreenTimeService.openOverlaySettings),
@@ -614,6 +651,25 @@ class _ScreenTimeScreenState extends State<ScreenTimeScreen> with WidgetsBinding
               style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.45),
             ),
           ),
+        const Divider(height: 22),
+        Text('আগে পড়ো নিয়ম', style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 2),
+        Text('আজ কমপক্ষে এতক্ষণ না পড়লে ফেসবুক-ইউটিউব খুললেই থামবে (পড়া = SmartStudyBD/পড়ার অ্যাপ + হাতে যোগ করা বই-খাতার সময়)।',
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.4)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 8, children: [
+          for (final v in [0, 15, 30, 45, 60])
+            ChoiceChip(
+              label: Text(v == 0 ? 'বন্ধ' : '${bn(v)} মি'),
+              selected: ScreenTimeService.studyFirstMin == v,
+              showCheckmark: false,
+              visualDensity: VisualDensity.compact,
+              onSelected: (_) async {
+                await ScreenTimeService.saveGuard(studyFirst: v);
+                if (mounted) setState(() {});
+              },
+            ),
+        ]),
         const Divider(height: 22),
         Row(children: [
           Expanded(
@@ -674,6 +730,12 @@ class _ScreenTimeScreenState extends State<ScreenTimeScreen> with WidgetsBinding
               },
             ),
         ]),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: ScreenTimeService.previewStop,
+          icon: const Icon(Icons.visibility_outlined, size: 18),
+          label: const Text('👀 থামো স্ক্রিন কেমন দেখায় দেখো'),
+        ),
         const SizedBox(height: 10),
         Text(
           on && !ready
