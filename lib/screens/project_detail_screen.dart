@@ -8,6 +8,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:async';
 import '../db/db_helper.dart';
+import '../services/data_sync.dart';
 import '../models/project.dart';
 import '../models/idea.dart';
 import '../models/idea_file.dart';
@@ -56,10 +57,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   final Set<int> _selected = {};
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _load();
+    // ভাসমান বাবল থেকে আইডিয়া যোগ/এডিট হলে খোলা তালিকা নিজে রিলোড হবে।
+    DataSync.ideasChanged.addListener(_load);
+  }
 
   @override
-  void dispose() { _recorder.dispose(); super.dispose(); }
+  void dispose() {
+    DataSync.ideasChanged.removeListener(_load);
+    _recorder.dispose();
+    super.dispose();
+  }
 
   Future<void> _load() async {
     if (widget.project.id == null) return;
