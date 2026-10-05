@@ -262,6 +262,18 @@ class DBHelper {
         where: 'id=?', whereArgs: [projectId]);
   }
 
+  /// আইডিয়া টেবিলের "আঙুলের ছাপ": সংখ্যা + সর্বশেষ আপডেট + যোগফল। ভাসমান বাবল আলাদা
+  /// Flutter engine-এ চলে; সেখান থেকে যোগ/এডিট/মোছা হলে মূল অ্যাপ এই ছাপ বদলে দেখে ধরে
+  /// ফেলে (DataSync)। ডাটাবেস ফাইল একই, তাই সরাসরি কোয়েরিই যথেষ্ট।
+  static Future<String> ideasSignature() async {
+    final d = await db;
+    final r = await d.rawQuery(
+        'SELECT COUNT(*) AS c, COALESCE(MAX(updated_at),0) AS m, COALESCE(SUM(updated_at),0) AS s, '
+        'COALESCE(SUM(is_archived),0) AS a FROM ideas');
+    final row = r.first;
+    return '${row['c']}|${row['m']}|${row['s']}|${row['a']}';
+  }
+
   // ── IDEAS ─────────────────────────────────────────────
   static Future<List<Idea>> getIdeas(int projectId, {bool includeArchived = false}) async {
     final d = await db;
