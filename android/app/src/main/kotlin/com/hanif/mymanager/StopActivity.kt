@@ -47,7 +47,9 @@ class StopActivity : Activity() {
         val goal = intent.getLongExtra("goal", 0)
         val graceLeft = intent.getIntExtra("graceLeft", 0)
         val graceMin = intent.getIntExtra("graceMin", 5)
-        val app = label(pkg)
+        val need = intent.getLongExtra("need", 0)
+        val preview = intent.getBooleanExtra("preview", false)
+        val app = intent.getStringExtra("label") ?: label(pkg)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -71,8 +73,11 @@ class StopActivity : Activity() {
         root.addView(text("✋", 64f))
         root.addView(text("থামো!", 34f, "#FFFFFF", true, 4))
         root.addView(text(
-            if (reason == "window") "এখন তোমার পড়ার সময় ($windowText)\n$app এখন বন্ধ"
-            else "আজ অপচয়ে ${ScreenTimeBridge.dur(waste)} গেছে\n(সীমা ${ScreenTimeBridge.dur(limit)}) — $app আর নয়",
+            when (reason) {
+                "window" -> "এখন তোমার পড়ার সময় ($windowText)\n$app এখন বন্ধ"
+                "studyfirst" -> "আগে পড়ো, তারপর $app\nআজ পড়েছ ${ScreenTimeBridge.dur(study)} — আরও ${ScreenTimeBridge.dur((need - study).coerceAtLeast(60_000L))} বাকি"
+                else -> "আজ অপচয়ে ${ScreenTimeBridge.dur(waste)} গেছে\n(সীমা ${ScreenTimeBridge.dur(limit)}) — $app আর নয়"
+            },
             17f, "#F87171", true, 14))
         root.addView(text("আজ পড়া: ${ScreenTimeBridge.dur(study)} / লক্ষ্য ${ScreenTimeBridge.dur(goal)}", 15f, "#A8A8B3", false, 20))
         root.addView(text("সরকারি চাকরি তাদেরই হয়, যারা আজ পড়েছে।\nমাত্র ২৫ মিনিট পড়ে এসো — তারপর সিদ্ধান্ত নিও 📚", 14.5f, "#D4D4DC", false, 18))
@@ -128,6 +133,7 @@ class StopActivity : Activity() {
             }
             handler.post(tick)
             grace.setOnClickListener {
+                if (preview) { finish(); return@setOnClickListener } // নমুনা দেখার সময় ছাড়পত্র খরচ হয় না
                 val sp = getSharedPreferences(ScreenTimeBridge.PREFS, Context.MODE_PRIVATE)
                 sp.edit()
                     .putLong("grace_until", System.currentTimeMillis() + graceMin * 60_000L)
