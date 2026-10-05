@@ -17,6 +17,7 @@ import 'life_home_screen.dart';
 import '../reminder/screens/reminder_screen.dart';
 import '../reminder/services/reminder_service.dart';
 import '../services/notification_service.dart';
+import '../services/data_sync.dart';
 
 /// Top-level shell: bottom navigation between Projects / Search / Vault /
 /// Settings. Vault is a first-class destination of its own — a password
@@ -46,6 +47,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _initShareListener();
     _initOverlayListener();
+    // বাবল (আলাদা engine) থেকে হওয়া পরিবর্তন ধরার ওয়াচার — অ্যাপ সামনে থাকলে চলে।
+    DataSync.ideasChanged.addListener(_onExternalChange);
+    DataSync.start();
     ReminderService.openRequest.addListener(_openReminders);
     ReminderService.launchedFromReminder().then((launched) {
       if (launched && mounted) _openReminders();
@@ -73,6 +77,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void _initOverlayListener() {
     try {
       _overlaySub = FlutterOverlayWindow.overlayListener.listen((event) {
+        // বার্তা যা-ই হোক, ডাটাবেস যাচাই করে নিই (বার্তা হারালেও ছাপ মিলিয়ে ধরা পড়বে)।
+        DataSync.check();
         if (event == 'idea_added' || event == 'idea_updated') {
           if (mounted) setState(() => _dashboardGen++);
         }
@@ -110,8 +116,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     )).then((_) => setState(() => _dashboardGen++));
   }
 
+  void _onExternalChange() {
+    if (mounted) setState(() => _dashboardGen++);
+  }
+
   @override
   void dispose() {
+    DataSync.ideasChanged.removeListener(_onExternalChange);
+    DataSync.stop();
     WidgetsBinding.instance.removeObserver(this);
     ReminderService.openRequest.removeListener(_openReminders);
     _shareSub?.cancel();
@@ -121,7 +133,12 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      DataSync.stop(); // ব্যাকগ্রাউন্ডে ব্যাটারি বাঁচাতে
+    }
     if (state == AppLifecycleState.resumed) {
+      DataSync.start();
+      DataSync.check();
       setState(() => _dashboardGen++);
       CashbookNotificationService.refresh();
       ReminderService.rearmAll().catchError((_) {});
