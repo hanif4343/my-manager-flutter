@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../family/services/family_service.dart';
+import '../services/data_sync.dart';
 import '../jobs/services/job_service.dart';
 import '../reminder/models/reminder.dart' show bn;
 import '../reminder/services/reminder_service.dart';
@@ -22,6 +23,7 @@ class _TodayCardState extends State<TodayCard> {
     ReminderService.changes.addListener(_load);
     JobService.changes.addListener(_load);
     FamilyService.changes.addListener(_load);
+    DataSync.ideasChanged.addListener(_load);
     _load();
   }
 
@@ -30,6 +32,7 @@ class _TodayCardState extends State<TodayCard> {
     ReminderService.changes.removeListener(_load);
     JobService.changes.removeListener(_load);
     FamilyService.changes.removeListener(_load);
+    DataSync.ideasChanged.removeListener(_load);
     super.dispose();
   }
 
