@@ -5,6 +5,7 @@ import '../models/cashbook_entry.dart';
 import '../models/cashbook_budget.dart';
 import '../models/cashbook_debt.dart';
 import '../services/cashbook_widget_service.dart';
+import '../services/spending_guard.dart';
 
 /// The Cashbook is deliberately kept out of mymanager.db — its own file
 /// (cashbook.db), its own version history, its own migrations. Nothing
@@ -178,7 +179,8 @@ class CashbookDB {
   static Future<int> insertEntry(CashbookEntry e) async {
     final d = await db;
     final id = await d.insert('entries', e.toMap());
-    CashbookWidgetService.refresh(); // হোম উইজেট হালনাগাদ (best-effort)
+    CashbookWidgetService.refresh();
+    SpendingGuard.changes.value++; // হোম উইজেট হালনাগাদ (best-effort)
     return id;
   }
 
@@ -186,12 +188,14 @@ class CashbookDB {
     final d = await db;
     await d.update('entries', e.toMap(), where: 'id=?', whereArgs: [e.id]);
     CashbookWidgetService.refresh();
+    SpendingGuard.changes.value++;
   }
 
   static Future<void> deleteEntry(int id) async {
     final d = await db;
     await d.delete('entries', where: 'id=?', whereArgs: [id]);
     CashbookWidgetService.refresh();
+    SpendingGuard.changes.value++;
   }
 
   static String todayIso() => DateTime.now().toIso8601String().substring(0, 10);
@@ -249,11 +253,13 @@ class CashbookDB {
       await d.update('budgets', {'monthly_limit': b.monthlyLimit},
           where: 'category=?', whereArgs: [b.category]);
     }
+    SpendingGuard.changes.value++;
   }
 
   static Future<void> deleteBudget(int id) async {
     final d = await db;
     await d.delete('budgets', where: 'id=?', whereArgs: [id]);
+    SpendingGuard.changes.value++;
   }
 
   /// Sum of খরচ entries in [category] for the current calendar month,
