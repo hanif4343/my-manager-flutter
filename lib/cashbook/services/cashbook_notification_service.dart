@@ -1,3 +1,4 @@
+import 'dart:ui' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
@@ -151,6 +152,24 @@ class CashbookNotificationService {
         (CashbookService.reminderMinute >= 30 ? 30 : 0);
     if (now.hour * 60 + now.minute < startMin) return;
     await refresh();
+  }
+
+  /// খরচ-প্রহরীর বড় লাল সতর্কতা (SpendingGuard থেকে)। সর্বোচ্চ গুরুত্বের চ্যানেলে, বড় লেখাসহ।
+  static Future<void> showGuardNudge({required String title, required String body, required bool danger}) async {
+    await _init();
+    final details = AndroidNotificationDetails(
+      'spending_guard_channel',
+      'খরচ সতর্কতা',
+      channelDescription: 'জরুরি খরচের টাকা কমে গেলে বা বাজেট পেরোলে লাল সতর্কতা',
+      importance: Importance.max,
+      priority: Priority.max,
+      icon: '@mipmap/ic_launcher',
+      color: danger ? const Color(0xFFDC2626) : const Color(0xFFF59E0B),
+      colorized: true,
+      category: AndroidNotificationCategory.reminder,
+      styleInformation: BigTextStyleInformation(body, contentTitle: title),
+    );
+    await _plugin.show(7800, title, body.split('\n').first, NotificationDetails(android: details));
   }
 
   /// MIUI/FunTouch/ColorOS-style battery managers on Xiaomi, Vivo, Oppo
