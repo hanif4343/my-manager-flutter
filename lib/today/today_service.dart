@@ -2,6 +2,7 @@ import '../cashbook/db/cashbook_db.dart';
 import '../docs/db/docs_db.dart';
 import '../screentime/screen_time_service.dart';
 import '../cashbook/services/cashbook_service.dart';
+import '../cashbook/services/spending_guard.dart';
 import '../db/db_helper.dart';
 import '../family/db/family_db.dart';
 import '../family/models/family_models.dart';
@@ -268,6 +269,16 @@ class TodayService {
           pct >= 1 ? 2 : 1,
           TodayTarget.cashbook,
         ));
+      }
+    }
+
+    // খরচ-প্রহরী: জরুরি খরচ (বিল/কিস্তি) মেটানোর টাকা থাকবে কিনা।
+    if (SpendingGuard.enabled) {
+      final g = await SpendingGuard.assess();
+      if (g.essentialsLevel != GuardLevel.ok) {
+        final danger = g.essentialsLevel == GuardLevel.danger;
+        out.add(TodayItem(danger ? '🚨' : '⚠️', g.headline.replaceAll(RegExp(r'^[^ ]+ '), ''),
+            g.essentialsLine, danger ? 2 : 1, TodayTarget.cashbook));
       }
     }
 
