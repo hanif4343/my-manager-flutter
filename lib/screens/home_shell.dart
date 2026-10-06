@@ -18,6 +18,7 @@ import '../reminder/screens/reminder_screen.dart';
 import '../reminder/services/reminder_service.dart';
 import '../services/notification_service.dart';
 import '../services/data_sync.dart';
+import '../cashbook/services/spending_guard.dart';
 
 /// Top-level shell: bottom navigation between Projects / Search / Vault /
 /// Settings. Vault is a first-class destination of its own — a password
@@ -139,6 +140,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       DataSync.start();
       DataSync.check();
+      SpendingGuard.nudgeIfNeeded().catchError((_) {});
       setState(() => _dashboardGen++);
       CashbookNotificationService.refresh();
       ReminderService.rearmAll().catchError((_) {});
