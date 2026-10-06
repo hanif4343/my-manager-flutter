@@ -1,3 +1,5 @@
+import '../services/spending_guard.dart';
+import 'spending_guard_card.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -125,6 +127,22 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
     final note = _noteCtrl.text.trim().isEmpty
         ? CashbookService.categoryById(_category).name
         : _noteCtrl.text.trim();
+
+    // খরচ-প্রহরী: নতুন অকারণ-হতে-পারে খরচ লেখার আগে লাল সতর্কতা (বিল দেওয়ায় নয়)।
+    if (!_isEdit && _type == 'out' && !SpendingGuard.isEssentialCategory(_category) && SpendingGuard.enabled) {
+      try {
+        final r = await SpendingGuard.assess(extraSpend: amount, category: _category);
+        if (r.level != GuardLevel.ok && mounted) {
+          final go = await showSpendingNudge(context, r, amount);
+          if (go != true) {
+            if (mounted) Navigator.pop(context, false); // "বাদ দিই" — এন্ট্রি না লিখেই বন্ধ
+            return;
+          }
+        }
+      } catch (_) {
+        // প্রহরীর ত্রুটি যেন এন্ট্রি লেখা আটকে না দেয়
+      }
+    }
 
     if (_isEdit) {
       final updated = widget.entry!.copyWith(
