@@ -13,6 +13,7 @@ import 'services/settings_service.dart';
 import 'services/drive_service.dart';
 import 'cashbook/services/cashbook_notification_service.dart';
 import 'cashbook/services/cashbook_widget_service.dart';
+import 'cashbook/services/spending_guard.dart';
 import 'screentime/screen_time_service.dart';
 import 'cashbook/screens/cashbook_quick_add_app.dart';
 import 'reminder/services/reminder_service.dart';
@@ -50,6 +51,7 @@ void main() async {
   } catch (_) {}
   // হোম-স্ক্রিন ক্যাশবুক উইজেট হালনাগাদ (নতুন মাসের খাতাও এখানে বানানো হয়)।
   CashbookWidgetService.refresh();
+  SpendingGuard.nudgeIfNeeded(); // জরুরি টাকা কমে থাকলে লাল সতর্কতা (ব্যবধান মেনে)
   // স্ক্রিন টাইমের সতর্কবার্তার কনফিগ (অনুমতি না থাকলে চুপচাপ কিছু করে না)
   ScreenTimeService.syncConfig();
   try {
@@ -160,6 +162,11 @@ void callbackDispatcher() {
       }
       if (task == cashbookReminderTaskName) {
         await CashbookNotificationService.backgroundCheck();
+        // খরচ-প্রহরীর বারবার-নোটিফিকেশন (সতর্ক অবস্থায়, নির্দিষ্ট ব্যবধানে)
+        try {
+          await SettingsService.init();
+          await SpendingGuard.nudgeIfNeeded();
+        } catch (_) {}
         return true;
       }
       await SettingsService.init();
