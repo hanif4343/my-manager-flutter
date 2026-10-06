@@ -4,6 +4,7 @@ import '../db/cashbook_db.dart';
 import '../models/cashbook_account.dart';
 import '../models/cashbook_entry.dart';
 import '../models/cashbook_budget.dart';
+import 'spending_guard_card.dart';
 import '../models/cashbook_debt.dart';
 import '../services/cashbook_service.dart';
 import '../services/cashbook_backup_service.dart';
@@ -459,11 +460,17 @@ class _CashbookScreenState extends State<CashbookScreen> {
           ),
         ],
       ),
-      body: IndexedStack(index: _tab, children: [
-        _buildEntriesTab(),
-        _buildBudgetTab(),
-        _buildReportTab(),
-        _buildDebtsTab(),
+      body: Column(children: [
+        // খরচ-প্রহরী: জরুরি টাকা কমলে বা বাজেট পেরোলে বড় লাল কার্ড (সব ট্যাবের উপরে)
+        SpendingGuardCard(onOpenBudget: () => setState(() => _tab = 1)),
+        Expanded(
+          child: IndexedStack(index: _tab, children: [
+            _buildEntriesTab(),
+            _buildBudgetTab(),
+            _buildReportTab(),
+            _buildDebtsTab(),
+          ]),
+        ),
       ]),
       floatingActionButton: _tab == 2 ? null : FloatingActionButton(
         backgroundColor: AppTheme.accent,
