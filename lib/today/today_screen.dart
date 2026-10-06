@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../family/services/family_service.dart';
+import '../services/data_sync.dart';
 import '../jobs/services/job_service.dart';
 import '../reminder/models/reminder.dart' show bn, weekdayBn;
 import '../reminder/services/reminder_service.dart';
@@ -29,6 +30,7 @@ class _TodayScreenState extends State<TodayScreen> {
     ReminderService.changes.addListener(_load);
     JobService.changes.addListener(_load);
     FamilyService.changes.addListener(_load);
+    DataSync.ideasChanged.addListener(_load);
     _load();
   }
 
@@ -37,6 +39,7 @@ class _TodayScreenState extends State<TodayScreen> {
     ReminderService.changes.removeListener(_load);
     JobService.changes.removeListener(_load);
     FamilyService.changes.removeListener(_load);
+    DataSync.ideasChanged.removeListener(_load);
     super.dispose();
   }
 
@@ -56,7 +59,6 @@ class _TodayScreenState extends State<TodayScreen> {
       case TodayTarget.projects: return ('প্রজেক্ট', 0);
       case TodayTarget.backup: return ('ব্যাকআপ', 0);
       case TodayTarget.docs: return ('ডকুমেন্ট ও তথ্য', 0);
-      case TodayTarget.screenTime: return ('স্ক্রিন টাইম', 0);
     }
   }
 
