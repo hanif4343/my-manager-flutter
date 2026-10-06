@@ -1,5 +1,6 @@
 import 'package:home_widget/home_widget.dart';
 import '../db/cashbook_db.dart';
+import 'spending_guard.dart';
 
 /// হোম-স্ক্রিন ক্যাশবুক উইজেটে চলতি মাসের হিসাব পাঠায়
 /// (android: CashbookWidgetProvider.kt)। সব মান String — আগের WidgetService-এর
@@ -60,7 +61,19 @@ class CashbookWidgetService {
       }
     }
 
-    await HomeWidget.saveWidgetData<String>('cb_title', acc.name);
+    // খরচ-প্রহরীর সতর্কতা উইজেটের নামের পাশেও (হোম স্ক্রিনেই চোখে পড়ে)।
+    var title = acc.name;
+    try {
+      if (SpendingGuard.enabled) {
+        final g = await SpendingGuard.assess();
+        if (g.level == GuardLevel.danger) {
+          title = '$title 🚨 জরুরির টাকা নেই!';
+        } else if (g.level == GuardLevel.near) {
+          title = '$title ⚠️ সাবধান';
+        }
+      }
+    } catch (_) {}
+    await HomeWidget.saveWidgetData<String>('cb_title', title);
     await HomeWidget.saveWidgetData<String>('cb_balance', _money(balance));
     await HomeWidget.saveWidgetData<String>('cb_income', _money(income));
     await HomeWidget.saveWidgetData<String>('cb_expense', _money(expense));
