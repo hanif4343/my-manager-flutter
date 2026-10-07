@@ -1090,8 +1090,17 @@ class _CashbookScreenState extends State<CashbookScreen> {
           const SizedBox(width: 10),
           GestureDetector(
             onTap: () async {
-              await CashbookDB.setDebtCleared(d.id!, !d.cleared);
+              final nowCleared = !d.cleared;
+              await CashbookDB.setDebtCleared(d.id!, nowCleared);
               await _afterMutation();
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(nowCleared
+                    ? (d.type == 'lend'
+                        ? '✅ ${_fmt(d.amount)} পাওনা আদায় — খাতায় জমা হিসেবে যোগ হয়েছে'
+                        : '✅ ${_fmt(d.amount)} দেনা পরিশোধ — খাতায় খরচ হিসেবে যোগ হয়েছে')
+                    : 'খাতার ওই এন্ট্রিটা মুছে ফেলা হয়েছে'),
+              ));
             },
             child: Container(
               width: 26, height: 26,
