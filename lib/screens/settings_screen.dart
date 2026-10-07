@@ -30,6 +30,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _digestMinute = 0;
   bool? _autofillSavingEnabled;
   bool? _autofillIMEEnabled;
+  bool _autofillOnlySaved = true;
 
   @override
   void initState() {
@@ -39,6 +40,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadAutofillPrefs() async {
+    try {
+      _autofillOnlySaved = SettingsService.getBool('af_only_saved', defaultValue: true);
+    } catch (_) {}
     try {
       final prefs = await AutofillService().preferences;
       if (mounted) setState(() {
@@ -276,6 +280,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ));
               }
             },
+          ),
+          const SizedBox(height: 8),
+          _settingTile(
+            icon: Icons.filter_alt_outlined,
+            iconColor: AppTheme.accent,
+            title: 'শুধু সেভ করা সাইট/অ্যাপে সাজেশন',
+            subtitle: 'যে ওয়েবসাইট/অ্যাপের পাসওয়ার্ড ভল্টে সেভ আছে শুধু সেখানেই Autofill আসবে। '
+                'যেখানে সেভ নেই সেখানে কোনো কার্ড বা ফিঙ্গারপ্রিন্ট প্রম্পট আসবে না। '
+                'বন্ধ করলে সব জায়গায় পুরো তালিকা দেখাবে।',
+            trailing: Switch(
+              value: _autofillOnlySaved,
+              activeColor: AppTheme.accent,
+              onChanged: (v) async {
+                setState(() => _autofillOnlySaved = v);
+                try { await SettingsService.setBool('af_only_saved', v); } catch (_) {}
+              },
+            ),
           ),
           if (_autofillSavingEnabled != null) ...[
             const SizedBox(height: 8),
