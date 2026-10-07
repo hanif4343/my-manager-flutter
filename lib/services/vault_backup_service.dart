@@ -33,6 +33,10 @@ class WrongBackupPasswordException extends VaultBackupException {
       : super('পাসওয়ার্ড ভুল, অথবা ফাইলটা নষ্ট/বদলে গেছে');
 }
 
+class WrongRecoveryAnswerException extends VaultBackupException {
+  WrongRecoveryAnswerException() : super('উত্তর মেলেনি');
+}
+
 class VaultRestoreResult {
   final int added, updated, skipped, total;
   VaultRestoreResult(this.added, this.updated, this.skipped, this.total);
@@ -46,6 +50,24 @@ class VaultBackupService {
   static const driveFileName = 'mymanager_vault.mmvault';
   static const _lastBackupKey = 'vault_last_backup_ms';
   static const minPasswordLength = 8;
+  static const minAnswerLength = 3;
+  static const _hintIterations = 200000;
+  static const _lastQuestionKey = 'vault_recovery_question';
+
+  /// শেষবার দেওয়া রিকভারি প্রশ্ন (উত্তর কোথাও সেভ হয় না) — পরের ব্যাকআপে আগে থেকে বসানোর জন্য।
+  static String lastQuestion() {
+    try {
+      return SettingsService.getString(_lastQuestionKey);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// উত্তর মেলানোর আগে স্বাভাবিক করা: ছোট হাতের অক্ষর, বাড়তি স্পেস বাদ।
+  /// (যাতে "Dhaka ", "dhaka", "DHAKA" সব একই ধরা হয়)
+  static String normalizeAnswer(String a) =>
+      a.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
 
   static String? lastDriveError() => DriveService.instance.lastError;
 
@@ -68,16 +90,20 @@ class VaultBackupService {
   // ───────────────────── এনক্রিপশন (আলাদা isolate-এ) ─────────────────────
   // PBKDF2 ভারী, মূল থ্রেডে চালালে স্পিনার আটকে যেত।
 
-  static Future<String> _encrypt(List<VaultEntry> entries, String password) {
+  static Future<String> _encrypt(List<VaultEntry> entries, String password,
+      {String? question, String? answer}) {
     final payload = jsonEncode({
       'exported_at': DateTime.now().toIso8601String(),
       'count': entries.length,
       'entries': entries.map((e) => e.toJson()).toList(),
     });
-    return Isolate.run(() => _encryptPayload(payload, password, _iterations));
+    final q = (question ?? '').trim();
+    final a = normalizeAnswer(answer ?? '');
+    return Isolate.run(() => _encryptPayload(payload, password, _iterations, q, a));
   }
 
-  static Future<String> _encryptPayload(String payload, String password, int iter) async {
+  static Future<String> _encryptPayload(
+      String payload, String password, int iter, String question, String answer) async {
     final rnd = Random.secure();
     final salt = List<int>.generate(16, (_) => rnd.nextInt(256));
     final nonce = List<int>.generate(12, (_) => rnd.nextInt(256));
@@ -91,7 +117,7 @@ class VaultBackupService {
       nonce: nonce,
       aad: utf8.encode('$_format-v1'),
     );
-    return jsonEncode({
+    final env = <String, dynamic>{
       'format': _format,
       'v': 1,
       'kdf': 'pbkdf2-hmac-sha256',
@@ -100,7 +126,83 @@ class VaultBackupService {
       'nonce': base64Encode(nonce),
       'ct': base64Encode(box.cipherText),
       'mac': base64Encode(box.mac.bytes),
-    });
+    };
+    // রিকভারি হিন্ট: ব্যাকআপ পাসওয়ার্ডটাই এনক্রিপ্ট করা হয় প্রশ্নের উত্তর থেকে
+    // বানানো কী দিয়ে। ফাইলের ভেতরেই থাকে, তাই নতুন ফোনেও কাজ করে।
+    if (question.isNotEmpty && answer.isNotEmpty) {
+      final hSalt = List<int>.generate(16, (_) => rnd.nextInt(256));
+      final hNonce = List<int>.generate(12, (_) => rnd.nextInt(256));
+      final hKey = await Pbkdf2(
+        macAlgorithm: Hmac.sha256(), iterations: _hintIterations, bits: 256,
+      ).deriveKeyFromPassword(password: answer, nonce: hSalt);
+      final hBox = await algo.encrypt(
+        utf8.encode(password),
+        secretKey: hKey,
+        nonce: hNonce,
+        aad: utf8.encode('$_format-hint-v1'),
+      );
+      env['hint'] = {
+        'q': question,
+        'iter': _hintIterations,
+        'salt': base64Encode(hSalt),
+        'nonce': base64Encode(hNonce),
+        'ct': base64Encode(hBox.cipherText),
+        'mac': base64Encode(hBox.mac.bytes),
+      };
+    }
+    return jsonEncode(env);
+  }
+
+  // ───────────────────── রিকভারি (প্রশ্ন-উত্তর) ─────────────────────
+
+  /// ব্যাকআপ ফাইলে রিকভারি প্রশ্ন থাকলে সেটা; নইলে null।
+  static String? readRecoveryQuestion(String text) {
+    try {
+      final env = jsonDecode(text) as Map<String, dynamic>;
+      if (env['format'] != _format) return null;
+      final h = env['hint'];
+      if (h is! Map) return null;
+      final q = h['q'];
+      return (q is String && q.trim().isNotEmpty) ? q : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// উত্তর ঠিক হলে ব্যাকআপের পাসওয়ার্ড ফেরত দেয়; ভুল হলে [WrongRecoveryAnswerException]।
+  static Future<String> recoverPassword(String text, String answer) async {
+    final Map<String, dynamic> hint;
+    try {
+      final env = jsonDecode(text) as Map<String, dynamic>;
+      hint = Map<String, dynamic>.from(env['hint'] as Map);
+    } catch (_) {
+      throw VaultBackupException('এই ব্যাকআপে রিকভারি প্রশ্ন সেট করা নেই');
+    }
+    final iter = hint['iter'];
+    if (iter is! int || iter < 1000 || iter > 3000000) {
+      throw VaultBackupException('রিকভারি অংশ নষ্ট');
+    }
+    final a = normalizeAnswer(answer);
+    try {
+      return await Isolate.run(() => _recoverPayload(hint, a, iter));
+    } catch (_) {
+      throw WrongRecoveryAnswerException();
+    }
+  }
+
+  static Future<String> _recoverPayload(Map<String, dynamic> h, String answer, int iter) async {
+    final algo = AesGcm.with256bits();
+    final key = await Pbkdf2(
+      macAlgorithm: Hmac.sha256(), iterations: iter, bits: 256,
+    ).deriveKeyFromPassword(password: answer, nonce: base64Decode(h['salt'] as String));
+    final clear = await algo.decrypt(
+      SecretBox(base64Decode(h['ct'] as String),
+          nonce: base64Decode(h['nonce'] as String),
+          mac: Mac(base64Decode(h['mac'] as String))),
+      secretKey: key,
+      aad: utf8.encode('$_format-hint-v1'),
+    );
+    return utf8.decode(clear);
   }
 
   static Future<List<VaultEntry>> _decrypt(String text, String password) async {
@@ -164,9 +266,17 @@ class VaultBackupService {
     return list;
   }
 
-  static Future<int> exportToFile(String password) async {
+  static Future<void> _rememberQuestion(String? q) async {
+    if (q == null || q.trim().isEmpty) return;
+    try {
+      await SettingsService.setString(_lastQuestionKey, q.trim());
+    } catch (_) {}
+  }
+
+  static Future<int> exportToFile(String password, {String? question, String? answer}) async {
     final entries = await _entriesForBackup();
-    final enc = await _encrypt(entries, password);
+    final enc = await _encrypt(entries, password, question: question, answer: answer);
+    await _rememberQuestion(question);
     final dir = await getTemporaryDirectory();
     final d = DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
@@ -188,10 +298,12 @@ class VaultBackupService {
     return ds.signIn();
   }
 
-  static Future<VaultDriveResult> backupToDrive(String password) async {
+  static Future<VaultDriveResult> backupToDrive(String password,
+      {String? question, String? answer}) async {
     final entries = await _entriesForBackup();
     if (!await _ensureDrive()) return VaultDriveResult.notSignedIn;
-    final enc = await _encrypt(entries, password);
+    final enc = await _encrypt(entries, password, question: question, answer: answer);
+    await _rememberQuestion(question);
     final r = await DriveService.instance.backupJson(driveFileName, enc);
     if (r == DriveBackupResult.success) {
       await _markBackup();
