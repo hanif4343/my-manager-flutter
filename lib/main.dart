@@ -1,3 +1,4 @@
+import 'docs/screens/vault_picker_app.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:timezone/data/latest.dart' as tz;
@@ -211,6 +212,17 @@ void autofillEntryPoint() async {
     await SettingsService.init();
   } catch (_) {}
   runApp(const AutofillPickerApp());
+}
+
+/// ফাইল-পিকারে "ডকুমেন্ট ভল্ট" চাপলে খোলা স্ক্রিন (VaultPickActivity): যাচাইয়ের পর
+/// ভল্ট থেকে ফাইল বেছে আপলোড-ট্রেতে রাখে। নিজের আলাদা Flutter engine-এ চলে।
+@pragma('vm:entry-point')
+void vaultPickEntryPoint() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await SettingsService.init();
+  } catch (_) {}
+  runApp(const VaultPickerApp());
 }
 
 /// ক্যাশবুক হোম-উইজেটের "＋ জমা / − খরচ" থেকে খোলা দ্রুত-এন্ট্রি শিট
