@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../family/screens/family_ui.dart';
+import '../../family/services/family_service.dart';
 import '../../reminder/models/reminder.dart' show bn, formatDateBn;
 import '../../widgets/app_theme.dart';
 import '../models/doc_models.dart';
@@ -32,6 +33,7 @@ Future<bool> showDocForm(
   BuildContext context, {
   VaultDoc? existing,
   String? presetCategory,
+  String? presetOwner,
   DocTemplate? template,
 }) async {
   final tpl = template ?? (existing != null ? resolveTemplate(existing) : docTemplates.last);
@@ -44,6 +46,12 @@ Future<bool> showDocForm(
   String category = existing?.category ?? (custom ? (presetCategory ?? 'identity') : tpl.category);
   if (!docCategories.containsKey(category)) category = 'other';
   DateTime? expiry = existing?.expiry;
+  // কার ডকুমেন্ট: '' = আমি। বিকল্পগুলো ফ্যামিলি সদস্য + আগের ডকুমেন্টের নাম থেকে আসে।
+  String owner = (existing?.owner ?? presetOwner ?? '').trim();
+  final ownerOptions = <String>[];
+  final ownerCtrl = TextEditingController();
+  bool ownerOther = false;
+  bool ownersLoaded = false;
   bool hideNumber = true;
   bool fieldsLoaded = existing == null || existing.numberEnc.isEmpty;
   String? error;
@@ -74,6 +82,27 @@ Future<bool> showDocForm(
   Future<Uint8List> oldB(DocPage p) => oldBytes.putIfAbsent(p.fileId, () => DocsCrypto.readFile(p.fileId));
 
   await fSheet(context, existing == null ? 'নতুন: ${tpl.title}' : 'এডিট: ${existing.title}', (ctx, setS) {
+    if (!ownersLoaded) {
+      ownersLoaded = true;
+      () async {
+        final names = <String>[];
+        void add(String n) {
+          n = n.trim();
+          if (n.isNotEmpty && n != kSelfOwnerLabel && !names.contains(n)) names.add(n);
+        }
+        try {
+          for (final m in await FamilyService.members()) { add(m.name); }
+        } catch (_) {}
+        try {
+          for (final d in await DocsService.list()) { add(d.owner); }
+        } catch (_) {}
+        add(owner);
+        ownerOptions
+          ..clear()
+          ..addAll(names);
+        if (ctx.mounted) setS(() {});
+      }();
+    }
     // এডিটে আগের নম্বর/রোল/রেজি. ডিক্রিপ্ট করে ঘরে বসানো (একবারই)।
     if (!fieldsLoaded) {
       fieldsLoaded = true;
@@ -268,6 +297,36 @@ Future<bool> showDocForm(
     final filledCount = slots.where((s) => s.filled).length;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('কার ডকুমেন্ট?', style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5, fontWeight: FontWeight.w800)),
+      const SizedBox(height: 6),
+      Wrap(spacing: 8, runSpacing: 4, children: [
+        ChoiceChip(
+          label: const Text('🙋 $kSelfOwnerLabel', style: TextStyle(fontSize: 12.5)),
+          selected: !ownerOther && owner.isEmpty,
+          onSelected: (_) => setS(() { owner = ''; ownerOther = false; }),
+        ),
+        for (final n in ownerOptions)
+          ChoiceChip(
+            label: Text(n, style: const TextStyle(fontSize: 12.5)),
+            selected: !ownerOther && owner == n,
+            onSelected: (_) => setS(() { owner = n; ownerOther = false; }),
+          ),
+        ChoiceChip(
+          label: const Text('➕ অন্য কেউ', style: TextStyle(fontSize: 12.5)),
+          selected: ownerOther,
+          onSelected: (_) => setS(() { ownerOther = true; ownerCtrl.text = ''; }),
+        ),
+      ]),
+      if (ownerOther) ...[
+        const SizedBox(height: 6),
+        TextField(
+          controller: ownerCtrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'নাম (যেমন: স্ত্রী, বাবু, আম্মু)'),
+        ),
+      ],
+      const SizedBox(height: 14),
       if (custom) ...[
         Wrap(spacing: 8, runSpacing: 6, children: [
           for (final e in docCategories.entries)
@@ -394,6 +453,10 @@ Future<bool> showDocForm(
             setS(() => error = 'নাম দাও');
             return;
           }
+          if (ownerOther && ownerCtrl.text.trim().isEmpty) {
+            setS(() => error = 'কার ডকুমেন্ট তার নাম লেখো');
+            return;
+          }
           setS(() {
             saving = true;
             error = null;
@@ -405,6 +468,7 @@ Future<bool> showDocForm(
             d.tpl = tpl.key;
             d.expiry = showExpiry ? expiry : null;
             d.note = note.text.trim();
+            d.owner = ownerOther ? ownerCtrl.text.trim() : owner;
             final entries = <DocPageEntry>[
               for (final s in slots)
                 if (s.filled)
