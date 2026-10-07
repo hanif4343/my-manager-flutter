@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/vault_backup_service.dart';
 import 'vault_screen.dart';
 import '../widgets/app_theme.dart';
@@ -53,12 +54,27 @@ class _VaultBackupSheetState extends State<_VaultBackupSheet> {
 
   // ───────────── পাসওয়ার্ড ডায়ালগ ─────────────
 
-  Future<String?> _askPassword({required bool confirm, required String title}) {
+  static const _sampleQuestions = [
+    'আমার প্রথম স্কুলের নাম কী?',
+    'আমার শৈশবের ডাকনাম কী?',
+    'আমার প্রথম মোবাইল ফোনের মডেল কী?',
+    'আমার সবচেয়ে প্রিয় শিক্ষকের নাম কী?',
+  ];
+
+  /// সেট করার সময় (confirm=true): পাসওয়ার্ড + রিকভারি প্রশ্ন-উত্তর।
+  /// রিস্টোরের সময় (confirm=false): পাসওয়ার্ড; ফাইলে প্রশ্ন থাকলে "ভুলে গেছি?" বাটন।
+  Future<_PwResult?> _askPassword({
+    required bool confirm,
+    required String title,
+    String? recoveryQuestion,
+  }) {
     final c1 = TextEditingController();
     final c2 = TextEditingController();
+    final cq = TextEditingController(text: confirm ? VaultBackupService.lastQuestion() : '');
+    final ca = TextEditingController();
     bool hide = true;
     String? error;
-    return showDialog<String>(
+    return showDialog<_PwResult>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
@@ -76,8 +92,8 @@ class _VaultBackupSheetState extends State<_VaultBackupSheet> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    'এই পাসওয়ার্ড ভুলে গেলে ব্যাকআপ আর কখনো খোলা যাবে না — কোনো রিকভারির উপায় নেই। '
-                    'এমন কিছু দাও যা মনে থাকবে, আর কোথাও লিখে রাখো।',
+                    'এই পাসওয়ার্ড ভুলে গেলে নিচের রিকভারি প্রশ্নের উত্তর দিয়ে ফিরে পাবে। '
+                    'প্রশ্ন-উত্তর দুটোই ভুলে গেলে ব্যাকআপ আর খোলা যাবে না।',
                     style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5, height: 1.4),
                   ),
                 ),
@@ -101,6 +117,45 @@ class _VaultBackupSheetState extends State<_VaultBackupSheet> {
                   obscureText: hide,
                   style: TextStyle(color: AppTheme.textPrimary),
                   decoration: const InputDecoration(labelText: 'আবার লেখো'),
+                ),
+                const SizedBox(height: 16),
+                Text('🔑 পাসওয়ার্ড রিকভারি (পাসওয়ার্ড ভুলে গেলে কাজে লাগবে)',
+                    style: TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Wrap(spacing: 6, runSpacing: 0, children: [
+                  for (final q in _sampleQuestions)
+                    ActionChip(
+                      label: Text(q, style: const TextStyle(fontSize: 11)),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => setD(() => cq.text = q),
+                    ),
+                ]),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: cq,
+                  style: TextStyle(color: AppTheme.textPrimary),
+                  decoration: const InputDecoration(labelText: 'প্রশ্ন (নিজেরটাও লিখতে পারো)'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: ca,
+                  style: TextStyle(color: AppTheme.textPrimary),
+                  decoration: const InputDecoration(
+                    labelText: 'উত্তর',
+                    helperText: 'এমন উত্তর দাও যা অন্য কেউ আন্দাজ করতে পারবে না',
+                    helperMaxLines: 2,
+                  ),
+                ),
+              ],
+              if (!confirm && recoveryQuestion != null) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(ctx, const _PwResult.forgot()),
+                    icon: const Icon(Icons.help_outline_rounded, size: 18),
+                    label: const Text('পাসওয়ার্ড ভুলে গেছি?'),
+                  ),
                 ),
               ],
               if (error != null) ...[
@@ -126,7 +181,21 @@ class _VaultBackupSheetState extends State<_VaultBackupSheet> {
                   setD(() => error = 'দুইবারের পাসওয়ার্ড মিলছে না');
                   return;
                 }
-                Navigator.pop(ctx, p);
+                if (confirm) {
+                  if (cq.text.trim().length < 3) {
+                    setD(() => error = 'রিকভারি প্রশ্ন লেখো');
+                    return;
+                  }
+                  if (VaultBackupService.normalizeAnswer(ca.text).length < VaultBackupService.minAnswerLength) {
+                    setD(() => error = 'উত্তর কমপক্ষে ${VaultBackupService.minAnswerLength} অক্ষরের দাও');
+                    return;
+                  }
+                  if (VaultBackupService.normalizeAnswer(ca.text) == VaultBackupService.normalizeAnswer(p)) {
+                    setD(() => error = 'উত্তর আর পাসওয়ার্ড একই রেখো না');
+                    return;
+                  }
+                }
+                Navigator.pop(ctx, _PwResult(p, confirm ? cq.text.trim() : null, confirm ? ca.text : null));
               },
               child: Text('ঠিক আছে', style: TextStyle(color: AppTheme.accent)),
             ),
@@ -136,14 +205,106 @@ class _VaultBackupSheetState extends State<_VaultBackupSheet> {
     );
   }
 
+  /// প্রশ্নের উত্তর দিয়ে পাসওয়ার্ড ফিরে পাওয়া। পেলে পাসওয়ার্ড, নইলে null।
+  Future<String?> _recoverFlow(String text, String question) async {
+    final ctrl = TextEditingController();
+    String? error;
+    bool busy = false;
+    final pw = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
+        return AlertDialog(
+          backgroundColor: AppTheme.bg2,
+          title: Text('পাসওয়ার্ড রিকভারি', style: TextStyle(color: AppTheme.textPrimary, fontSize: 17)),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(question, style: TextStyle(color: AppTheme.textPrimary, fontSize: 14.5, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              enabled: !busy,
+              style: TextStyle(color: AppTheme.textPrimary),
+              decoration: const InputDecoration(labelText: 'তোমার উত্তর'),
+            ),
+            if (busy) const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: LinearProgressIndicator(color: AppTheme.accent),
+            ),
+            if (error != null) ...[
+              const SizedBox(height: 10),
+              Text(error!, style: TextStyle(color: AppTheme.red, fontSize: 12.5)),
+            ],
+          ]),
+          actions: [
+            TextButton(onPressed: busy ? null : () => Navigator.pop(ctx), child: const Text('বাতিল')),
+            TextButton(
+              onPressed: busy ? null : () async {
+                if (ctrl.text.trim().isEmpty) {
+                  setD(() => error = 'উত্তর লেখো');
+                  return;
+                }
+                setD(() { busy = true; error = null; });
+                try {
+                  final r = await VaultBackupService.recoverPassword(text, ctrl.text);
+                  if (ctx.mounted) Navigator.pop(ctx, r);
+                } on WrongRecoveryAnswerException {
+                  setD(() { busy = false; error = 'উত্তর মেলেনি, আবার চেষ্টা করো'; });
+                } on VaultBackupException catch (e) {
+                  setD(() { busy = false; error = e.message; });
+                } catch (e) {
+                  setD(() { busy = false; error = '$e'; });
+                }
+              },
+              child: Text('পাসওয়ার্ড দেখাও', style: TextStyle(color: AppTheme.accent)),
+            ),
+          ],
+        );
+      }),
+    );
+    if (pw == null || !mounted) return null;
+    // পাওয়া পাসওয়ার্ড দেখাও (কপি করার সুযোগসহ), তারপর এটা দিয়েই রিস্টোর।
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.bg2,
+        title: Text('✅ তোমার ব্যাকআপ পাসওয়ার্ড', style: TextStyle(color: AppTheme.textPrimary, fontSize: 17)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: AppTheme.bg3, borderRadius: BorderRadius.circular(10)),
+            child: SelectableText(pw,
+                style: TextStyle(color: AppTheme.textPrimary, fontSize: 17, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+          ),
+          const SizedBox(height: 8),
+          Text('এটা কোথাও নিরাপদে লিখে রাখো। "ঠিক আছে" চাপলে এই পাসওয়ার্ড দিয়েই রিস্টোর শুরু হবে।',
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.4)),
+        ]),
+        actions: [
+          TextButton(
+            onPressed: () => Clipboard.setData(ClipboardData(text: pw)),
+            child: const Text('কপি'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('ঠিক আছে', style: TextStyle(color: AppTheme.accent)),
+          ),
+        ],
+      ),
+    );
+    return pw;
+  }
+
   // ───────────── অ্যাকশন ─────────────
 
   Future<void> _exportFile() async {
-    final pw = await _askPassword(confirm: true, title: 'ব্যাকআপের পাসওয়ার্ড ঠিক করো');
-    if (pw == null) return;
+    final r0 = await _askPassword(confirm: true, title: 'ব্যাকআপের পাসওয়ার্ড ঠিক করো');
+    if (r0 == null || r0.pw == null) return;
+    final pw = r0.pw!;
     setState(() { _busy = true; _status = 'এনক্রিপ্ট হচ্ছে... (কয়েক সেকেন্ড লাগতে পারে)'; _isError = false; });
     try {
-      final n = await _external(() => VaultBackupService.exportToFile(pw));
+      final n = await _external(() => VaultBackupService.exportToFile(pw, question: r0.question, answer: r0.answer));
       _setStatus('✅ $nটা এন্ট্রির এনক্রিপ্টেড ফাইল তৈরি হয়েছে।\n'
           'শেয়ার মেনু থেকে Drive/Files/অন্য নিরাপদ জায়গায় সেভ করে নাও — ফাইলটা ফোনে একা রাখলে ফোন হারালে কাজে আসবে না।');
     } on VaultBackupException catch (e) {
@@ -154,11 +315,12 @@ class _VaultBackupSheetState extends State<_VaultBackupSheet> {
   }
 
   Future<void> _backupDrive() async {
-    final pw = await _askPassword(confirm: true, title: 'ব্যাকআপের পাসওয়ার্ড ঠিক করো');
-    if (pw == null) return;
+    final r0 = await _askPassword(confirm: true, title: 'ব্যাকআপের পাসওয়ার্ড ঠিক করো');
+    if (r0 == null || r0.pw == null) return;
+    final pw = r0.pw!;
     setState(() { _busy = true; _status = 'এনক্রিপ্ট করে Drive-এ পাঠানো হচ্ছে...'; _isError = false; });
     try {
-      final r = await _external(() => VaultBackupService.backupToDrive(pw));
+      final r = await _external(() => VaultBackupService.backupToDrive(pw, question: r0.question, answer: r0.answer));
       switch (r) {
         case VaultDriveResult.success:
           _setStatus('✅ ভল্ট এনক্রিপ্ট হয়ে Google Drive-এ (MyManager_Backup ফোল্ডারে) সেভ হয়েছে।');
@@ -222,10 +384,18 @@ class _VaultBackupSheetState extends State<_VaultBackupSheet> {
   Future<void> _finishRestore(String text) async {
     if (mounted) setState(() { _busy = false; _status = null; });
     // ভুল পাসওয়ার্ডে আবার চেষ্টার সুযোগ (সর্বোচ্চ ৩ বার)।
+    final question = VaultBackupService.readRecoveryQuestion(text);
     for (var attempt = 0; attempt < 3; attempt++) {
-      final pw = await _askPassword(
+      final res = await _askPassword(
           confirm: false,
-          title: attempt == 0 ? 'ব্যাকআপের পাসওয়ার্ড দাও' : 'আবার চেষ্টা করো');
+          title: attempt == 0 ? 'ব্যাকআপের পাসওয়ার্ড দাও' : 'আবার চেষ্টা করো',
+          recoveryQuestion: question);
+      if (res == null) return;
+      String? pw = res.pw;
+      if (res.forgot) {
+        pw = await _recoverFlow(text, question!);
+        if (pw == null) { attempt--; continue; }
+      }
       if (pw == null) return;
       if (mounted) setState(() { _busy = true; _status = 'ডিক্রিপ্ট হচ্ছে...'; _isError = false; });
       try {
@@ -246,7 +416,9 @@ class _VaultBackupSheetState extends State<_VaultBackupSheet> {
         return;
       }
     }
-    _setStatus('৩ বার ভুল পাসওয়ার্ড — পরে আবার চেষ্টা করো।', error: true);
+    _setStatus('৩ বার ভুল পাসওয়ার্ড — পরে আবার চেষ্টা করো।'
+        '${question != null ? '\n"পাসওয়ার্ড ভুলে গেছি?" চেপে প্রশ্নের উত্তর দিয়ে ফিরে পেতে পারো।' : ''}',
+        error: true);
   }
 
   // ───────────── UI ─────────────
@@ -353,4 +525,14 @@ class _VaultBackupSheetState extends State<_VaultBackupSheet> {
 /// ইমপোর্ট না করেও শেষ এরর মেসেজ দেখানো যায়।
 class DriveErr {
   static String? detail() => VaultBackupService.lastDriveError();
+}
+
+/// পাসওয়ার্ড ডায়ালগের ফলাফল।
+class _PwResult {
+  final String? pw;
+  final String? question;
+  final String? answer;
+  final bool forgot;
+  const _PwResult(this.pw, this.question, this.answer) : forgot = false;
+  const _PwResult.forgot() : pw = null, question = null, answer = null, forgot = true;
 }
