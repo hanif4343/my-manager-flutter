@@ -142,9 +142,10 @@ class DocsService {
     for (final off in const [90, 30, 7, 0]) {
       final day = exp.subtract(Duration(days: off));
       if (day.isBefore(today)) continue;
+      final who = d.isMine ? '' : '${d.owner.trim()}-এর ';
       final title = off == 0
-          ? '🚨 আজ ${d.title}-এর মেয়াদ শেষ!'
-          : '📄 ${d.title}-এর মেয়াদ শেষ হতে ${bn(off)} দিন বাকি';
+          ? '🚨 আজ $who${d.title}-এর মেয়াদ শেষ!'
+          : '📄 $who${d.title}-এর মেয়াদ শেষ হতে ${bn(off)} দিন বাকি';
       final r = Reminder(
         title: title,
         note: 'মেয়াদ শেষ: ${formatDateBn(exp)} — নবায়নের প্রস্তুতি নাও',
