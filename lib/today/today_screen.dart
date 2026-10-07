@@ -59,6 +59,7 @@ class _TodayScreenState extends State<TodayScreen> {
       case TodayTarget.projects: return ('প্রজেক্ট', 0);
       case TodayTarget.backup: return ('ব্যাকআপ', 0);
       case TodayTarget.docs: return ('ডকুমেন্ট ও তথ্য', 0);
+      case TodayTarget.screenTime: return ('স্ক্রিন টাইম', 0);
     }
   }
 
