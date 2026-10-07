@@ -29,6 +29,7 @@ class _DocsHomeScreenState extends State<DocsHomeScreen> with WidgetsBindingObse
   List<VaultDoc> _docs = [];
   int _tray = 0; // আপলোডের জন্য প্রস্তুত ফাইলের সংখ্যা
   String _cat = 'all';
+  String? _owner; // null = সবার; '' = আমার; নইলে নির্দিষ্ট ব্যক্তি
   final _search = TextEditingController();
 
   @override
@@ -95,7 +96,7 @@ class _DocsHomeScreenState extends State<DocsHomeScreen> with WidgetsBindingObse
   Future<void> _add() async {
     final t = await showDocTypePicker(context);
     if (t == null || !mounted) return;
-    await showDocForm(context, template: t, presetCategory: _cat == 'all' ? null : _cat);
+    await showDocForm(context, template: t, presetCategory: _cat == 'all' ? null : _cat, presetOwner: _owner);
   }
 
   @override
@@ -152,12 +153,19 @@ class _DocsHomeScreenState extends State<DocsHomeScreen> with WidgetsBindingObse
     final q = _search.text.trim().toLowerCase();
     final list = _docs.where((d) {
       if (_cat != 'all' && d.category != _cat) return false;
-      if (q.isNotEmpty && !d.title.toLowerCase().contains(q) && !d.note.toLowerCase().contains(q)) return false;
+      if (_owner != null && d.owner.trim() != _owner) return false;
+      if (q.isNotEmpty &&
+          !d.title.toLowerCase().contains(q) &&
+          !d.note.toLowerCase().contains(q) &&
+          !d.ownerLabel.toLowerCase().contains(q)) return false;
       return true;
     }).toList();
 
     final expiring = _docs.where((d) => d.daysToExpiry != null && d.daysToExpiry! <= 30).length;
     final cats = docCategories.keys.where((k) => _docs.any((d) => d.category == k)).toList();
+    // কার কার ডকুমেন্ট আছে ('' = আমি সবার আগে)। একজনের হলে ফিল্টার দেখানো হয় না।
+    final owners = <String>{for (final d in _docs) d.owner.trim()}.toList()
+      ..sort((a, b) => a.isEmpty ? -1 : (b.isEmpty ? 1 : a.compareTo(b)));
 
     return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 90), children: [
       fCard(
@@ -221,6 +229,15 @@ class _DocsHomeScreenState extends State<DocsHomeScreen> with WidgetsBindingObse
             ),
           ),
         ),
+      if (owners.length > 1)
+        SizedBox(
+          height: 40,
+          child: ListView(scrollDirection: Axis.horizontal, children: [
+            _ownerChip(null, 'সবার'),
+            for (final o in owners)
+              _ownerChip(o, '${o.isEmpty ? '🙋 $kSelfOwnerLabel' : '👤 $o'} ${bn(_docs.where((d) => d.owner.trim() == o).length)}'),
+          ]),
+        ),
       if (cats.length > 1)
         SizedBox(
           height: 40,
@@ -238,6 +255,22 @@ class _DocsHomeScreenState extends State<DocsHomeScreen> with WidgetsBindingObse
       else
         for (final d in list) _docCard(d),
     ]);
+  }
+
+  Widget _ownerChip(String? key, String label) {
+    final sel = _owner == key;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8, bottom: 6),
+      child: ChoiceChip(
+        label: Text(label, style: TextStyle(color: sel ? Colors.white : AppTheme.textSecondary, fontSize: 12.5, fontWeight: FontWeight.w600)),
+        selected: sel,
+        showCheckmark: false,
+        selectedColor: AppTheme.accent,
+        backgroundColor: AppTheme.bg2,
+        side: BorderSide(color: sel ? AppTheme.accent : AppTheme.border),
+        onSelected: (_) => setState(() => _owner = key),
+      ),
+    );
   }
 
   Widget _chip(String key, String label) {
@@ -277,7 +310,7 @@ class _DocsHomeScreenState extends State<DocsHomeScreen> with WidgetsBindingObse
             Text(d.title, maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: AppTheme.textPrimary, fontSize: 14.5, fontWeight: FontWeight.w700)),
             const SizedBox(height: 3),
-            Text('${cat.$2} · ${d.pages.isEmpty ? 'ফাইল নেই' : '${bn(d.pages.length)}টা পাতা'}${d.numberEnc.isNotEmpty ? ' · 🔢 নম্বর আছে' : ''}',
+            Text('${d.isMine ? '' : '👤 ${d.owner.trim()} · '}${cat.$2} · ${d.pages.isEmpty ? 'ফাইল নেই' : '${bn(d.pages.length)}টা পাতা'}${d.numberEnc.isNotEmpty ? ' · 🔢 নম্বর আছে' : ''}',
                 style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
           ]),
         ),
