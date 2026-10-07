@@ -14,6 +14,9 @@ const docCategories = <String, (String, String, List<String>)>{
 
 // ───────────────────────── ডকুমেন্টের ধরন (টেমপ্লেট) ─────────────────────────
 
+/// ডকুমেন্টের মালিক ফাঁকা থাকলে এই নামে দেখানো হয়।
+const kSelfOwnerLabel = 'আমি';
+
 const kFront = 'সামনের দিক';
 const kBack = 'পেছনের দিক';
 
@@ -197,6 +200,8 @@ class VaultDoc {
   String numberEnc; // নম্বর/রোল/রেজি. — এনক্রিপ্টেড (base64), ফাঁকা হলে নেই
   DateTime? expiry;
   String note;
+  /// কার ডকুমেন্ট — ফাঁকা মানে নিজের ("আমি"); নইলে স্ত্রী/সন্তান ইত্যাদির নাম।
+  String owner;
   List<DocPage> pages;
   List<int> rem;
   int createdAt;
@@ -210,6 +215,7 @@ class VaultDoc {
     this.numberEnc = '',
     this.expiry,
     this.note = '',
+    this.owner = '',
     List<DocPage>? pages,
     List<int>? rem,
     int? createdAt,
@@ -220,6 +226,9 @@ class VaultDoc {
         updatedAt = updatedAt ?? DateTime.now().millisecondsSinceEpoch;
 
   String get emoji => (docCategories[category] ?? docCategories['other']!).$1;
+
+  bool get isMine => owner.trim().isEmpty;
+  String get ownerLabel => isMine ? kSelfOwnerLabel : owner.trim();
 
   int? get daysToExpiry =>
       expiry == null ? null : dateOnly(expiry!).difference(dateOnly(DateTime.now())).inDays;
@@ -239,6 +248,7 @@ class VaultDoc {
         'number_enc': numberEnc,
         'expiry': expiry == null ? null : Reminder.ymd(expiry!),
         'note': note,
+        'owner': owner,
         'pages': jsonEncode(pages.map((p) => p.toJson()).toList()),
         'rem': rem.join(','),
         'created_at': createdAt,
@@ -261,6 +271,7 @@ class VaultDoc {
       numberEnc: (m['number_enc'] as String?) ?? '',
       expiry: (exp == null || exp.isEmpty) ? null : Reminder.parseYmd(exp),
       note: (m['note'] as String?) ?? '',
+      owner: (m['owner'] as String?) ?? '',
       pages: pages,
       rem: (m['rem'] as String? ?? '')
           .split(',')
