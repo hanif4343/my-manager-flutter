@@ -9,7 +9,9 @@ import '../models/doc_models.dart';
 import '../services/docs_service.dart';
 import 'doc_form_sheet.dart';
 import 'doc_viewer_screen.dart';
+import '../services/docs_export_service.dart';
 import 'docs_backup_sheet.dart';
+import 'doc_type_picker.dart';
 
 /// ডকুমেন্ট ও সনদের এনক্রিপ্টেড ভল্ট। ঢুকতে ফিঙ্গারপ্রিন্ট/PIN লাগে; অ্যাপ
 /// ব্যাকগ্রাউন্ডে গেলে নিজে বন্ধ হয় (ভল্টের মতো)।
@@ -25,6 +27,7 @@ class _DocsHomeScreenState extends State<DocsHomeScreen> with WidgetsBindingObse
   bool _authFailed = false;
   bool _loading = true;
   List<VaultDoc> _docs = [];
+  int _tray = 0; // আপলোডের জন্য প্রস্তুত ফাইলের সংখ্যা
   String _cat = 'all';
   final _search = TextEditingController();
 
@@ -33,6 +36,7 @@ class _DocsHomeScreenState extends State<DocsHomeScreen> with WidgetsBindingObse
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     DocsService.changes.addListener(_load);
+    DocsExport.trayChanges.addListener(_loadTray);
     _auth();
   }
 
@@ -40,6 +44,7 @@ class _DocsHomeScreenState extends State<DocsHomeScreen> with WidgetsBindingObse
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     DocsService.changes.removeListener(_load);
+    DocsExport.trayChanges.removeListener(_loadTray);
     _search.dispose();
     super.dispose();
   }
@@ -67,19 +72,30 @@ class _DocsHomeScreenState extends State<DocsHomeScreen> with WidgetsBindingObse
         if (e is File && e.uri.pathSegments.last.startsWith('docs_tmp_')) e.deleteSync();
       }
     } catch (_) {}
+    // আগের শেয়ারের সাময়িক কপি সাফ; মেয়াদ-শেষ আপলোড-ট্রের ফাইলও।
+    await DocsExport.cleanShareTemp();
     await _load();
+  }
+
+  Future<void> _loadTray() async {
+    if (!_authed) return;
+    final n = await DocsExport.trayCount();
+    if (mounted) setState(() => _tray = n);
   }
 
   Future<void> _load() async {
     if (!_authed) return;
     final l = await DocsService.list();
     if (mounted) setState(() { _docs = l; _loading = false; });
+    _loadTray();
   }
 
   Color _expColor(int d) => d < 0 ? AppTheme.red : (d <= 30 ? AppTheme.yellow : AppTheme.textSecondary);
 
   Future<void> _add() async {
-    await showDocForm(context, presetCategory: _cat == 'all' ? null : _cat);
+    final t = await showDocTypePicker(context);
+    if (t == null || !mounted) return;
+    await showDocForm(context, template: t, presetCategory: _cat == 'all' ? null : _cat);
   }
 
   @override
@@ -154,6 +170,27 @@ class _DocsHomeScreenState extends State<DocsHomeScreen> with WidgetsBindingObse
           ),
         ]),
       ),
+      if (_tray > 0)
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+          decoration: BoxDecoration(color: AppTheme.accent.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+          child: Row(children: [
+            Icon(Icons.upload_file_rounded, color: AppTheme.accent, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text('${bn(_tray)}টা ফাইল ব্রাউজার/সাইটে আপলোডের জন্য প্রস্তুত (ফাইল-পিকারে "ডকুমেন্ট ভল্ট")। ১০ মিনিট পর নিজে মুছবে।',
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5, height: 1.35)),
+            ),
+            TextButton(
+              onPressed: () async {
+                await DocsExport.clearTray();
+                _loadTray();
+              },
+              child: Text('বন্ধ করো', style: TextStyle(color: AppTheme.red, fontSize: 12.5)),
+            ),
+          ]),
+        ),
       if (expiring > 0)
         Container(
           margin: const EdgeInsets.only(bottom: 10),
@@ -195,7 +232,7 @@ class _DocsHomeScreenState extends State<DocsHomeScreen> with WidgetsBindingObse
         ),
       if (_docs.isEmpty)
         fEmpty(Icons.folder_special_outlined,
-            'কোনো ডকুমেন্ট নেই।\nনিচের + বাটনে ট্যাপ করে NID, সনদ, ছবি, স্বাক্ষর যোগ করো — ক্যামেরা বা গ্যালারি থেকে।')
+            'কোনো ডকুমেন্ট নেই।\nনিচের + বাটনে ট্যাপ করে NID, জন্মনিবন্ধন, SSC/HSC সনদ, ছবি, স্বাক্ষর যোগ করো — ক্যামেরা বা গ্যালারি থেকে।')
       else if (list.isEmpty)
         fEmpty(Icons.search_off_rounded, 'কিছু পাওয়া যায়নি')
       else
