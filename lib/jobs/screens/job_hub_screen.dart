@@ -680,9 +680,12 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
       ),
     );
     if (picked == null || picked == c.status) return;
-    await JobService.setStatus(c, picked);
+    final msg = await JobService.setStatus(c, picked);
     await _load();
-    if (picked == 'applied' && mounted) {
+    if (!mounted) return;
+    if (msg != null) {
+      _snack(picked == 'applied' ? '$msg\nডেডলাইনের রিমাইন্ডারও বন্ধ করা হলো ✓' : msg);
+    } else if (picked == 'applied') {
       _snack('আবেদনের ডেডলাইনের রিমাইন্ডার বন্ধ করা হলো ✓');
     }
   }
