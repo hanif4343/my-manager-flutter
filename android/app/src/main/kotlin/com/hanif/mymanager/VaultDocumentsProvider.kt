@@ -1,5 +1,8 @@
 package com.hanif.mymanager
 
+import android.app.AuthenticationRequiredException
+import android.app.PendingIntent
+import android.content.Intent
 import android.content.res.AssetFileDescriptor
 import android.database.Cursor
 import android.database.MatrixCursor
@@ -21,7 +24,9 @@ import java.io.FileNotFoundException
  *  • এখানে শুধু সেই ফাইলগুলোই দেখা যায় যা ব্যবহারকারী ভল্টের ভেতর থেকে (ফিঙ্গারপ্রিন্ট/PIN
  *    যাচাইয়ের পর) "আপলোডের জন্য প্রস্তুত করো" চেপে ট্রেতে (cacheDir/vault_out) রেখেছে।
  *    ভল্টের এনক্রিপ্টেড ফাইল এখান থেকে কখনও পড়া যায় না।
- *  • ট্রেতে কিছু না থাকলে রুটটাই দেখায় না।
+ *  • "ডকুমেন্ট ভল্ট" রুট সব সময় দেখায়। ট্রেতে ফাইল না থাকলে (বা "আরও ডকুমেন্ট" চাপলে)
+ *    AuthenticationRequiredException দিয়ে VaultPickActivity খোলে — সেখানে ফিঙ্গারপ্রিন্ট/PIN
+ *    দিয়ে ভল্ট থেকে ফাইল বেছে ট্রেতে রাখা হয়, তারপর পিকার সেগুলো দেখায়।
  *  • ১০ মিনিটের পুরনো ফাইল দেখায় না ও মুছে ফেলে (Dart-এর DocsExport.trayTtl-এর সাথে মেলাতে হবে)।
  *  • MANAGE_DOCUMENTS পারমিশনের কারণে শুধু সিস্টেমের পিকারই এটা কল করতে পারে।
  */
@@ -30,7 +35,17 @@ class VaultDocumentsProvider : DocumentsProvider() {
     companion object {
         private const val ROOT_ID = "vault"
         private const val ROOT_DOC_ID = "root"
+        private const val MORE_DOC_ID = "more"
         private const val TTL_MS = 10 * 60 * 1000L
+        // VaultPickActivity শেষ হওয়ার পর এই সময় আর নতুন করে যাচাই চায় না (লুপ ঠেকাতে ও সুবিধার জন্য)।
+        private const val UNLOCK_WINDOW_MS = 60 * 1000L
+
+        @Volatile private var unlockedAt = 0L
+
+        /** VaultPickActivity যাচাই + ফাইল বাছা শেষে ডাকে (একই প্রসেস)। */
+        fun markUnlocked() {
+            unlockedAt = System.currentTimeMillis()
+        }
 
         private val DEFAULT_ROOT_PROJECTION = arrayOf(
             Root.COLUMN_ROOT_ID,
@@ -53,6 +68,19 @@ class VaultDocumentsProvider : DocumentsProvider() {
     }
 
     override fun onCreate(): Boolean = true
+
+    private fun recentlyUnlocked(): Boolean =
+        System.currentTimeMillis() - unlockedAt < UNLOCK_WINDOW_MS
+
+    /** ফাইল-পিকারকে বলে: আগে VaultPickActivity-তে যাচাই/বাছাই করে আসো, তারপর আবার লোড করো। */
+    private fun authRequired(): AuthenticationRequiredException {
+        val ctx = context!!
+        val intent = Intent(ctx, VaultPickActivity::class.java)
+        val pi = PendingIntent.getActivity(
+            ctx, 7, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return AuthenticationRequiredException(SecurityException("vault locked"), pi)
+    }
 
     private fun trayDir(): File = File(context!!.cacheDir, "vault_out")
 
@@ -107,11 +135,11 @@ class VaultDocumentsProvider : DocumentsProvider() {
         }
     }
 
-    private fun addRootDirRow(c: MatrixCursor) {
+    private fun addDirRow(c: MatrixCursor, id: String, name: String) {
         c.newRow().apply {
-            add(Document.COLUMN_DOCUMENT_ID, ROOT_DOC_ID)
+            add(Document.COLUMN_DOCUMENT_ID, id)
             add(Document.COLUMN_MIME_TYPE, Document.MIME_TYPE_DIR)
-            add(Document.COLUMN_DISPLAY_NAME, "ডকুমেন্ট ভল্ট")
+            add(Document.COLUMN_DISPLAY_NAME, name)
             add(Document.COLUMN_LAST_MODIFIED, null)
             add(Document.COLUMN_FLAGS, 0)
             add(Document.COLUMN_SIZE, null)
@@ -121,15 +149,14 @@ class VaultDocumentsProvider : DocumentsProvider() {
     override fun queryRoots(projection: Array<out String>?): Cursor {
         val cols = if (projection != null) arrayOf(*projection) else DEFAULT_ROOT_PROJECTION
         val c = MatrixCursor(cols)
-        // ট্রে ফাঁকা হলে রুট লুকানো — পিকারে অকারণ ভিড় হয় না।
-        if (liveFiles().isEmpty()) return c
+        // সব সময় দেখায়: চাপলে যাচাইয়ের পর ভল্ট থেকে ফাইল বাছা যায়।
         c.newRow().apply {
             add(Root.COLUMN_ROOT_ID, ROOT_ID)
             add(Root.COLUMN_MIME_TYPES, "*/*")
             add(Root.COLUMN_FLAGS, Root.FLAG_LOCAL_ONLY)
             add(Root.COLUMN_ICON, R.mipmap.ic_launcher)
             add(Root.COLUMN_TITLE, "ডকুমেন্ট ভল্ট")
-            add(Root.COLUMN_SUMMARY, "আপলোডের জন্য প্রস্তুত ফাইল")
+            add(Root.COLUMN_SUMMARY, "ফিঙ্গারপ্রিন্ট দিয়ে ভল্ট থেকে ফাইল দাও")
             add(Root.COLUMN_DOCUMENT_ID, ROOT_DOC_ID)
         }
         return c
@@ -139,7 +166,9 @@ class VaultDocumentsProvider : DocumentsProvider() {
         val cols = if (projection != null) arrayOf(*projection) else DEFAULT_DOC_PROJECTION
         val c = MatrixCursor(cols)
         if (documentId == ROOT_DOC_ID) {
-            addRootDirRow(c)
+            addDirRow(c, ROOT_DOC_ID, "ডকুমেন্ট ভল্ট")
+        } else if (documentId == MORE_DOC_ID) {
+            addDirRow(c, MORE_DOC_ID, "➕ আরও ডকুমেন্ট বাছো")
         } else {
             addFileRow(c, resolve(documentId))
         }
@@ -153,8 +182,19 @@ class VaultDocumentsProvider : DocumentsProvider() {
     ): Cursor {
         val cols = if (projection != null) arrayOf(*projection) else DEFAULT_DOC_PROJECTION
         val c = MatrixCursor(cols)
-        if (parentDocumentId != ROOT_DOC_ID) return c
-        for (f in liveFiles()) addFileRow(c, f)
+        val live = liveFiles()
+        when (parentDocumentId) {
+            ROOT_DOC_ID -> {
+                // ট্রে ফাঁকা ও এইমাত্র যাচাই হয়নি → যাচাই/বাছাইয়ের স্ক্রিন খোলাও।
+                if (live.isEmpty() && !recentlyUnlocked()) throw authRequired()
+                if (live.isNotEmpty()) addDirRow(c, MORE_DOC_ID, "➕ আরও ডকুমেন্ট বাছো (ভল্ট খুলবে)")
+                for (f in live) addFileRow(c, f)
+            }
+            MORE_DOC_ID -> {
+                if (!recentlyUnlocked()) throw authRequired()
+                for (f in live) addFileRow(c, f)
+            }
+        }
         return c
     }
 
