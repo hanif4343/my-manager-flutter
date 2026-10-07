@@ -230,6 +230,21 @@
              tools:replace manifest-merge override on the plugin's own
              component, not a second competing <service> block. -->
 
+        <!-- ডকুমেন্ট ভল্ট → ফাইল-পিকারের সোর্স: ব্রাউজার/ওয়েবসাইটে "Choose file" চাপলে গ্যালারির
+             মতো "ডকুমেন্ট ভল্ট" দেখায়। শুধু ব্যবহারকারীর "আপলোডের জন্য প্রস্তুত করো" চাপা
+             ফাইল (১০ মিনিট) দেখায়, এনক্রিপ্টেড ভল্ট নয়। MANAGE_DOCUMENTS থাকায় শুধু
+             সিস্টেম পিকার এটা ডাকতে পারে। -->
+        <provider
+            android:name=".VaultDocumentsProvider"
+            android:authorities="${applicationId}.vaultdocs"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER"/>
+            </intent-filter>
+        </provider>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>
