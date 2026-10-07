@@ -34,6 +34,18 @@ class DocsPicker {
         return NewDocPage(bytes, img.name, _mimeOf(img.name));
       });
 
+  /// গ্যালারি থেকে একসাথে অনেক ছবি (পাতার সংখ্যা ঠিক না থাকা ডকুমেন্টের জন্য)।
+  static Future<List<NewDocPage>> manyImages() => _guard(() async {
+        final list = await ImagePicker().pickMultiImage(imageQuality: 85, maxWidth: 2200);
+        final out = <NewDocPage>[];
+        for (final img in list) {
+          final bytes = await img.readAsBytes();
+          if (bytes.length > maxBytes) throw const FormatException('একটা ছবি ১৫ MB-এর বেশি');
+          out.add(NewDocPage(bytes, img.name, _mimeOf(img.name)));
+        }
+        return out;
+      });
+
   static Future<NewDocPage?> file() => _guard(() async {
         final r = await FilePicker.platform.pickFiles(
           type: FileType.custom,
