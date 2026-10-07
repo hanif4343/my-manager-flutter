@@ -117,6 +117,8 @@ class _DocViewerScreenState extends State<DocViewerScreen> {
               Text(cat.$1, style: const TextStyle(fontSize: 22)),
               const SizedBox(width: 10),
               Text(cat.$2, style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 8),
+              fChip(_doc.isMine ? '🙋 ${_doc.ownerLabel}' : '👤 ${_doc.ownerLabel}', AppTheme.accent),
               const Spacer(),
               if (d != null)
                 fChip(
