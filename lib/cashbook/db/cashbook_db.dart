@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/cashbook_account.dart';
@@ -6,6 +7,7 @@ import '../models/cashbook_budget.dart';
 import '../models/cashbook_debt.dart';
 import '../services/cashbook_widget_service.dart';
 import '../services/spending_guard.dart';
+import '../../services/settings_service.dart';
 
 /// The Cashbook is deliberately kept out of mymanager.db — its own file
 /// (cashbook.db), its own version history, its own migrations. Nothing
@@ -286,14 +288,81 @@ class CashbookDB {
     return d.insert('debts', debt.toMap());
   }
 
+  static const _settleKey = 'debt_settle_entries'; // {"দেনা-id": এন্ট্রি-id}
+
+  static Map<String, dynamic> _settleMap() {
+    try {
+      return Map<String, dynamic>.from(jsonDecode(SettingsService.getString(_settleKey)) as Map);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> _saveSettleMap(Map<String, dynamic> m) =>
+      SettingsService.setString(_settleKey, jsonEncode(m));
+
+  /// দেনা/পাওনা মেটানো হলে খাতায় নিজে এন্ট্রি:
+  ///  • পাওনা আদায় (lend)   → জমা
+  ///  • দেনা পরিশোধ (borrow) → খরচ
+  /// টিক তুলে নিলে ওই এন্ট্রিও মুছে যায়; আবার টিক দিলে নতুন করে (কখনো দুবার নয়)।
   static Future<void> setDebtCleared(int id, bool cleared) async {
     final d = await db;
     await d.update('debts', {'cleared': cleared ? 1 : 0}, where: 'id=?', whereArgs: [id]);
+    try {
+      await _syncDebtLedger(id, cleared);
+    } catch (_) {
+      // খাতার এন্ট্রি ব্যর্থ হলেও দেনার টিক আটকাবে না
+    }
+  }
+
+  static Future<void> _syncDebtLedger(int id, bool cleared) async {
+    final d = await db;
+    final map = _settleMap();
+    final key = '$id';
+    if (cleared) {
+      if (map.containsKey(key)) return;
+      final rows = await d.query('debts', where: 'id=?', whereArgs: [id]);
+      if (rows.isEmpty) return;
+      final debt = CashbookDebt.fromMap(rows.first);
+      final acc = await currentMonthAccount();
+      final ms = DateTime.now().millisecondsSinceEpoch;
+      final isLend = debt.type == 'lend';
+      final entryId = await insertEntry(CashbookEntry(
+        accountId: acc.id!,
+        type: isLend ? 'in' : 'out',
+        amount: debt.amount,
+        category: 'other',
+        note: isLend ? 'পাওনা আদায়: ${debt.name}' : 'দেনা পরিশোধ: ${debt.name}',
+        date: todayIso(),
+        createdAt: ms,
+        updatedAt: ms,
+      ));
+      map[key] = entryId;
+      await _saveSettleMap(map);
+    } else {
+      final eid = map.remove(key);
+      if (eid != null) {
+        await deleteEntry((eid as num).toInt());
+        await _saveSettleMap(map);
+      }
+    }
   }
 
   static Future<void> deleteDebt(int id) async {
     final d = await db;
     await d.delete('debts', where: 'id=?', whereArgs: [id]);
+    // খাতার আগের এন্ট্রি থেকে যাবে (টাকা সত্যিই লেনদেন হয়েছিল) — শুধু যোগসূত্র মোছা।
+    final m = _settleMap();
+    if (m.remove('$id') != null) await _saveSettleMap(m);
+  }
+
+  /// [type] ('in'/'out') এন্ট্রিতে ব্যবহৃত ক্যাটাগরি, সবচেয়ে সাম্প্রতিক আগে।
+  static Future<List<String>> recentCategoryIds(String type) async {
+    final d = await db;
+    final rows = await d.rawQuery(
+        'SELECT category, MAX(created_at) AS t FROM entries WHERE type=? AND category IS NOT NULL GROUP BY category ORDER BY t DESC',
+        [type]);
+    return rows.map((r) => r['category'] as String).toList();
   }
 
   // ── FULL EXPORT/IMPORT (for Drive backup) ────────────
