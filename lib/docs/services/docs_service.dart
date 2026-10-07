@@ -15,6 +15,15 @@ class NewDocPage {
   NewDocPage(this.bytes, this.name, this.mime);
 }
 
+/// সেভের সময় একটা পাতার স্লট: হয় আগের পাতা রাখা ([old]), নয়তো নতুন ([fresh])।
+/// [fresh] থাকলে আগের পাতাটা (থাকলে) মুছে যায়।
+class DocPageEntry {
+  final DocPage? old;
+  final NewDocPage? fresh;
+  final String label;
+  DocPageEntry({this.old, this.fresh, required this.label}) : assert(old != null || fresh != null);
+}
+
 class DocsService {
   static final ValueNotifier<int> changes = ValueNotifier(0);
 
@@ -22,8 +31,8 @@ class DocsService {
 
   static String newId() => 'd_${DateTime.now().microsecondsSinceEpoch}';
 
+  /// পুরনো পদ্ধতি — ব্যাকআপ রিস্টোর এখনও এটা ব্যবহার করে।
   /// [number] নতুন নম্বর (সাধারণ লেখা) — null হলে আগেরটাই থাকে।
-  /// [removed] এডিটে বাদ দেওয়া পাতা; [added] নতুন পাতা।
   static Future<void> save(
     VaultDoc doc, {
     String? number,
@@ -47,6 +56,58 @@ class DocsService {
     changes.value++;
   }
 
+  /// ফর্ম থেকে সেভ: পাতা ঠিক ক্রমে (সামনে, পেছনে…) থাকে, লেবেলসহ।
+  /// [fields] — নম্বর/রোল/রেজি. (null হলে আগেরটাই থাকে)।
+  static Future<void> saveEntries(
+    VaultDoc doc, {
+    Map<String, String>? fields,
+    required List<DocPageEntry> entries,
+  }) async {
+    if (fields != null) {
+      doc.numberEnc = await DocsCrypto.encryptText(DocFields.encode(fields));
+    }
+
+    final keep = entries.where((e) => e.fresh == null && e.old != null).map((e) => e.old!.fileId).toSet();
+    final toDelete = doc.pages.where((p) => !keep.contains(p.fileId)).toList();
+
+    final newPages = <DocPage>[];
+    for (final e in entries) {
+      if (e.fresh != null) {
+        final id = await DocsCrypto.saveFile(e.fresh!.bytes);
+        newPages.add(DocPage(id, e.fresh!.name, e.fresh!.mime, e.fresh!.bytes.length, label: e.label));
+      } else {
+        newPages.add(e.old!.withLabel(e.label));
+      }
+    }
+    doc.pages = newPages;
+
+    doc.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    await _syncReminders(doc);
+    await DocsDB.upsert(doc);
+    // নতুন ডেটা নিরাপদে বসার পরেই আগের ফাইল মোছা।
+    for (final p in toDelete) {
+      await DocsCrypto.deleteFile(p.fileId);
+    }
+    changes.value++;
+  }
+
+  /// এডিটের পর একটা পাতার ছবি বদলে দেওয়া (জায়গা ও লেবেল একই থাকে)।
+  static Future<DocPage> replacePage(VaultDoc doc, DocPage old, Uint8List bytes,
+      {String mime = 'image/jpeg'}) async {
+    final idx = doc.pages.indexWhere((p) => p.fileId == old.fileId);
+    if (idx < 0) throw StateError('পাতাটা আর নেই');
+    final id = await DocsCrypto.saveFile(bytes);
+    final base = old.name.contains('.') ? old.name.substring(0, old.name.lastIndexOf('.')) : old.name;
+    final ext = mime == 'image/png' ? 'png' : 'jpg';
+    final fresh = DocPage(id, '$base.$ext', mime, bytes.length, label: old.label);
+    doc.pages[idx] = fresh;
+    doc.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    await DocsDB.upsert(doc);
+    await DocsCrypto.deleteFile(old.fileId);
+    changes.value++;
+    return fresh;
+  }
+
   static Future<void> delete(VaultDoc doc) async {
     for (final p in doc.pages) {
       await DocsCrypto.deleteFile(p.fileId);
@@ -57,6 +118,10 @@ class DocsService {
   }
 
   static Future<String> numberOf(VaultDoc d) => DocsCrypto.decryptText(d.numberEnc);
+
+  /// নম্বর / রোল / রেজি. — key → মান।
+  static Future<Map<String, String>> fieldsOf(VaultDoc d) async =>
+      DocFields.decode(await DocsCrypto.decryptText(d.numberEnc));
 
   // ── মেয়াদের রিমাইন্ডার: ৯০, ৩০, ৭ দিন আগে ও শেষ দিনে (সকাল ৮টা) ──
 
