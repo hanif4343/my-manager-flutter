@@ -230,6 +230,17 @@
              tools:replace manifest-merge override on the plugin's own
              component, not a second competing <service> block. -->
 
+        <!-- ফাইল-পিকারে "ডকুমেন্ট ভল্ট" চাপলে VaultDocumentsProvider এটা PendingIntent দিয়ে চালু করে:
+             যাচাই + ভল্ট থেকে ফাইল বাছা। নিজের PendingIntent দিয়ে চলে, তাই exported লাগে না। -->
+        <activity
+            android:name=".VaultPickActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@style/AutofillTheme"
+            android:windowSoftInputMode="adjustResize"/>
+
         <!-- ডকুমেন্ট ভল্ট → ফাইল-পিকারের সোর্স: ব্রাউজার/ওয়েবসাইটে "Choose file" চাপলে গ্যালারির
              মতো "ডকুমেন্ট ভল্ট" দেখায়। শুধু ব্যবহারকারীর "আপলোডের জন্য প্রস্তুত করো" চাপা
              ফাইল (১০ মিনিট) দেখায়, এনক্রিপ্টেড ভল্ট নয়। MANAGE_DOCUMENTS থাকায় শুধু
