@@ -45,6 +45,9 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
   bool _recurring = false;
   String? _voucherBase64;
   List<CashbookCategory> _categories = [];
+  List<String> _recentIds = []; // এই ধরনে (জমা/খরচ) সাম্প্রতিক ব্যবহৃত ক্যাটাগরি, নতুন আগে
+  bool _expanded = false;
+  bool _touched = false; // ব্যবহারকারী নিজে ক্যাটাগরি বাছলে ডিফল্ট আর বদলাবে না
 
   bool get _isEdit => widget.entry != null;
 
@@ -58,6 +61,7 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
     _date = e != null ? DateTime.parse(e.date) : DateTime.now();
     _categories = CashbookService.getCategories();
     _category = e?.category ?? (_categories.isNotEmpty ? _categories.last.id : 'other');
+    _loadRecents();
     _recurring = e?.recurring ?? false;
     _voucherBase64 = e?.voucherImage;
   }
@@ -78,6 +82,60 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
     }
   }
 
+  Future<void> _loadRecents() async {
+    try {
+      final ids = await CashbookDB.recentCategoryIds(_type);
+      if (!mounted) return;
+      setState(() {
+        _recentIds = ids;
+        // নতুন এন্ট্রিতে সবচেয়ে সাম্প্রতিক ক্যাটাগরিই শুরুতে বাছা থাকে।
+        if (!_isEdit && !_touched && ids.isNotEmpty && _categories.any((c) => c.id == ids.first)) {
+          _category = ids.first;
+        }
+      });
+    } catch (_) {}
+  }
+
+  /// সাম্প্রতিক ব্যবহার আগে, বাকিগুলো সংরক্ষিত ক্রমে।
+  List<CashbookCategory> get _ordered {
+    final byId = {for (final c in _categories) c.id: c};
+    final out = <CashbookCategory>[];
+    for (final id in _recentIds) {
+      final c = byId.remove(id);
+      if (c != null) out.add(c);
+    }
+    out.addAll(byId.values);
+    return out;
+  }
+
+  /// প্রথম ৩টা; বাছা ক্যাটাগরি ওই ৩টার বাইরে হলে তৃতীয় জায়গায় সেটা — যাতে বাছাইটা সবসময় চোখে পড়ে।
+  List<CashbookCategory> _visibleOf(List<CashbookCategory> ordered) {
+    final top = ordered.take(3).toList();
+    final sel = ordered.where((c) => c.id == _category);
+    if (sel.isNotEmpty && top.isNotEmpty && !top.contains(sel.first)) top[top.length - 1] = sel.first;
+    return top;
+  }
+
+  Widget _iconBtn(IconData icon, VoidCallback onTap, String tooltip) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          width: 36, height: 30,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppTheme.bg3,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Icon(icon, size: 19, color: AppTheme.textSecondary),
+        ),
+      ),
+    );
+  }
+
   Future<void> _addCategory() async {
     final ctrl = TextEditingController();
     final name = await showDialog<String>(
@@ -96,6 +154,7 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
       setState(() {
         _categories = CashbookService.getCategories();
         _category = cat.id;
+        _touched = true;
       });
     }
   }
@@ -257,44 +316,27 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
             ]),
             const SizedBox(height: 8),
 
-            // category — এক লাইনে অনুভূমিক; যেকোনো চিপ চেপে ধরে ডানে-বামে টেনে
-            // জায়গা বদলানো যায়, ক্রম সেভ থাকে। "+ নতুন" ডানে ফিক্সড।
-            SizedBox(
-              height: 34,
-              child: Row(children: [
-                Expanded(
-                  child: ReorderableListView(
-                    scrollDirection: Axis.horizontal,
-                    buildDefaultDragHandles: true,
-                    proxyDecorator: (child, index, animation) =>
-                        Material(color: Colors.transparent, child: child),
-                    onReorder: (oldIndex, newIndex) {
-                      if (newIndex > oldIndex) newIndex -= 1;
-                      setState(() {
-                        final item = _categories.removeAt(oldIndex);
-                        _categories.insert(newIndex, item);
-                      });
-                      CashbookService.saveCategoryOrder(_categories.map((c) => c.id).toList());
-                    },
-                    children: [
-                      for (final c in _categories)
-                        Padding(
-                          key: ValueKey('cat_${c.id}'),
-                          padding: const EdgeInsets.only(right: 6),
-                          child: _catChip(c),
-                        ),
-                    ],
+            // ক্যাটাগরি: সাম্প্রতিক ৩টা চিপ + (বাকি থাকলে) প্রসারণ আইকন + শুধু "+" আইকন।
+            // বাকিগুলো প্রসারণে নিচে দেখায়; বাছা ক্যাটাগরি সবসময় ৩টার মধ্যে দৃশ্যমান।
+            Builder(builder: (_) {
+              final ordered = _ordered;
+              final visible = _visibleOf(ordered);
+              final hidden = ordered.where((c) => !visible.contains(c)).toList();
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  for (final c in visible) _catChip(c),
+                  if (hidden.isNotEmpty)
+                    _iconBtn(_expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                        () => setState(() => _expanded = !_expanded), 'আরও ক্যাটাগরি'),
+                  _iconBtn(Icons.add_rounded, _addCategory, 'নতুন ক্যাটাগরি'),
+                ]),
+                if (_expanded && hidden.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Wrap(spacing: 6, runSpacing: 6, children: [for (final c in hidden) _catChip(c)]),
                   ),
-                ),
-                ActionChip(
-                  label: const Text('+ নতুন', style: TextStyle(fontSize: 12)),
-                  onPressed: _addCategory,
-                  visualDensity: VisualDensity.compact,
-                  backgroundColor: Colors.transparent,
-                  side: BorderSide(color: AppTheme.border),
-                ),
-              ]),
-            ),
+              ]);
+            }),
             const SizedBox(height: 8),
 
             // note — with voucher (camera) and recurring (repeat) icons built in,
@@ -386,7 +428,10 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
     final color = value == 'in' ? AppTheme.green : AppTheme.red;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _type = value),
+        onTap: () {
+          setState(() => _type = value);
+          _loadRecents();
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
@@ -407,7 +452,11 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
     return ChoiceChip(
       label: Text('${c.icon} ${c.name}', style: const TextStyle(fontSize: 12)),
       selected: selected,
-      onSelected: (_) => setState(() => _category = c.id),
+      onSelected: (_) => setState(() {
+        _category = c.id;
+        _touched = true;
+        _expanded = false;
+      }),
       visualDensity: VisualDensity.compact,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       selectedColor: AppTheme.accent,
