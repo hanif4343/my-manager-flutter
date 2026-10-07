@@ -4,27 +4,38 @@ import '../models/doc_models.dart';
 
 /// ডকুমেন্ট ভল্টের মেটাডাটা (docs.db)। ফাইলের আসল বিষয়বস্তু এখানে নেই —
 /// সেগুলো এনক্রিপ্ট হয়ে আলাদা ফোল্ডারে থাকে (DocsCrypto)।
+///
+/// v2: `tpl` কলাম যোগ — কোন ধরনের ডকুমেন্ট (NID, SSC…) তা মনে রাখতে।
 class DocsDB {
   static Database? _db;
 
   static Future<Database> get db async {
-    _db ??= await openDatabase(join(await getDatabasesPath(), 'docs.db'), version: 1,
-        onCreate: (db, v) async {
-      await db.execute('''
-        CREATE TABLE docs(
-          id TEXT PRIMARY KEY,
-          title TEXT NOT NULL,
-          category TEXT,
-          number_enc TEXT,
-          expiry TEXT,
-          note TEXT,
-          pages TEXT,
-          rem TEXT,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        )
-      ''');
-    });
+    _db ??= await openDatabase(
+      join(await getDatabasesPath(), 'docs.db'),
+      version: 2,
+      onCreate: (db, v) async {
+        await db.execute('''
+          CREATE TABLE docs(
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            category TEXT,
+            number_enc TEXT,
+            expiry TEXT,
+            note TEXT,
+            pages TEXT,
+            rem TEXT,
+            tpl TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          )
+        ''');
+      },
+      onUpgrade: (db, oldV, newV) async {
+        if (oldV < 2) {
+          await db.execute('ALTER TABLE docs ADD COLUMN tpl TEXT');
+        }
+      },
+    );
     return _db!;
   }
 
