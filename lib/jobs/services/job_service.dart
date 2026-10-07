@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import '../../cashbook/db/cashbook_db.dart';
+import '../../cashbook/models/cashbook_entry.dart';
 import '../../reminder/db/reminder_db.dart';
 import '../../reminder/models/reminder.dart';
 import '../../reminder/services/reminder_service.dart';
@@ -101,15 +104,73 @@ class JobService {
     _notify();
   }
 
-  static Future<void> setStatus(Circular c, String status) async {
+  /// অবস্থা বদলায়। আবেদন করা হয়ে গেলে (আবেদন করেছি বা তার পরের ধাপ) আবেদন ফি নিজে ক্যাশবুকে
+  /// খরচ হিসেবে যোগ হয়; "নজরে"-তে ফেরালে ওই এন্ট্রি মুছে যায়। ফেরত দেয় ব্যবহারকারীকে দেখানোর বার্তা।
+  static Future<String?> setStatus(Circular c, String status) async {
     c.status = status;
     await saveCircular(c);
+    try {
+      return await _syncFeeLedger(c);
+    } catch (_) {
+      return null; // ক্যাশবুকে লিখতে না পারলেও সার্কুলারের অবস্থা বদল আটকাবে না
+    }
+  }
+
+  static const _feeKey = 'job_fee_entries'; // {"সার্কুলার-id": এন্ট্রি-id}
+  static const _paidStatuses = {'applied', 'admit', 'exam_done', 'result'};
+
+  static Map<String, dynamic> _feeMap() {
+    try {
+      return Map<String, dynamic>.from(jsonDecode(SettingsService.getString(_feeKey)) as Map);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<String?> _syncFeeLedger(Circular c) async {
+    if (c.id == null) return null;
+    final map = _feeMap();
+    final key = '${c.id}';
+
+    if (_paidStatuses.contains(c.status) && c.fee > 0 && !map.containsKey(key)) {
+      final acc = await CashbookDB.currentMonthAccount();
+      final now = DateTime.now();
+      final ms = now.millisecondsSinceEpoch;
+      final label = c.post.isNotEmpty ? '${c.title} (${c.post})' : c.title;
+      final entryId = await CashbookDB.insertEntry(CashbookEntry(
+        accountId: acc.id!,
+        type: 'out',
+        amount: c.fee.toDouble(),
+        category: 'other',
+        note: 'আবেদন ফি: $label',
+        date: Reminder.ymd(now),
+        createdAt: ms,
+        updatedAt: ms,
+      ));
+      map[key] = entryId;
+      await SettingsService.setString(_feeKey, jsonEncode(map));
+      return '💰 আবেদন ফি ৳${bn(c.fee)} ক্যাশবুকে খরচ হিসেবে যোগ হয়েছে';
+    }
+
+    // আবার "নজরে (আবেদন বাকি)"-তে ফেরালে — ফি দেওয়া হয়নি ধরে এন্ট্রি মুছে ফেলা।
+    if (c.status == 'watching' && map.containsKey(key)) {
+      final eid = map.remove(key);
+      if (eid != null) await CashbookDB.deleteEntry((eid as num).toInt());
+      await SettingsService.setString(_feeKey, jsonEncode(map));
+      return 'আবেদন ফির খরচের এন্ট্রি ক্যাশবুক থেকে মুছে ফেলা হয়েছে';
+    }
+    return null;
   }
 
   static Future<void> deleteCircular(Circular c) async {
     await _deleteReminders(c.deadlineRem);
     await _deleteReminders(c.examRem);
-    if (c.id != null) await JobDB.delete(c.id!);
+    if (c.id != null) {
+      await JobDB.delete(c.id!);
+      // ক্যাশবুকের খরচ (টাকা সত্যিই গেছে) থাকবে, শুধু যোগসূত্র মোছা।
+      final m = _feeMap();
+      if (m.remove('${c.id}') != null) await SettingsService.setString(_feeKey, jsonEncode(m));
+    }
     _notify();
   }
 
