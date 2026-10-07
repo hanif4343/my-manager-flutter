@@ -51,6 +51,8 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
   // যাচাইয়ের পর এই সময়ের মধ্যে আবার ফিঙ্গারপ্রিন্ট/PIN চাইবে না।
   static const _authGraceSeconds = 120;
   static const _lastAuthKey = 'af_last_auth_ms';
+  /// true (ডিফল্ট) = শুধু যে সাইট/অ্যাপের পাসওয়ার্ড সেভ করা আছে সেখানেই সাজেশন।
+  static const onlySavedKey = 'af_only_saved';
 
   final _titleCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
@@ -98,6 +100,19 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
+
+    // আগে মিল খোঁজো (ফিঙ্গারপ্রিন্ট ছাড়াই — এখানে কোনো পাসওয়ার্ড দেখানো হয় না)।
+    // এই সাইট/অ্যাপের জন্য কিছু সেভ করা না থাকলে চুপচাপ বন্ধ: কোনো কার্ড নেই,
+    // ফিঙ্গারপ্রিন্ট প্রম্পট নেই — বিরক্ত করবে না। সেটিংসে "শুধু সেভ করা সাইটে"
+    // বন্ধ করলে আগের মতো সব পাসওয়ার্ডের তালিকা দেখাবে।
+    final onlySaved = prefs.getBool(onlySavedKey) ?? true;
+    await _prepare(metadata, prefs);
+    final hasMatch = _matches.isNotEmpty;
+    if (!hasMatch && (onlySaved || _all.isEmpty)) {
+      _finish();
+      return;
+    }
+
     final last = prefs.getInt(_lastAuthKey) ?? 0;
     final fresh = DateTime.now().millisecondsSinceEpoch - last < _authGraceSeconds * 1000;
     if (!fresh) {
@@ -108,7 +123,7 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
       }
       await prefs.setInt(_lastAuthKey, DateTime.now().millisecondsSinceEpoch);
     }
-    await _load(metadata, prefs);
+    await _fillOrPick();
   }
 
   String _registrableDomain(String host) {
@@ -152,8 +167,8 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
 
   Future<void> _showSave(AutofillMetadata metadata) async {
     final saveInfo = metadata.saveInfo!;
-    final domains = metadata.webDomains?.map((d) => d.domain).toList() ?? const <String>[];
-    final pkgs = metadata.packageNames?.toList() ?? const <String>[];
+    final domains = metadata.webDomains.map((d) => d.domain).toList();
+    final pkgs = metadata.packageNames.toList();
     final label = domains.isNotEmpty ? domains.first : (pkgs.isNotEmpty ? pkgs.first : null);
     final username = saveInfo.username ?? '';
     final password = saveInfo.password ?? '';
@@ -187,13 +202,13 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
     });
   }
 
-  Future<void> _load(AutofillMetadata? metadata, SharedPreferences prefs) async {
+  Future<void> _prepare(AutofillMetadata? metadata, SharedPreferences prefs) async {
     final everything = await VaultService.getAll();
     final fillable = everything.where((e) => _catLabels.containsKey(e.type)).toList();
     final logins = fillable.where((e) => e.type == 'login').toList();
 
     final pkgs = metadata?.packageNames ?? const <String>{};
-    final domains = metadata?.webDomains?.map((d) => d.domain).toList() ?? const <String>[];
+    final domains = metadata?.webDomains.map((d) => d.domain).toList() ?? const <String>[];
     final wantedDomains = domains.map(_registrableDomain).toSet();
     final wantedLabels = wantedDomains.map((d) => d.split('.').first).toSet();
     final pkgTokens = <String>{};
@@ -238,9 +253,12 @@ class _AutofillPickerAppState extends State<AutofillPickerApp> {
       }
     }
 
+  }
+
+  Future<void> _fillOrPick() async {
     // মাত্র একটাই মিল → কোনো ট্যাপ ছাড়াই সরাসরি ফিল।
-    if (matches.length == 1) {
-      final ok = await _select(matches.first);
+    if (_matches.length == 1) {
+      final ok = await _select(_matches.first);
       if (ok) return;
     }
     if (mounted) setState(() => _mode = _Mode.pick);
