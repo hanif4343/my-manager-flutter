@@ -160,7 +160,7 @@ class CashbookNotificationService {
     final details = AndroidNotificationDetails(
       'spending_guard_channel',
       'খরচ সতর্কতা',
-      channelDescription: 'জরুরি খরচের টাকা কমে গেলে বা বাজেট পেরোলে লাল সতর্কতা',
+      channelDescription: 'আবশ্যিক খরচের টাকা কমে গেলে লাল সতর্কতা',
       importance: Importance.max,
       priority: Priority.max,
       icon: '@mipmap/ic_launcher',
