@@ -148,6 +148,19 @@ class StopActivity : Activity() {
         setContentView(root)
     }
 
+    /** নতুন করে থামাতে হলে পুরনো সংখ্যা/কারণ নয়, নতুন ইনটেন্ট দিয়ে স্ক্রিন আবার বানানো। */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        recreate()
+    }
+
+    /** হোম/রিসেন্টে গেলে স্ক্রিনটা পড়ে থাকে না — পরের বার তাজা হয়ে ওঠে। */
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) finish()
+    }
+
     private fun goHome() {
         startActivity(Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
