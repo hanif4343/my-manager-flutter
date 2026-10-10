@@ -252,27 +252,10 @@ class TodayService {
   // ───────────────── ক্যাশবুক ─────────────────
 
   static Future<void> _cashbook(List<TodayItem> out, DateTime day, bool isToday) async {
-    // বাজেট/মাসের হিসাব চলতি মাসের — অন্য দিনের জন্য বানানো সারসংক্ষেপে বাদ।
+    // আবশ্যিক খরচ/মাসের হিসাব চলতি মাসের — অন্য দিনের জন্য বানানো সারসংক্ষেপে বাদ।
     if (!isToday) return;
 
-    final budgets = await CashbookDB.getBudgets();
-    for (final b in budgets) {
-      if (b.monthlyLimit <= 0) continue;
-      final spent = await CashbookDB.spentThisMonth(b.category);
-      final pct = spent / b.monthlyLimit;
-      if (pct >= 0.8) {
-        final cat = CashbookService.categoryById(b.category);
-        out.add(TodayItem(
-          pct >= 1 ? '🚨' : '⚠️',
-          '${cat.icon} ${cat.name} বাজেট ${pct >= 1 ? 'পেরিয়ে গেছে' : '${bn((pct * 100).round())}% শেষ'}',
-          '${_money(spent)} / ${_money(b.monthlyLimit)}',
-          pct >= 1 ? 2 : 1,
-          TodayTarget.cashbook,
-        ));
-      }
-    }
-
-    // খরচ-প্রহরী: জরুরি খরচ (বিল/কিস্তি) মেটানোর টাকা থাকবে কিনা।
+    // খরচ-প্রহরী: আবশ্যিক খরচ মেটানোর টাকা থাকবে কিনা।
     if (SpendingGuard.enabled) {
       final g = await SpendingGuard.assess();
       if (g.essentialsLevel != GuardLevel.ok) {
