@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../db/cashbook_db.dart';
 import '../models/cashbook_account.dart';
 import '../models/cashbook_entry.dart';
-import '../models/cashbook_budget.dart';
+import '../models/cashbook_essential.dart';
+import '../services/spending_guard.dart';
 import 'spending_guard_card.dart';
 import '../models/cashbook_debt.dart';
 import '../services/cashbook_service.dart';
@@ -49,10 +50,10 @@ class CashbookScreen extends StatefulWidget {
 }
 
 class _CashbookScreenState extends State<CashbookScreen> {
-  int _tab = 0; // 0 entries, 1 budget, 2 report, 3 debts
+  int _tab = 0; // 0 entries, 1 আবশ্যিক খরচ, 2 report, 3 debts
   List<CashbookAccount> _accounts = [];
   List<CashbookEntry> _entries = [];
-  List<CashbookBudget> _budgets = [];
+  List<CashbookEssential> _essentials = [];
   List<CashbookDebt> _debts = [];
   int? _activeAccountId;
   String _filter = 'all';
@@ -80,13 +81,13 @@ class _CashbookScreenState extends State<CashbookScreen> {
       await CashbookDB.ensureCurrentMonthLedger();
       final accounts = await CashbookDB.getAccounts();
       final entries = await CashbookDB.getEntries();
-      final budgets = await CashbookDB.getBudgets();
+      final essentials = await CashbookDB.getEssentials();
       final debts = await CashbookDB.getDebts();
       if (!mounted) return;
       setState(() {
         _accounts = accounts;
         _entries = entries;
-        _budgets = budgets;
+        _essentials = essentials;
         _debts = debts;
         _activeAccountId ??= CashbookService.lastAccountId;
         if (_activeAccountId == null || !accounts.any((a) => a.id == _activeAccountId)) {
@@ -387,7 +388,7 @@ class _CashbookScreenState extends State<CashbookScreen> {
   }
 
   // ── build ─────────────────────────────────────────────
-  static const _titles = ['ক্যাশবুক', 'বাজেট', 'রিপোর্ট', 'দেনা-পাওনা'];
+  static const _titles = ['ক্যাশবুক', 'আবশ্যিক খরচ', 'রিপোর্ট', 'দেনা-পাওনা'];
 
   @override
   Widget build(BuildContext context) {
@@ -461,12 +462,12 @@ class _CashbookScreenState extends State<CashbookScreen> {
         ],
       ),
       body: Column(children: [
-        // খরচ-প্রহরী: জরুরি টাকা কমলে বা বাজেট পেরোলে বড় লাল কার্ড (সব ট্যাবের উপরে)
-        SpendingGuardCard(onOpenBudget: () => setState(() => _tab = 1)),
+        // খরচ-প্রহরী: আবশ্যিক খরচের টাকা কমে এলে বড় লাল কার্ড (সব ট্যাবের উপরে)
+        SpendingGuardCard(onOpenEssentials: () => setState(() => _tab = 1)),
         Expanded(
           child: IndexedStack(index: _tab, children: [
             _buildEntriesTab(),
-            _buildBudgetTab(),
+            _buildEssentialsTab(),
             _buildReportTab(),
             _buildDebtsTab(),
           ]),
@@ -476,7 +477,7 @@ class _CashbookScreenState extends State<CashbookScreen> {
         backgroundColor: AppTheme.accent,
         onPressed: () {
           if (_tab == 0) _openEntrySheet();
-          if (_tab == 1) _addOrEditBudget();
+          if (_tab == 1) _addOrEditEssential();
           if (_tab == 3) _openDebtSheet();
         },
         child: const Icon(Icons.add, color: Colors.white),
@@ -487,7 +488,7 @@ class _CashbookScreenState extends State<CashbookScreen> {
         backgroundColor: AppTheme.bg2,
         destinations: const [
           NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: 'এন্ট্রি'),
-          NavigationDestination(icon: Icon(Icons.track_changes_outlined), selectedIcon: Icon(Icons.track_changes), label: 'বাজেট'),
+          NavigationDestination(icon: Icon(Icons.track_changes_outlined), selectedIcon: Icon(Icons.track_changes), label: 'আবশ্যিক খরচ'),
           NavigationDestination(icon: Icon(Icons.pie_chart_outline), selectedIcon: Icon(Icons.pie_chart), label: 'রিপোর্ট'),
           NavigationDestination(icon: Icon(Icons.handshake_outlined), selectedIcon: Icon(Icons.handshake), label: 'দেনা-পাওনা'),
         ],
@@ -747,32 +748,64 @@ class _CashbookScreenState extends State<CashbookScreen> {
     return ListView(padding: const EdgeInsets.only(bottom: 90), children: widgets);
   }
 
-  // ── BUDGET TAB ────────────────────────────────────────
-  Widget _buildBudgetTab() {
-    return FutureBuilder<List<double>>(
-      future: Future.wait(_budgets.map((b) => CashbookDB.spentThisMonth(b.category))),
+  // ── আবশ্যিক খরচ TAB ───────────────────────────────────
+  // যা না করলেই নয় (ভাড়া, কিস্তি, বিল, ফি…) তার তালিকা। "ঠিক আছে" চাপলে খাতায় খরচ লেখা হয়ে
+  // ক্যাশ কমে। ক্যাশ বাকি আবশ্যিক খরচের কাছাকাছি গেলে ওপরে লাল সতর্কতা আসে।
+
+  String get _thisMonthKey => CashbookDB.todayIso().substring(0, 7);
+
+  int _dueSort(CashbookEssential a, CashbookEssential b) {
+    final x = a.dueDay == 0 ? 99 : a.dueDay;
+    final y = b.dueDay == 0 ? 99 : b.dueDay;
+    return x.compareTo(y);
+  }
+
+  Widget _buildEssentialsTab() {
+    final mk = _thisMonthKey;
+    final visible = _essentials.where((e) => e.visibleIn(mk)).toList();
+    final unpaid = visible.where((e) => !e.paidIn(mk)).toList()..sort(_dueSort);
+    final paid = visible.where((e) => e.paidIn(mk)).toList();
+
+    return FutureBuilder<GuardReport>(
+      future: SpendingGuard.assess(),
       builder: (context, snap) {
-        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-        final spentList = snap.data!;
+        final r = snap.data;
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
           children: [
-            Text('মাসিক বাজেট', style: AppTheme.title(size: 15)),
+            Text('আবশ্যিক খরচ', style: AppTheme.title(size: 15)),
             const SizedBox(height: 4),
-            Text('প্রতিটা ক্যাটাগরিতে এই মাসে কত খরচ হয়েছে, লিমিটের তুলনায়', style: AppTheme.caption()),
+            Text(
+              'যা না করলেই নয় — ভাড়া, কিস্তি, বিল, ফি। মিটে গেলে "ঠিক আছে" চাপো: খাতায় খরচ লেখা হবে, ক্যাশ কমবে।',
+              style: AppTheme.caption(),
+            ),
+            const SizedBox(height: 12),
+            if (r != null) _essentialsSummary(r, unpaid.isEmpty && visible.isNotEmpty),
             const SizedBox(height: 14),
-            if (_budgets.isEmpty)
+            if (visible.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 30),
-                child: Center(child: Text('এখনো কোনো বাজেট সেট করা হয়নি', style: AppTheme.body())),
+                child: Center(
+                  child: Text('এখনো কোনো আবশ্যিক খরচ যোগ করা হয়নি\nনিচের বাটনে যোগ করো',
+                      textAlign: TextAlign.center, style: AppTheme.body()),
+                ),
               ),
-            for (int i = 0; i < _budgets.length; i++)
-              _budgetCard(_budgets[i], spentList[i]),
-            const SizedBox(height: 8),
+            if (unpaid.isNotEmpty) ...[
+              Text('বাকি (${unpaid.length}টা)', style: AppTheme.title(size: 13.5)),
+              const SizedBox(height: 8),
+              for (final e in unpaid) _essentialRow(e, paid: false),
+            ],
+            if (paid.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text('এ মাসে মেটানো হয়েছে (${paid.length}টা)', style: AppTheme.title(size: 13.5)),
+              const SizedBox(height: 8),
+              for (final e in paid) _essentialRow(e, paid: true),
+            ],
+            const SizedBox(height: 10),
             OutlinedButton.icon(
-              onPressed: _addOrEditBudget,
+              onPressed: _addOrEditEssential,
               icon: const Icon(Icons.add),
-              label: const Text('নতুন বাজেট লিমিট যোগ করো'),
+              label: const Text('নতুন আবশ্যিক খরচ যোগ করো'),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 48),
                 side: BorderSide(color: AppTheme.border, style: BorderStyle.solid),
@@ -784,77 +817,238 @@ class _CashbookScreenState extends State<CashbookScreen> {
     );
   }
 
-  Widget _budgetCard(CashbookBudget b, double spent) {
-    final cat = CashbookService.categoryById(b.category);
-    final pct = (spent / b.monthlyLimit).clamp(0, 1.2);
-    final over = pct >= 1.0;
-    final warn = pct >= 0.8 && !over;
-    return GestureDetector(
-      onTap: () => _addOrEditBudget(existing: b),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: AppTheme.bg2, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppTheme.border)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text('${cat.icon} ${cat.name}', style: AppTheme.title(size: 13.5)),
-            Text('${_fmt(spent)} / ${_fmt(b.monthlyLimit)}', style: AppTheme.caption()),
+  Widget _essentialsSummary(GuardReport r, bool allDone) {
+    final color = r.level == GuardLevel.danger
+        ? AppTheme.red
+        : (r.level == GuardLevel.near ? AppTheme.yellow : AppTheme.green);
+    Widget cell(String label, String value, {Color? c}) => Expanded(
+          child: Column(children: [
+            Text(value,
+                style: AppTheme.title(size: 15, color: c),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 2),
+            Text(label, style: AppTheme.caption(size: 11)),
           ]),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(99),
-            child: LinearProgressIndicator(
-              value: pct.toDouble().clamp(0, 1).toDouble(),
-              minHeight: 8,
-              backgroundColor: AppTheme.bg3,
-              color: over ? AppTheme.red : (warn ? AppTheme.yellow : AppTheme.accent),
-            ),
-          ),
-        ]),
+        );
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withOpacity(0.5)),
       ),
+      child: Column(children: [
+        Row(children: [
+          cell('ক্যাশ (ব্যালেন্স)', _fmt(r.balance)),
+          cell('বাকি আবশ্যিক', _fmt(r.reserved)),
+          cell('নিরাপদ খরচ', _fmt(r.free), c: color),
+        ]),
+        const SizedBox(height: 10),
+        Text(
+          r.level == GuardLevel.ok
+              ? (allDone ? '✅ এ মাসের সব আবশ্যিক খরচ মেটানো হয়েছে' : '✅ আবশ্যিক খরচ মেটানোর মতো টাকা আছে')
+              : (r.level == GuardLevel.danger
+                  ? '🚨 টাকা কম খরচ করুন — আবশ্যিক কাজ আগে করুন! ক্যাশ আবশ্যিক খরচের চেয়েও কম।'
+                  : '⚠️ টাকা কম খরচ করুন — আবশ্যিক কাজ আগে করুন। ক্যাশ আবশ্যিক খরচের কাছাকাছি।'),
+          textAlign: TextAlign.center,
+          style: AppTheme.body(size: 13, weight: FontWeight.w700, color: color),
+        ),
+      ]),
     );
   }
 
-  Future<void> _addOrEditBudget({CashbookBudget? existing}) async {
-    final categories = CashbookService.getCategories();
-    String selectedCat = existing?.category ?? categories.first.id;
-    final limitCtrl = TextEditingController(text: existing?.monthlyLimit.toStringAsFixed(0) ?? '1000');
+  String _dueLabel(CashbookEssential e) {
+    final repeat = e.monthly ? 'প্রতি মাসে' : 'একবার';
+    if (e.dueDay <= 0) return '$repeat · তারিখ ঠিক নেই';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final due = DateTime(now.year, now.month, e.dueDay);
+    final d = due.difference(today).inDays;
+    final when = d < 0 ? '${-d} দিন বকেয়া' : (d == 0 ? 'আজই শেষ দিন' : 'আর $d দিন');
+    return '$repeat · ${e.dueDay} তারিখ · $when';
+  }
 
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setSt) => AlertDialog(
-        title: Text(existing == null ? 'নতুন বাজেট' : 'বাজেট এডিট করো'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          if (existing == null)
-            DropdownButtonFormField<String>(
-              value: selectedCat,
-              items: categories.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.icon} ${c.name}'))).toList(),
-              onChanged: (v) => setSt(() => selectedCat = v ?? selectedCat),
-            )
-          else
-            Align(alignment: Alignment.centerLeft,
-                child: Text(CashbookService.categoryById(existing.category).name, style: AppTheme.title(size: 14))),
-          const SizedBox(height: 12),
-          TextField(
-            controller: limitCtrl,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [BanglaDigitInputFormatter()],
-            decoration: const InputDecoration(labelText: 'মাসিক লিমিট (৳)'),
+  Widget _essentialRow(CashbookEssential e, {required bool paid}) {
+    final cat = CashbookService.categoryById(e.category);
+    final overdue = !paid &&
+        e.dueDay > 0 &&
+        DateTime(DateTime.now().year, DateTime.now().month, e.dueDay)
+            .isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day));
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.bg2,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: overdue ? AppTheme.red.withOpacity(0.6) : AppTheme.border),
+      ),
+      child: Row(children: [
+        // ঠিক আছে / ফেরত নেওয়ার টিক
+        IconButton(
+          tooltip: paid ? 'ফেরত নাও' : 'ঠিক আছে — মিটিয়েছি',
+          iconSize: 30,
+          icon: Icon(
+            paid ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+            color: paid ? AppTheme.green : AppTheme.accent,
           ),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('বাতিল')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('সেভ করো')),
-        ],
-      )),
+          onPressed: () => paid ? _undoEssential(e) : _payEssential(e),
+        ),
+        Expanded(
+          child: InkWell(
+            onTap: () => _addOrEditEssential(existing: e),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${cat.icon} ${e.title}',
+                    style: AppTheme.title(size: 14).copyWith(
+                        decoration: paid ? TextDecoration.lineThrough : null,
+                        color: paid ? AppTheme.textMuted : null)),
+                const SizedBox(height: 3),
+                Text(paid ? 'খাতায় খরচ লেখা হয়েছে' : _dueLabel(e),
+                    style: AppTheme.caption(color: overdue ? AppTheme.red : null)),
+              ]),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(right: 14),
+          child: Text(_fmt(e.amount), style: AppTheme.title(size: 14.5, color: paid ? AppTheme.textMuted : null)),
+        ),
+      ]),
     );
-    if (result == true) {
-      final limit = BanglaDigitInputFormatter.parse(limitCtrl.text);
-      if (limit != null && limit > 0) {
-        await CashbookDB.upsertBudget(CashbookBudget(category: selectedCat, monthlyLimit: limit));
-        await _afterMutation();
-      }
+  }
+
+  Future<void> _payEssential(CashbookEssential e) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('মিটিয়েছ?'),
+        content: Text('"${e.title}" — ${_fmt(e.amount)} খরচ হিসেবে ক্যাশবুকে লেখা হবে, ক্যাশ থেকে এই টাকা কমবে।'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('না')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('হ্যাঁ, ঠিক আছে')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await CashbookDB.setEssentialPaid(e.id!, true);
+    await _afterMutation();
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('✓ ${e.title} — ${_fmt(e.amount)} খরচ লেখা হয়েছে')));
     }
+  }
+
+  Future<void> _undoEssential(CashbookEssential e) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ফেরত নেবে?'),
+        content: Text('"${e.title}"-এর খরচ-এন্ট্রি খাতা থেকে মুছে যাবে, ক্যাশ আগের মতো হবে। আবার বাকি হিসেবে দেখাবে।'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('না')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('হ্যাঁ, ফেরত নাও')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await CashbookDB.setEssentialPaid(e.id!, false);
+    await _afterMutation();
+  }
+
+  Future<void> _addOrEditEssential({CashbookEssential? existing}) async {
+    final categories = CashbookService.getCategories();
+    String cat = existing?.category ?? 'bill';
+    if (!categories.any((c) => c.id == cat)) cat = categories.first.id;
+    bool monthly = existing?.monthly ?? true;
+    final titleCtrl = TextEditingController(text: existing?.title ?? '');
+    final amountCtrl = TextEditingController(text: existing == null ? '' : existing.amount.toStringAsFixed(0));
+    final dayCtrl = TextEditingController(text: (existing?.dueDay ?? 0) > 0 ? '${existing!.dueDay}' : '');
+
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: Text(existing == null ? 'নতুন আবশ্যিক খরচ' : 'আবশ্যিক খরচ এডিট'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                controller: titleCtrl,
+                decoration: const InputDecoration(labelText: 'কীসের খরচ? (যেমন বাসাভাড়া, কিস্তি)'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: amountCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [BanglaDigitInputFormatter()],
+                decoration: const InputDecoration(labelText: 'টাকার পরিমাণ (৳)'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: dayCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [BanglaDigitInputFormatter()],
+                decoration: const InputDecoration(labelText: 'মাসের কত তারিখের মধ্যে? (ঐচ্ছিক, ১–৩১)'),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: cat,
+                decoration: const InputDecoration(labelText: 'খাতায় যে ক্যাটাগরিতে লেখা হবে'),
+                items: categories.map((c) => DropdownMenuItem(value: c.id, child: Text('${c.icon} ${c.name}'))).toList(),
+                onChanged: (v) => setSt(() => cat = v ?? cat),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: monthly,
+                title: const Text('প্রতি মাসে হয়'),
+                subtitle: Text(monthly ? 'প্রতি মাসে আবার বাকি হয়ে আসবে' : 'একবার মেটালেই শেষ', style: AppTheme.caption()),
+                onChanged: (v) => setSt(() => monthly = v),
+              ),
+            ]),
+          ),
+          actions: [
+            if (existing != null)
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 'delete'),
+                child: Text('মুছো', style: TextStyle(color: AppTheme.red)),
+              ),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('বাতিল')),
+            TextButton(onPressed: () => Navigator.pop(ctx, 'save'), child: const Text('সেভ করো')),
+          ],
+        ),
+      ),
+    );
+
+    if (action == 'delete' && existing != null) {
+      await CashbookDB.deleteEssential(existing.id!);
+      await _afterMutation();
+      return;
+    }
+    if (action != 'save') return;
+
+    final title = titleCtrl.text.trim();
+    final amount = BanglaDigitInputFormatter.parse(amountCtrl.text);
+    var day = int.tryParse(dayCtrl.text.trim()) ?? 0;
+    if (day < 0 || day > 31) day = 0;
+    if (title.isEmpty || amount == null || amount <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('নাম আর টাকার পরিমাণ দিতে হবে')));
+      }
+      return;
+    }
+    await CashbookDB.upsertEssential(CashbookEssential(
+      id: existing?.id,
+      title: title,
+      amount: amount,
+      dueDay: day,
+      category: cat,
+      monthly: monthly,
+      paidMonth: existing?.paidMonth,
+      entryId: existing?.entryId,
+      createdAt: existing?.createdAt ?? DateTime.now().millisecondsSinceEpoch,
+    ));
+    await _afterMutation();
   }
 
   // ── REPORT TAB ────────────────────────────────────────
