@@ -51,7 +51,7 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
             'প্রজেক্ট, টাস্ক, সংযুক্ত ফাইল, ভার্সন', 'mymanager_backup.json',
             auto: SettingsService.getBool('auto_backup_enabled', defaultValue: false),
             replacesOnRestore: true),
-        const _Mod('cashbook', '💰', 'ক্যাশবুক', 'খাতা, এন্ট্রি, বাজেট, দেনা-পাওনা (প্রতি পরিবর্তনে নিজে)',
+        const _Mod('cashbook', '💰', 'ক্যাশবুক', 'খাতা, এন্ট্রি, আবশ্যিক খরচ, দেনা-পাওনা (প্রতি পরিবর্তনে নিজে)',
             'cashbook_backup.json', auto: true, replacesOnRestore: true),
         const _Mod('jobs', '🧑‍💼', 'চাকরি হাব', 'সার্কুলার, ডকুমেন্ট চেকলিস্ট, টার্গেট (নিজে)',
             JobBackupService.fileName, auto: true),
