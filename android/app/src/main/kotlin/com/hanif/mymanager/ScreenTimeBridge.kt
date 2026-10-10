@@ -104,12 +104,24 @@ object ScreenTimeBridge {
     }
 
     /** প্রহরীর অবস্থা: Accessibility সেবা চালু? অন্য অ্যাপের উপরে দেখানোর অনুমতি? আজ কতবার থামানো হলো? */
+    /** আজকের তারিখ "yyyy-MM-dd" (প্রহরী ও সতর্কবার্তা দুটোই এটা ব্যবহার করে)। */
+    fun todayKey(): String {
+        val c = Calendar.getInstance()
+        return "%04d-%02d-%02d".format(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
+    }
+
+    /** আজ রাত ১২টা (মিলিসেকেন্ড)। */
+    fun dayStartMs(): Long {
+        val c = Calendar.getInstance()
+        c.set(Calendar.HOUR_OF_DAY, 0); c.set(Calendar.MINUTE, 0); c.set(Calendar.SECOND, 0); c.set(Calendar.MILLISECOND, 0)
+        return c.timeInMillis
+    }
+
     private fun guardStatus(ctx: Context): Map<String, Any> {
         val enabledList = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
         val accessibility = enabledList.contains(ctx.packageName + "/") && enabledList.contains("ScreenGuardService")
         val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val cal = Calendar.getInstance()
-        val today = "%04d-%02d-%02d".format(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
+        val today = todayKey()
         val sameDay = sp.getString("guard_day", "") == today
         return mapOf(
             "accessibility" to accessibility,
@@ -271,10 +283,8 @@ object ScreenTimeBridge {
         val cfg = JSONObject(cfgText)
         if (!cfg.optBoolean("enabled", false) || !hasAccess(ctx)) return
 
-        val cal = Calendar.getInstance()
-        val dayKey = "%04d-%02d-%02d".format(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
-        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-        val dayStart = cal.timeInMillis
+        val dayKey = todayKey()
+        val dayStart = dayStartMs()
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
 
         val usage = usageMap(ctx, dayStart, System.currentTimeMillis())
