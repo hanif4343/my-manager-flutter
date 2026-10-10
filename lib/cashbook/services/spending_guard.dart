@@ -1,23 +1,11 @@
 import 'package:flutter/foundation.dart';
-import '../../family/db/family_db.dart';
-import '../../family/models/family_models.dart';
 import '../../reminder/models/reminder.dart' show bn, dateOnly;
 import '../../services/settings_service.dart';
 import '../db/cashbook_db.dart';
-import '../models/cashbook_category.dart';
+import '../models/cashbook_essential.dart';
 import 'cashbook_notification_service.dart';
-import 'cashbook_service.dart';
 
 enum GuardLevel { ok, near, danger }
-
-class BudgetAlert {
-  final CashbookCategory cat;
-  final double spent;
-  final double limit;
-  BudgetAlert(this.cat, this.spent, this.limit);
-  double get pct => limit <= 0 ? 0 : spent / limit;
-  GuardLevel get level => pct >= 1.0 ? GuardLevel.danger : GuardLevel.near;
-}
 
 String _money(double v) {
   final n = v.round().abs();
@@ -30,62 +18,50 @@ String _money(double v) {
   return '${v < 0 ? '-' : ''}৳${bn(b.toString())}';
 }
 
+/// খাতায় এখন কত টাকা আছে আর এ মাসের বাকি আবশ্যিক খরচ কত — তার তুলনা।
 class GuardReport {
   final double balance; // চলতি মাসের খাতার ব্যালেন্স (প্রস্তাবিত খরচ বাদ দিয়ে)
-  final double reserved; // এ মাসে বাকি অতীব জরুরি: অপরিশোধিত বিল ও কিস্তি
-  final List<FamilyBill> unpaid;
-  final List<BudgetAlert> budgets;
+  final double reserved; // এ মাসে বাকি আবশ্যিক খরচের মোট
+  final List<CashbookEssential> unpaid;
   final double margin; // "কাছাকাছি" ধরার সীমা
-  GuardReport(this.balance, this.reserved, this.unpaid, this.budgets, this.margin);
+  GuardReport(this.balance, this.reserved, this.unpaid, this.margin);
 
-  /// জরুরি খরচ মেটানোর পরে হাতে থাকবে কত — এটাই "নিরাপদ খরচের" সীমা।
+  /// আবশ্যিক খরচ মেটানোর পরে হাতে থাকবে কত — এটাই "নিরাপদ খরচের" সীমা।
   double get free => balance - reserved;
 
-  GuardLevel get essentialsLevel {
+  GuardLevel get level {
     if (reserved <= 0) return GuardLevel.ok;
     if (free < 0) return GuardLevel.danger;
     if (free < margin) return GuardLevel.near;
     return GuardLevel.ok;
   }
 
-  GuardLevel get budgetLevel {
-    var l = GuardLevel.ok;
-    for (final b in budgets) {
-      if (b.level == GuardLevel.danger) return GuardLevel.danger;
-      l = GuardLevel.near;
-    }
-    return l;
-  }
-
-  GuardLevel get level =>
-      essentialsLevel.index >= budgetLevel.index ? essentialsLevel : budgetLevel;
+  /// জরুরি খরচ-সতর্কতার পুরনো নাম (বাইরের কোড এটাও ব্যবহার করে)।
+  GuardLevel get essentialsLevel => level;
 
   String get headline {
-    if (essentialsLevel == GuardLevel.danger) return '🚨 জরুরি খরচের টাকাই নেই!';
-    final over = budgets.where((b) => b.level == GuardLevel.danger).toList();
-    if (over.isNotEmpty) return '🚨 ${over.first.cat.name} বাজেট পেরিয়ে গেছে!';
-    if (essentialsLevel == GuardLevel.near) return '⚠️ জরুরি খরচের টাকা প্রায় শেষ!';
-    if (budgets.isNotEmpty) return '⚠️ ${budgets.first.cat.name} বাজেট প্রায় শেষ';
+    if (level == GuardLevel.danger) return '🚨 আবশ্যিক খরচের টাকাই নেই!';
+    if (level == GuardLevel.near) return '⚠️ আবশ্যিক খরচের টাকা প্রায় শেষ!';
     return '✅ সব ঠিক আছে';
   }
 
   /// এক লাইনের সারসংক্ষেপ
   String get essentialsLine => reserved > 0
-      ? 'ব্যালেন্স ${_money(balance)} · বাকি জরুরি (বিল/কিস্তি) ${_money(reserved)} → নিরাপদ খরচ ${_money(free)}'
-      : 'ব্যালেন্স ${_money(balance)} · এ মাসের কোনো জরুরি বিল বাকি নেই';
+      ? 'ব্যালেন্স ${_money(balance)} · বাকি আবশ্যিক ${_money(reserved)} → নিরাপদ খরচ ${_money(free)}'
+      : 'ব্যালেন্স ${_money(balance)} · এ মাসের কোনো আবশ্যিক খরচ বাকি নেই';
 
-  /// বিস্তারিত লাইন: অপরিশোধিত বিল, বাজেট পেরোনো খাত
+  /// বিস্তারিত লাইন: বাকি আবশ্যিক খরচ (তারিখ অনুযায়ী)
   List<String> get detailLines {
     final out = <String>[];
     final now = dateOnly(DateTime.now());
-    for (final b in unpaid.take(5)) {
-      final due = DateTime(now.year, now.month, b.dueDay);
-      final d = due.difference(now).inDays;
-      final when = d < 0 ? '${bn(-d)} দিন বকেয়া' : (d == 0 ? 'আজই শেষ দিন' : 'আর ${bn(d)} দিন');
-      out.add('${b.emoji} ${b.title} ${_money(b.amount.toDouble())} ($when)');
-    }
-    for (final b in budgets) {
-      out.add('${b.cat.icon} ${b.cat.name}: ${bn((b.pct * 100).round())}% খরচ (${_money(b.spent)} / ${_money(b.limit)})');
+    for (final e in unpaid.take(5)) {
+      var when = '';
+      if (e.dueDay > 0) {
+        final due = DateTime(now.year, now.month, e.dueDay);
+        final d = due.difference(now).inDays;
+        when = d < 0 ? ' (${bn(-d)} দিন বকেয়া)' : (d == 0 ? ' (আজই শেষ দিন)' : ' (আর ${bn(d)} দিন)');
+      }
+      out.add('${e.title} ${_money(e.amount)}$when');
     }
     return out;
   }
@@ -93,14 +69,13 @@ class GuardReport {
   /// নোটিফিকেশনের বডি
   String get notificationBody {
     final lines = <String>[essentialsLine, ...detailLines.take(4).map((e) => '• $e')];
-    lines.add('এখন শুধু যা না করলেই নয় সেটাই খরচ করো। অকারণ খরচ আজ বাদ দাও।');
+    lines.add('টাকা কম খরচ করুন — আবশ্যিক কাজ আগে করুন।');
     return lines.join('\n');
   }
 }
 
-/// "খরচ-প্রহরী": জরুরি খরচ (বিল ও কিস্তি) মেটানোর টাকা থাকবে কিনা আর কোন খাতে বাজেটের
-/// কত % গেল — দেখে কাছাকাছি গেলে বড় লাল সতর্কতা দেয় (ক্যাশবুকের উপরে, খরচ লেখার সময়,
-/// আর নির্দিষ্ট ব্যবধানে নোটিফিকেশনে বারবার)।
+/// "খরচ-প্রহরী": ক্যাশবুকে এখন যত টাকা আছে তা এ মাসের বাকি আবশ্যিক খরচের কাছাকাছি গেলে
+/// বড় লাল সতর্কতা দেয় (ক্যাশবুকের উপরে, খরচ লেখার সময়, আর নির্দিষ্ট ব্যবধানে নোটিফিকেশনে)।
 class SpendingGuard {
   static final ValueNotifier<int> changes = ValueNotifier(0);
 
@@ -116,10 +91,11 @@ class SpendingGuard {
     changes.value++;
   }
 
-  /// জরুরি ক্যাটাগরি — এতে খরচ করলে সতর্কতা দেখানো হয় না (বিল দেওয়াই তো কাজ)।
+  /// আবশ্যিক ক্যাটাগরি — এতে খরচ করলে সতর্কতা দেখানো হয় না (বিল দেওয়াই তো কাজ)।
   static bool isEssentialCategory(String id) => id == 'bill';
 
   /// [extraSpend]: এখনই যে খরচটা করতে যাচ্ছ তার প্রভাব ধরে হিসাব ("এটা করলে কী হবে")।
+  /// [category] আগের সংস্করণের সাথে মিল রাখতে আছে; এখন হিসাবে লাগে না।
   static Future<GuardReport> assess({double extraSpend = 0, String? category}) async {
     final acc = await CashbookDB.currentMonthAccount();
     final entries = await CashbookDB.getEntries(accountId: acc.id);
@@ -129,35 +105,26 @@ class SpendingGuard {
     }
     balance -= extraSpend;
 
-    // বাকি জরুরি: এ মাসে অপরিশোধিত বিল/কিস্তি।
-    final now = DateTime.now();
-    final mk = FamilyBill.monthKey(now);
-    final unpaid = <FamilyBill>[];
+    // বাকি আবশ্যিক: এ মাসে এখনও মেটানো হয়নি এমন সব।
+    final mk = CashbookDB.todayIso().substring(0, 7);
+    final unpaid = <CashbookEssential>[];
     var reserved = 0.0;
     try {
-      for (final b in await FamilyDB.bills()) {
-        if (b.lastPaidMonth == mk || b.amount <= 0) continue;
-        unpaid.add(b);
-        reserved += b.amount;
+      for (final e in await CashbookDB.getEssentials()) {
+        if (!e.unpaidIn(mk) || e.amount <= 0) continue;
+        unpaid.add(e);
+        reserved += e.amount;
       }
     } catch (_) {}
-    unpaid.sort((a, b) => a.dueDay.compareTo(b.dueDay));
-
-    // বাজেট ≥ ৮০% (প্রস্তাবিত খরচসহ)।
-    final alerts = <BudgetAlert>[];
-    try {
-      for (final b in await CashbookDB.getBudgets()) {
-        if (b.monthlyLimit <= 0) continue;
-        var spent = await CashbookDB.spentThisMonth(b.category);
-        if (category != null && b.category == category) spent += extraSpend;
-        final a = BudgetAlert(CashbookService.categoryById(b.category), spent, b.monthlyLimit);
-        if (a.pct >= 0.8) alerts.add(a);
-      }
-    } catch (_) {}
-    alerts.sort((a, b) => b.pct.compareTo(a.pct));
+    // তারিখ আগে যেগুলোর; তারিখ ছাড়াগুলো শেষে।
+    unpaid.sort((a, b) {
+      final x = a.dueDay == 0 ? 99 : a.dueDay;
+      final y = b.dueDay == 0 ? 99 : b.dueDay;
+      return x.compareTo(y);
+    });
 
     final margin = reserved * marginPct / 100 < 500 ? 500.0 : reserved * marginPct / 100;
-    return GuardReport(balance, reserved, unpaid, alerts, margin);
+    return GuardReport(balance, reserved, unpaid, margin);
   }
 
   // ───────────── বারবার নোটিফিকেশন ─────────────
