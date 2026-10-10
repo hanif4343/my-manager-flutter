@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../family/services/family_service.dart';
 import '../../reminder/models/reminder.dart' show bn;
 import '../../widgets/app_theme.dart';
 import '../services/spending_guard.dart';
@@ -8,11 +7,11 @@ const _red = Color(0xFFDC2626);
 const _amber = Color(0xFFF59E0B);
 
 /// ক্যাশবুকের উপরের খরচ-প্রহরী কার্ড। সব ঠিক থাকলে ছোট সবুজ লাইন; জরুরি খরচের টাকা
-/// কমে এলে বা বাজেট ৮০%+ হলে বড়, লাল, স্পন্দিত কার্ড — চোখ এড়ানো কঠিন।
+/// কমে এলে (আবশ্যিক খরচের কাছাকাছি গেলে) বড়, লাল, স্পন্দিত কার্ড — চোখ এড়ানো কঠিন।
 class SpendingGuardCard extends StatefulWidget {
-  /// "বাজেট দেখো" বাটনে ট্যাপ করলে ক্যাশবুকের বাজেট ট্যাবে যেতে।
-  final VoidCallback? onOpenBudget;
-  const SpendingGuardCard({super.key, this.onOpenBudget});
+  /// "আবশ্যিক খরচ দেখো" বাটনে ট্যাপ করলে আবশ্যিক খরচ ট্যাবে যেতে।
+  final VoidCallback? onOpenEssentials;
+  const SpendingGuardCard({super.key, this.onOpenEssentials});
   @override State<SpendingGuardCard> createState() => _SpendingGuardCardState();
 }
 
@@ -26,14 +25,12 @@ class _SpendingGuardCardState extends State<SpendingGuardCard> with SingleTicker
   void initState() {
     super.initState();
     SpendingGuard.changes.addListener(_load);
-    FamilyService.changes.addListener(_load);
     _load();
   }
 
   @override
   void dispose() {
     SpendingGuard.changes.removeListener(_load);
-    FamilyService.changes.removeListener(_load);
     _pulse.dispose();
     super.dispose();
   }
@@ -155,18 +152,18 @@ class _SpendingGuardCardState extends State<SpendingGuardCard> with SingleTicker
               decoration: BoxDecoration(color: Colors.black.withOpacity(0.22), borderRadius: BorderRadius.circular(10)),
               child: Text(
                 danger
-                    ? 'এখন শুধু যা না করলেই নয় তাই খরচ করো। অকারণ খরচ আজ বন্ধ — আগে বিল-কিস্তির টাকা নিশ্চিত করো।'
-                    : 'সাবধান! এই গতিতে চললে জরুরি খরচের টাকা কমে যাবে। অযাচিত খরচ এখনই থামাও।',
+                    ? 'টাকা কম খরচ করুন — আবশ্যিক কাজ আগে করুন। অকারণ খরচ আজ বন্ধ।'
+                    : 'সাবধান! টাকা কম খরচ করুন — আবশ্যিক খরচ আগে মেটান। অযাচিত খরচ এখনই থামান।',
                 style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700, height: 1.4),
               ),
             ),
             const SizedBox(height: 8),
             Row(children: [
-              if (widget.onOpenBudget != null)
+              if (widget.onOpenEssentials != null)
                 TextButton(
                   style: TextButton.styleFrom(foregroundColor: Colors.white),
-                  onPressed: widget.onOpenBudget,
-                  child: const Text('বাজেট দেখো'),
+                  onPressed: widget.onOpenEssentials,
+                  child: const Text('আবশ্যিক খরচ দেখো'),
                 ),
               const Spacer(),
               TextButton.icon(
@@ -309,8 +306,8 @@ class _GuardSettingsSheetState extends State<_GuardSettingsSheet> {
           Text('খরচ-প্রহরী', style: TextStyle(color: AppTheme.textPrimary, fontSize: 17, fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
           Text(
-            'বিল ও কিস্তি মেটানোর পরে হাতে কত থাকবে হিসাব করে, কাছাকাছি গেলে লাল সতর্কতা দেয়। '
-            'বাজেটের কোন খাত কত % গেল তাও ধরে।',
+            'ক্যাশবুকে যত টাকা আছে তা থেকে বাকি আবশ্যিক খরচ মেটানোর পরে হাতে কত থাকবে হিসাব করে। '
+            'আবশ্যিক খরচের কাছাকাছি গেলে লাল সতর্কতা দেয়: "টাকা কম খরচ করুন, আবশ্যিক কাজ আগে করুন"।',
             style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5, height: 1.45),
           ),
           SwitchListTile(
@@ -326,7 +323,7 @@ class _GuardSettingsSheetState extends State<_GuardSettingsSheet> {
           const SizedBox(height: 6),
           Text('কখন "কাছাকাছি" ধরবে', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700, fontSize: 13.5)),
           const SizedBox(height: 2),
-          Text('জরুরি খরচ মেটানোর পর হাতে থাকা টাকা জরুরি খরচের এই % এর কম হলে',
+          Text('আবশ্যিক খরচ মেটানোর পর হাতে থাকা টাকা আবশ্যিক খরচের এই % এর কম হলে',
               style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
           const SizedBox(height: 6),
           Wrap(spacing: 8, children: [
