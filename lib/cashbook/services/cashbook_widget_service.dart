@@ -67,7 +67,7 @@ class CashbookWidgetService {
       if (SpendingGuard.enabled) {
         final g = await SpendingGuard.assess();
         if (g.level == GuardLevel.danger) {
-          title = '$title 🚨 জরুরির টাকা নেই!';
+          title = '$title 🚨 আবশ্যিকের টাকা নেই!';
         } else if (g.level == GuardLevel.near) {
           title = '$title ⚠️ সাবধান';
         }
