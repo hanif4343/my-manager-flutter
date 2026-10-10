@@ -4,6 +4,7 @@ import 'package:path/path.dart';
 import '../models/cashbook_account.dart';
 import '../models/cashbook_entry.dart';
 import '../models/cashbook_budget.dart';
+import '../models/cashbook_essential.dart';
 import '../models/cashbook_debt.dart';
 import '../services/cashbook_widget_service.dart';
 import '../services/spending_guard.dart';
@@ -15,7 +16,7 @@ import '../../services/settings_service.dart';
 /// this table layout exists, and vice versa.
 class CashbookDB {
   static Database? _db;
-  static const _version = 1;
+  static const _version = 2;
   static const fileName = 'cashbook.db';
 
   static Future<Database> get db async {
@@ -25,7 +26,28 @@ class CashbookDB {
 
   static Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), fileName);
-    return openDatabase(path, version: _version, onCreate: _onCreate);
+    return openDatabase(path, version: _version, onCreate: _onCreate, onUpgrade: _onUpgrade);
+  }
+
+  static Future<void> _onUpgrade(Database db, int oldV, int newV) async {
+    // v2: আবশ্যিক খরচ (আগের "বাজেট" ট্যাবের জায়গায়)। পুরনো টেবিল/ডেটা যেমন ছিল তেমনই থাকে।
+    if (oldV < 2) await _createEssentials(db);
+  }
+
+  static Future<void> _createEssentials(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS essentials(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        amount REAL NOT NULL,
+        due_day INTEGER DEFAULT 0,
+        category TEXT NOT NULL DEFAULT 'bill',
+        monthly INTEGER DEFAULT 1,
+        paid_month TEXT,
+        entry_id INTEGER,
+        created_at INTEGER NOT NULL
+      )
+    ''');
   }
 
   static Future<void> _onCreate(Database db, int version) async {
@@ -73,6 +95,7 @@ class CashbookDB {
         created_at INTEGER NOT NULL
       )
     ''');
+    await _createEssentials(db);
     // First-run only: seed a starting "নগদ" wallet so the account
     // switcher isn't empty on day one.
     await db.insert('accounts', {
@@ -239,7 +262,79 @@ class CashbookDB {
     return created;
   }
 
-  // ── BUDGETS ───────────────────────────────────────────
+  // ── আবশ্যিক খরচ ───────────────────────────────────────
+  static String _thisMonth() => todayIso().substring(0, 7);
+
+  static Future<List<CashbookEssential>> getEssentials() async {
+    final d = await db;
+    final rows = await d.query('essentials', orderBy: 'id ASC');
+    return rows.map(CashbookEssential.fromMap).toList();
+  }
+
+  static Future<void> upsertEssential(CashbookEssential e) async {
+    final d = await db;
+    if (e.id == null) {
+      await d.insert('essentials', e.toMap());
+    } else {
+      // শুধু সম্পাদনযোগ্য ঘর বদলায়; "মেটানো হয়েছে" অবস্থা অক্ষত থাকে।
+      await d.update(
+        'essentials',
+        {
+          'title': e.title,
+          'amount': e.amount,
+          'due_day': e.dueDay,
+          'category': e.category,
+          'monthly': e.monthly ? 1 : 0,
+        },
+        where: 'id=?',
+        whereArgs: [e.id],
+      );
+    }
+    SpendingGuard.changes.value++;
+  }
+
+  /// মুছলে আগে মেটানো এন্ট্রি খাতায় থেকে যায় (টাকা সত্যিই খরচ হয়েছিল) — শুধু তালিকা থেকে যায়।
+  static Future<void> deleteEssential(int id) async {
+    final d = await db;
+    await d.delete('essentials', where: 'id=?', whereArgs: [id]);
+    SpendingGuard.changes.value++;
+  }
+
+  /// "ঠিক আছে" চাপলে ([paid] = true): চলতি মাসের খাতায় নিজে খরচ-এন্ট্রি লেখা হয় — ক্যাশ কমে।
+  /// টিক তুলে নিলে ([paid] = false): ওই এন্ট্রি মুছে যায়। একই মাসে কখনও দুবার খরচ লেখা হয় না।
+  static Future<void> setEssentialPaid(int id, bool paid) async {
+    final d = await db;
+    final rows = await d.query('essentials', where: 'id=?', whereArgs: [id]);
+    if (rows.isEmpty) return;
+    final e = CashbookEssential.fromMap(rows.first);
+    final mk = _thisMonth();
+
+    if (paid) {
+      if (e.paidIn(mk)) return;
+      final acc = await currentMonthAccount();
+      final ms = DateTime.now().millisecondsSinceEpoch;
+      final entryId = await insertEntry(CashbookEntry(
+        accountId: acc.id!,
+        type: 'out',
+        amount: e.amount,
+        category: e.category,
+        note: 'আবশ্যিক খরচ: ${e.title}',
+        date: todayIso(),
+        createdAt: ms,
+        updatedAt: ms,
+      ));
+      await d.update('essentials', {'paid_month': mk, 'entry_id': entryId}, where: 'id=?', whereArgs: [id]);
+    } else {
+      if (!e.paidIn(mk)) return;
+      if (e.entryId != null) {
+        await deleteEntry(e.entryId!);
+      }
+      await d.update('essentials', {'paid_month': null, 'entry_id': null}, where: 'id=?', whereArgs: [id]);
+    }
+    SpendingGuard.changes.value++;
+  }
+
+  // ── BUDGETS (পুরনো — এখন আর দেখানো হয় না; ব্যাকআপের সামঞ্জস্যের জন্য রাখা) ──
   static Future<List<CashbookBudget>> getBudgets() async {
     final d = await db;
     final rows = await d.query('budgets', orderBy: 'id ASC');
@@ -373,6 +468,7 @@ class CashbookDB {
       'entries': await d.query('entries'),
       'budgets': await d.query('budgets'),
       'debts': await d.query('debts'),
+      'essentials': await d.query('essentials'),
     };
   }
 
@@ -394,6 +490,13 @@ class CashbookDB {
       }
       for (final row in (data['debts'] as List? ?? [])) {
         await txn.insert('debts', Map<String, dynamic>.from(row));
+      }
+      // পুরনো ব্যাকআপে এই চাবি নেই — তখন বর্তমান আবশ্যিক খরচ মুছবে না।
+      if (data.containsKey('essentials')) {
+        await txn.delete('essentials');
+        for (final row in (data['essentials'] as List? ?? [])) {
+          await txn.insert('essentials', Map<String, dynamic>.from(row));
+        }
       }
     });
   }
