@@ -156,6 +156,21 @@ class NotificationService {
     debugPrint('Morning digest scheduled for $fireAt → ${summary.notificationShort}');
   }
 
+  /// Job Radar-এর রাতের রিপোর্ট — দিনে একটাই (একই ID, তাই আগেরটা প্রতিস্থাপিত হয়)।
+  static Future<void> showRadarReport(String title, String body, String bigText) async {
+    await init();
+    final androidDetails = AndroidNotificationDetails(
+      'radar_daily_channel',
+      'Job Radar',
+      channelDescription: 'প্রতি রাতে উপযুক্ত সার্কুলারের তালিকা',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      icon: '@mipmap/ic_launcher',
+      styleInformation: BigTextStyleInformation(bigText, contentTitle: title, summaryText: body),
+    );
+    await _plugin.show(9100, title, body, NotificationDetails(android: androidDetails), payload: 'job_radar');
+  }
+
   static Future<void> cancelDailyDigest() async {
     await _plugin.cancel(_digestId);
   }
