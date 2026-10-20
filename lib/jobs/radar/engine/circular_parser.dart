@@ -1,0 +1,152 @@
+import 'bn_util.dart';
+
+/// সামারি টেবিলের সারি "লেবেল | মান |" থেকে মান।
+String field(String text, String label) {
+  final re = RegExp('^$label[^|\\n]*\\|\\s*(.+?)\\s*\\|?\\s*\$', multiLine: true);
+  final m = re.firstMatch(text);
+  return m == null ? '' : m[1]!.trim();
+}
+
+class ParsedPost {
+  final String title;
+  final int? count;
+  final String text; // শর্তের লাইনগুলো
+  const ParsedPost(this.title, this.count, this.text);
+}
+
+final _postHead = RegExp(r'^(?:##\s*)?(\d+)\s*[.।)]\s*(.+?)\s*\(\s*(\d+)\s*(?:টি|জন)?\s*পদ\s*\)\s*$');
+final _tableRow = RegExp(r'^(\d+)\s*\|\s*(.+?)\s*\|\s*(\d+)\s*(?:টি|জন)?\s*\|');
+
+/// পদভিত্তিক ব্লক। না পেলে সামারি টেবিল থেকে শুধু নাম।
+List<ParsedPost> parsePosts(String text) {
+  final lines = text.split('\n');
+  final blocks = <_Block>[];
+  _Block? cur;
+  for (final raw in lines) {
+    final l = toEn(raw);
+    final h = _postHead.firstMatch(l);
+    if (h != null) {
+      cur = _Block(h[2]!.replaceAll('*', '').trim(), int.parse(h[3]!));
+      blocks.add(cur);
+      continue;
+    }
+    if (cur != null) {
+      if (RegExp(r'^##\s').hasMatch(l)) {
+        cur = null; // অন্য হেডিং এলে ব্লক শেষ
+      } else {
+        cur.lines.add(raw);
+      }
+    }
+  }
+  if (blocks.isNotEmpty) {
+    return blocks.map((b) => ParsedPost(b.title, b.count, b.lines.join('\n'))).toList();
+  }
+  final rows = <ParsedPost>[];
+  for (final raw in lines) {
+    final m = _tableRow.firstMatch(toEn(raw));
+    if (m != null) rows.add(ParsedPost(m[2]!.trim(), int.parse(m[3]!), ''));
+  }
+  return rows;
+}
+
+class _Block {
+  final String title;
+  final int count;
+  final List<String> lines = [];
+  _Block(this.title, this.count);
+}
+
+class Typing {
+  final int? bn;
+  final int? en;
+  const Typing(this.bn, this.en);
+}
+
+/// টাইপিং শর্ত (WPM)। ভাষা আলাদা না থাকলে দুটোতেই একই ধরা হয়।
+Typing parseTyping(String rawText) {
+  final t = toEn(rawText);
+  int? num(RegExp re) {
+    final m = re.firstMatch(t);
+    return m == null ? null : int.parse(m[1]!);
+  }
+
+  const tail = r'\s*(?:শব্দ|wpm|ওয়ার্ড|ও(?=\s|$)|এবং|,)';
+  var bn = num(RegExp(r'বাংলা(?:য়|তে|র)?[^0-9।]{0,14}?(\d+)' + tail, caseSensitive: false));
+  var en = num(RegExp(r'ইংরেজি(?:তে|র)?[^0-9।]{0,14}?(\d+)' + tail, caseSensitive: false));
+  if (bn == null && en == null) {
+    final g = num(RegExp(r'প্রতি\s*মিনিটে[^0-9।]{0,30}?(\d+)\s*(?:শব্দ|wpm)', caseSensitive: false));
+    if (g != null) {
+      bn = g;
+      en = g;
+    }
+  }
+  return Typing(bn, en);
+}
+
+class AgeInfo {
+  final int? min;
+  final int max;
+  final DateTime? refDate;
+  const AgeInfo(this.min, this.max, this.refDate);
+}
+
+/// বয়সসীমা: ন্যূনতম/সর্বোচ্চ ও গণনার তারিখ।
+AgeInfo? parseAge(String rawText, DateTime? fallbackRef) {
+  final t = toEn(rawText);
+  int? min;
+  int? max;
+  var idx = -1;
+  final r1 = RegExp(r'(\d{1,2})\s*(?:থেকে|[-–])\s*(?:অনুর্ধ্ব|অনূর্ধ্ব|সর্বোচ্চ)?\s*(\d{1,2})\s*বছর');
+  final r2 = RegExp(r'(?:অনুর্ধ্ব|অনূর্ধ্ব|সর্বোচ্চ)\s*(\d{1,2})\s*বছর');
+  final m1 = r1.firstMatch(t);
+  if (m1 != null) {
+    min = int.parse(m1[1]!);
+    max = int.parse(m1[2]!);
+    idx = m1.start;
+  } else {
+    final m2 = r2.firstMatch(t);
+    if (m2 != null) {
+      max = int.parse(m2[1]!);
+      idx = m2.start;
+    }
+  }
+  if (max == null) return null;
+  var ref = fallbackRef;
+  final from = (idx - 90) < 0 ? 0 : idx - 90;
+  final to = (idx + 5) > t.length ? t.length : idx + 5;
+  final before = t.substring(from, to);
+  final ds = findDates(before);
+  if (ds.isNotEmpty && before.contains('তারিখে')) ref = ds.last.date;
+  return AgeInfo(min, max, ref);
+}
+
+class EduInfo {
+  final int? required; // 2=SSC 3=HSC 4=স্নাতক(পাস) 5=অনার্স 6=মাস্টার্স
+  final List<String> flags;
+  const EduInfo(this.required, this.flags);
+}
+
+EduInfo parseEducation(String rawText) {
+  var t = rawText;
+  final levels = <int>[];
+  final flags = <String>[];
+  if (RegExp(r'স্নাতকোত্তর|মাস্টার', caseSensitive: false).hasMatch(t)) levels.add(6);
+  t = t.replaceAll(RegExp(r'স্নাতকোত্তর|মাস্টার[স্সz]*', caseSensitive: false), ' ');
+  final hon = RegExp(r'স্নাতক\s*\(?\s*সম্মান\s*\)?|সম্মান\s*সহ|অনার্স|honou?rs|চার\s*বছর\s*মেয়াদী', caseSensitive: false);
+  final hasHon = hon.hasMatch(t);
+  if (hasHon) levels.add(5);
+  t = t.replaceAll(hon, ' ');
+  final bpass = RegExp(r'স্নাতক\s*\(?\s*পাস\s*\)?|স্নাতক\s*পাস|ডিগ্রি\s*পাস', caseSensitive: false);
+  if (bpass.hasMatch(t)) levels.add(4);
+  t = t.replaceAll(bpass, ' ');
+  if (RegExp(r'স্নাতক|bachelor', caseSensitive: false).hasMatch(t)) levels.add(4);
+  if (RegExp(r'এইচ\s*এস\s*সি|উচ্চ\s*মাধ্যমিক|\bhsc\b|ইন্টারমিডিয়েট|আলিম', caseSensitive: false).hasMatch(t)) levels.add(3);
+  t = t.replaceAll(RegExp(r'উচ্চ\s*মাধ্যমিক'), ' ');
+  if (RegExp(r'এস\s*এস\s*সি|মাধ্যমিক|\bssc\b|দাখিল', caseSensitive: false).hasMatch(t)) levels.add(2);
+  // শুধু "ডিগ্রি" লেখা থাকলে (স্নাতক শব্দ ছাড়া) সেটাকেও স্নাতক ধরি
+  if (levels.isEmpty && t.contains('ডিগ্রি') && !t.contains('ডিপ্লোমা')) levels.add(4);
+  if (rawText.contains('ডিপ্লোমা')) flags.add('diploma');
+  int? required;
+  if (levels.isNotEmpty) required = levels.reduce((a, b) => a < b ? a : b);
+  return EduInfo(required, flags);
+}
