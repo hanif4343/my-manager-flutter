@@ -259,5 +259,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>
+            <!-- Job Radar: বেছে দেওয়া চাকরির অ্যাপের নোটিফিকেশন পড়ার সার্ভিস (ব্যবহারকারী Settings থেকে নিজে অনুমতি দেন) -->
+        <service
+            android:name=".JobNotificationListener"
+            android:label="Job Radar"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
+
     </application>
 </manifest>
