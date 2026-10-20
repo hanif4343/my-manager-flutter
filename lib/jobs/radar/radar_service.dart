@@ -1,0 +1,162 @@
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../reminder/models/reminder.dart' show Reminder;
+import '../../services/settings_service.dart';
+import '../models/job_models.dart';
+import 'engine/match_engine.dart';
+import 'radar_models.dart';
+
+/// Job Radar-এর প্রোফাইল, সেটিংস, ক্যাশ ও রূপান্তর। (সবকিছু ফোনের ভেতরে — কোনো সার্ভার/টোকেন লাগে না।)
+class RadarService {
+  // SharedPreferences কী — সবই স্ট্রিং, যাতে ব্যাকআপে সহজে যায়
+  static const kDob = 'radar_dob';
+  static const kEdu = 'radar_edu';
+  static const kSubject = 'radar_subject';
+  static const kTypBn = 'radar_typ_bn';
+  static const kTypEn = 'radar_typ_en';
+  static const kDaily = 'radar_daily_on'; // '1' / '0'
+  static const kReportTime = 'radar_report_time'; // 'HH:mm'
+  static const _kCache = 'radar_cache';
+  static const _kDismissed = 'radar_dismissed';
+
+  /// ব্যাকআপে যাবে এমন কী।
+  static const backupKeys = [kDob, kEdu, kSubject, kTypBn, kTypEn, kDaily, kReportTime];
+
+  static const eduLevels = <String, String>{
+    'ssc': 'এসএসসি / সমমান',
+    'hsc': 'এইচএসসি / সমমান',
+    'degree_pass': 'স্নাতক (পাস কোর্স, ৩ বছর)',
+    'honours': 'স্নাতক (সম্মান)',
+    'masters': 'স্নাতকোত্তর',
+  };
+  static const _eduRank = {'ssc': 2, 'hsc': 3, 'degree_pass': 4, 'honours': 5, 'masters': 6};
+
+  // ── প্রোফাইল ──
+  static String get dob => SettingsService.getString(kDob, defaultValue: '1999-01-01');
+  static String get eduLevel => SettingsService.getString(kEdu, defaultValue: 'degree_pass');
+  static String get subject => SettingsService.getString(kSubject);
+  static int get typingBn => int.tryParse(SettingsService.getString(kTypBn)) ?? 20;
+  static int get typingEn => int.tryParse(SettingsService.getString(kTypEn)) ?? 20;
+
+  // ── রাতের রিপোর্ট ──
+  static bool get dailyOn => SettingsService.getString(kDaily, defaultValue: '1') != '0';
+  static String get reportTime => SettingsService.getString(kReportTime, defaultValue: '21:00');
+  static int get reportHour => int.tryParse(reportTime.split(':').first) ?? 21;
+  static int get reportMinute => int.tryParse(reportTime.split(':').last) ?? 0;
+
+  static const _keywords = [
+    r'কম্পিউটার\s*অপারেটর',
+    r'কম্পিউটার\s*মুদ্রাক্ষরিক',
+    r'ডাটা\s*এন্ট্রি',
+    r'ডেটা\s*এন্ট্রি',
+    r'ডাটা\s*অপারেটর',
+    r'ডেটা\s*অপারেটর',
+    r'অফিস\s*সহায়ক\s*[-–]?\s*কাম',
+    r'computer\s*operator',
+    r'data\s*entry',
+    r'computer\s*typist',
+  ];
+  static const _exclude = ['সাঁট', 'সীট', 'শর্টহ্যান্ড', 'stenograph', 'shorthand'];
+  static List<String> get keywords => _keywords;
+
+  /// ইঞ্জিনের জন্য প্রোফাইল অবজেক্ট।
+  static RadarProfile profile() {
+    final p = dob.split('-').map((e) => int.tryParse(e) ?? 0).toList();
+    final d = (p.length == 3 && p[0] > 0) ? DateTime.utc(p[0], p[1], p[2]) : DateTime.utc(1999, 1, 1);
+    return RadarProfile(
+      dob: d,
+      eduRank: _eduRank[eduLevel] ?? 4,
+      eduLabel: eduLevels[eduLevel] ?? eduLevel,
+      subject: subject,
+      typingBn: typingBn,
+      typingEn: typingEn,
+      targetKeywords: _keywords,
+      excludeKeywords: _exclude,
+    );
+  }
+
+  // ── ক্যাশ (শেষ ফলাফল) ──
+  /// ব্যাকগ্রাউন্ড টাস্ক অন্য আইসোলেটে লিখে থাকলে সেটা এখানে দেখার জন্য।
+  static Future<void> reload() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.reload();
+    } catch (_) {}
+  }
+
+  static RadarFeed? cached() {
+    final raw = SettingsService.getString(_kCache);
+    if (raw.isEmpty) return null;
+    try {
+      return RadarFeed.fromMap(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> saveFeed(RadarFeed f) => SettingsService.setString(_kCache, jsonEncode(f.toMap()));
+
+  // ── লুকানো (dismissed) ──
+  static Set<String> dismissed() {
+    final raw = SettingsService.getString(_kDismissed);
+    if (raw.isEmpty) return {};
+    try {
+      return (jsonDecode(raw) as List).map((e) => e.toString()).toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> dismiss(String url) async {
+    final list = (dismissed()..add(url)).toList();
+    final keep = list.length > 300 ? list.sublist(list.length - 300) : list;
+    await SettingsService.setString(_kDismissed, jsonEncode(keep));
+  }
+
+  static Future<void> restore(String url) async {
+    final s = dismissed()..remove(url);
+    await SettingsService.setString(_kDismissed, jsonEncode(s.toList()));
+  }
+
+  // ── রূপান্তর ──
+  static const _bnDigits = '০১২৩৪৫৬৭৮৯';
+  static String _toEn(String s) =>
+      s.replaceAllMapped(RegExp('[০-৯]'), (m) => _bnDigits.indexOf(m[0]!).toString());
+
+  static int _feeOf(String s) {
+    final m = RegExp(r'\d+').firstMatch(_toEn(s));
+    return m == null ? 0 : int.tryParse(m[0]!) ?? 0;
+  }
+
+  /// রাডারের সার্কুলার → জব হাবের Circular (নজরে)। সংরক্ষণ করবে JobService.saveCircular।
+  static Circular toCircular(RadarItem it) {
+    final note = StringBuffer(it.verdict == 'ok' ? 'রাডার: সম্ভাব্য যোগ্য' : 'রাডার: যাচাই বাকি');
+    for (final p in it.posts) {
+      for (final c in p.checks) {
+        if (c.s != 'ok') note.write('\n${c.icon} ${p.title}: ${c.msg}');
+      }
+    }
+    if (it.method.isNotEmpty) note.write('\nআবেদন: ${it.method}');
+    note.write('\n(স্বয়ংক্রিয় যাচাই — মূল বিজ্ঞপ্তি দেখে নিশ্চিত হও)');
+    return Circular(
+      title: it.title,
+      org: it.org,
+      post: it.posts.map((p) => p.title).take(3).join(', '),
+      deadline: it.deadline,
+      fee: _feeOf(it.fee),
+      url: it.url,
+      note: note.toString(),
+    );
+  }
+
+  static String ymd(DateTime d) => Reminder.ymd(d);
+}
+
+/// সেটিংস শিট থেকে একসাথে একাধিক স্ট্রিং মান সংরক্ষণ।
+class SettingsPersist {
+  static Future<void> save(Map<String, String> strings) async {
+    for (final e in strings.entries) {
+      await SettingsService.setString(e.key, e.value);
+    }
+  }
+}
