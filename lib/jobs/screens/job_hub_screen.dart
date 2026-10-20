@@ -6,6 +6,7 @@ import '../../services/drive_service.dart' show DriveBackupResult;
 import '../services/app_launcher.dart';
 import '../services/job_backup_service.dart';
 import '../services/job_service.dart';
+import '../radar/radar_tab.dart';
 
 /// সরকারি চাকরির প্রস্তুতির "ম্যানেজার" দিক: সার্কুলার/ডেডলাইন, ডকুমেন্ট,
 /// বয়সসীমা ও পরীক্ষার কাউন্টডাউন, সাপ্তাহিক রিভিউ। পড়াশোনার কনটেন্ট
@@ -33,7 +34,7 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this, initialIndex: widget.initialTab.clamp(0, 2))..addListener(() => setState(() {}));
+    _tab = TabController(length: 4, vsync: this, initialIndex: widget.initialTab.clamp(0, 3))..addListener(() => setState(() {}));
     _load();
   }
 
@@ -130,10 +131,10 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
           indicatorColor: AppTheme.accent,
           labelColor: AppTheme.accent,
           unselectedLabelColor: AppTheme.textMuted,
-          tabs: const [Tab(text: 'ওভারভিউ'), Tab(text: 'সার্কুলার'), Tab(text: 'ডকুমেন্ট')],
+          tabs: const [Tab(text: 'ওভারভিউ'), Tab(text: 'সার্কুলার'), Tab(text: 'ডকুমেন্ট'), Tab(text: 'রাডার')],
         ),
       ),
-      floatingActionButton: _tab.index == 0
+      floatingActionButton: (_tab.index == 0 || _tab.index == 3)
           ? null
           : FloatingActionButton(
               backgroundColor: AppTheme.accent,
@@ -145,7 +146,7 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
           : TabBarView(
               controller: _tab,
-              children: [_overview(), _circularTab(), _docTab()],
+              children: [_overview(), _circularTab(), _docTab(), RadarTab(onSaved: _load)],
             ),
     );
   }
