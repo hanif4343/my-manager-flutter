@@ -18,10 +18,12 @@ import 'cashbook/services/spending_guard.dart';
 import 'screentime/screen_time_service.dart';
 import 'cashbook/screens/cashbook_quick_add_app.dart';
 import 'reminder/services/reminder_service.dart';
+import 'jobs/radar/radar_runner.dart';
 
 const autoBackupTaskName = 'my_manager_auto_backup';
 const cashbookReminderTaskName = 'cashbook_reminder_check';
 const reminderRearmTaskName = 'reminder_rearm';
+const radarDailyTaskName = 'job_radar_daily';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -136,7 +138,19 @@ void main() async {
       existingWorkPolicy: ExistingWorkPolicy.keep,
     );
   } catch (_) {}
+  // Job Radar: ঘণ্টায় একবার "আজকের রিপোর্টের সময় হয়েছে কি?" দেখে; সময় হলে একবার সার্চ করে
+  // রাতে একটাই নোটিফিকেশন দেয় (দিনে বারবার খোঁজে না, বারবার জানায় না)।
+  try {
+    await Workmanager().registerPeriodicTask(
+      radarDailyTaskName, radarDailyTaskName,
+      frequency: const Duration(hours: 1),
+      constraints: Constraints(networkType: NetworkType.connected),
+      existingWorkPolicy: ExistingWorkPolicy.keep,
+    );
+  } catch (_) {}
   runApp(const MyManagerApp());
+  // অ্যাপ খুললেও: আজকের রাতের রিপোর্টের সময় পেরিয়ে থাকলে ও বাকি থাকলে এখনই করে দেয়।
+  RadarRunner.runIfDue().then((_) {}, onError: (_) {});
   // Refresh the home screen widget on every cold start too, in case
   // something changed while the app wasn't running.
   WidgetService.update();
@@ -158,6 +172,13 @@ void callbackDispatcher() {
         try {
           await SettingsService.init();
           await NotificationService.scheduleDailyDigest();
+        } catch (_) {}
+        return true;
+      }
+      if (task == radarDailyTaskName) {
+        try {
+          await SettingsService.init();
+          await RadarRunner.runIfDue();
         } catch (_) {}
         return true;
       }
