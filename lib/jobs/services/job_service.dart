@@ -8,6 +8,7 @@ import '../../reminder/services/reminder_service.dart';
 import '../../services/settings_service.dart';
 import '../db/job_db.dart';
 import '../models/job_models.dart';
+import '../radar/radar_service.dart' show RadarService;
 import 'job_backup_service.dart';
 
 /// চাকরি হাবের লজিক। সার্কুলারের তারিখ থেকে রিমাইন্ডার নিজে তৈরি হয় —
@@ -24,6 +25,7 @@ class JobService {
 
   static const _profileKeys = [
     _kPost, _kGrade, _kSalary, _kAgeOut, _kExamName, _kExamDate,
+    ...RadarService.backupKeys, // রাডারের প্রোফাইল (টোকেন বাদে)
   ];
 
   static Map<String, String> profileMap() => {
