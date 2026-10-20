@@ -1,0 +1,2292 @@
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/bdgovtjob_source.dart b/lib/jobs/radar/engine/bdgovtjob_source.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/engine/bdgovtjob_source.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/engine/bdgovtjob_source.dart	2026-10-20 19:31:32.492836700 +0000
+@@ -0,0 +1,94 @@
++import 'dart:convert';
++import 'package:http/http.dart' as http;
++import 'html_text.dart';
++
++const _base = 'https://bdgovtjob.net';
++const _ua = 'JobRadar/1.0 (personal app; once a day)';
++const _blockSlugs = {
++  'category', 'tag', 'author', 'page', 'wp-content', 'wp-json', 'wp-admin', 'feed', 'about', 'contact',
++  'privacy-policy', 'disclaimer', 'terms-conditions', 'editorial-policy', 'smart-search', 'saved-jobs',
++  'age-calculator', 'notice', 'sitemap', 'comments', 'search',
++};
++
++class ListedPost {
++  final String url;
++  final String title;
++  final String? modified;
++  const ListedPost(this.url, this.title, this.modified);
++}
++
++class FetchedDetail {
++  final String title;
++  final String text;
++  const FetchedDetail(this.title, this.text);
++}
++
++Future<String> _get(String url, {bool json = false}) async {
++  Object? last;
++  for (var i = 0; i < 2; i++) {
++    try {
++      final res = await http.get(Uri.parse(url), headers: {
++        'user-agent': _ua,
++        'accept': json ? 'application/json' : 'text/html,*/*',
++        'accept-language': 'bn,en;q=0.8',
++      }).timeout(const Duration(seconds: 25));
++      if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
++      return utf8.decode(res.bodyBytes);
++    } catch (e) {
++      last = e;
++      await Future<void>.delayed(Duration(seconds: 2 * (i + 1)));
++    }
++  }
++  throw Exception('$last');
++}
++
++/// সর্বশেষ আপডেট হওয়া পোস্টের তালিকা। আগে WordPress REST, না হলে HTML থেকে লিংক।
++Future<List<ListedPost>> listLatest({int limit = 40}) async {
++  try {
++    final body = await _get(
++      '$_base/wp-json/wp/v2/posts?per_page=${limit > 50 ? 50 : limit}&orderby=modified&order=desc&_fields=link,title,modified',
++      json: true,
++    );
++    final arr = jsonDecode(body);
++    if (arr is List && arr.isNotEmpty) {
++      return arr.map<ListedPost>((p) {
++        final m = Map<String, dynamic>.from(p as Map);
++        final t = decodeEntities(((m['title'] as Map?)?['rendered'] ?? '').toString())
++            .replaceAll(RegExp(r'<[^>]+>'), '')
++            .trim();
++        return ListedPost((m['link'] ?? '').toString(), t, m['modified']?.toString());
++      }).where((p) => p.url.isNotEmpty).toList();
++    }
++  } catch (_) {
++    // REST কাজ না করলে নিচের HTML তালিকায় যাব
++  }
++  final seen = <String, ListedPost>{};
++  for (final u in ['$_base/', '$_base/category/government-jobs-circular/', '$_base/category/teletalk-application/']) {
++    try {
++      final html = await _get(u);
++      final re = RegExp(r'<a[^>]+href="(https://bdgovtjob\.net/([^"/?#]+)/)"[^>]*>([\s\S]*?)</a>', caseSensitive: false);
++      for (final m in re.allMatches(html)) {
++        final url = m[1]!, slug = m[2]!;
++        if (_blockSlugs.contains(slug) || slug.length < 6) continue;
++        final title = decodeEntities(m[3]!.replaceAll(RegExp(r'<[^>]+>'), '')).replaceAll(RegExp(r'\s+'), ' ').trim();
++        final old = seen[url];
++        if (old == null || title.length > old.title.length) seen[url] = ListedPost(url, title, null);
++      }
++    } catch (_) {}
++  }
++  return seen.values.take(limit).toList();
++}
++
++/// একটি সার্কুলার পেজ → শিরোনাম ও টেক্সট।
++Future<FetchedDetail> fetchDetail(String url) async {
++  final html = await _get(url);
++  var body = html;
++  final a = html.indexOf(RegExp(r'<article[\s>]', caseSensitive: false));
++  final b = html.indexOf(RegExp(r'</article>', caseSensitive: false));
++  if (a >= 0 && b > a) body = html.substring(a, b);
++  var text = htmlToText(body);
++  // নিচের "আরও চলমান নিয়োগ / FAQ" অংশ বাদ — ভুল মিল এড়াতে
++  final cut = text.indexOf(RegExp(r'^##\s*(সরকারি চাকরি: আরও|সাধারণ জিজ্ঞাসা|⏳|🆕|📂)', multiLine: true));
++  if (cut > 0) text = text.substring(0, cut);
++  return FetchedDetail(titleOf(html), text);
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/bn_util.dart b/lib/jobs/radar/engine/bn_util.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/engine/bn_util.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/engine/bn_util.dart	2026-10-20 19:30:07.722632144 +0000
+@@ -0,0 +1,65 @@
++// বাংলা অঙ্ক/মাস/তারিখ সহায়ক (ইঞ্জিনের জন্য; সব তারিখ UTC-মধ্যরাত রূপে)।
++const _bn = '০১২৩৪৫৬৭৮৯';
++
++String toEn(String s) => s.replaceAllMapped(RegExp('[০-৯]'), (m) => _bn.indexOf(m[0]!).toString());
++
++String toBnStr(Object? s) =>
++    s.toString().replaceAllMapped(RegExp('[0-9]'), (m) => _bn[int.parse(m[0]!)]);
++
++const monthsMap = <String, int>{
++  'জানুয়ারি': 1, 'জানুয়ারী': 1, 'ফেব্রুয়ারি': 2, 'ফেব্রুয়ারী': 2, 'মার্চ': 3, 'এপ্রিল': 4, 'মে': 5,
++  'জুন': 6, 'জুলাই': 7, 'আগস্ট': 8, 'সেপ্টেম্বর': 9, 'অক্টোবর': 10, 'নভেম্বর': 11, 'ডিসেম্বর': 12,
++  'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6, 'july': 7,
++  'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
++};
++const monthNamesBn = [
++  '', 'জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন', 'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর',
++];
++
++final _monthAlt = monthsMap.keys.join('|');
++
++DateTime ymdUtc(int y, int m, int d) => DateTime.utc(y, m, d);
++
++/// ঢাকার সময়ে আজকের তারিখ (UTC-মধ্যরাত)।
++DateTime todayDhaka([DateTime? now]) {
++  final t = (now ?? DateTime.now()).toUtc().add(const Duration(hours: 6));
++  return DateTime.utc(t.year, t.month, t.day);
++}
++
++int daysBetween(DateTime a, DateTime b) => b.difference(a).inDays;
++
++class FoundDate {
++  final DateTime date;
++  final int index;
++  const FoundDate(this.date, this.index);
++}
++
++/// টেক্সট থেকে সব তারিখ (বাংলা/ইংরেজি মাস অথবা dd.mm.yyyy), অবস্থান অনুযায়ী সাজানো।
++List<FoundDate> findDates(String text) {
++  final t = toEn(text);
++  final out = <FoundDate>[];
++  final re1 = RegExp('(\\d{1,2})\\s*($_monthAlt)[,\\s]*(\\d{4})', caseSensitive: false);
++  for (final m in re1.allMatches(t)) {
++    final mo = monthsMap[m[2]!.toLowerCase()] ?? monthsMap[m[2]!];
++    if (mo != null) out.add(FoundDate(ymdUtc(int.parse(m[3]!), mo, int.parse(m[1]!)), m.start));
++  }
++  final re2 = RegExp(r'(\d{1,2})[./-](\d{1,2})[./-](\d{4})');
++  for (final m in re2.allMatches(t)) {
++    final d = int.parse(m[1]!), mo = int.parse(m[2]!);
++    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
++      out.add(FoundDate(ymdUtc(int.parse(m[3]!), mo, d), m.start));
++    }
++  }
++  out.sort((a, b) => a.index.compareTo(b.index));
++  return out;
++}
++
++String fmtDateBn(DateTime d) => toBnStr('${d.day} ${monthNamesBn[d.month]} ${d.year}');
++
++/// পূর্ণ বছরে বয়স নির্দিষ্ট তারিখে।
++int ageAt(DateTime dob, DateTime ref) {
++  var age = ref.year - dob.year;
++  final m = ref.month - dob.month;
++  if (m < 0 || (m == 0 && ref.day < dob.day)) age--;
++  return age;
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/circular_parser.dart b/lib/jobs/radar/engine/circular_parser.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/engine/circular_parser.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/engine/circular_parser.dart	2026-10-20 19:30:43.883553420 +0000
+@@ -0,0 +1,152 @@
++import 'bn_util.dart';
++
++/// সামারি টেবিলের সারি "লেবেল | মান |" থেকে মান।
++String field(String text, String label) {
++  final re = RegExp('^$label[^|\\n]*\\|\\s*(.+?)\\s*\\|?\\s*\$', multiLine: true);
++  final m = re.firstMatch(text);
++  return m == null ? '' : m[1]!.trim();
++}
++
++class ParsedPost {
++  final String title;
++  final int? count;
++  final String text; // শর্তের লাইনগুলো
++  const ParsedPost(this.title, this.count, this.text);
++}
++
++final _postHead = RegExp(r'^(?:##\s*)?(\d+)\s*[.।)]\s*(.+?)\s*\(\s*(\d+)\s*(?:টি|জন)?\s*পদ\s*\)\s*$');
++final _tableRow = RegExp(r'^(\d+)\s*\|\s*(.+?)\s*\|\s*(\d+)\s*(?:টি|জন)?\s*\|');
++
++/// পদভিত্তিক ব্লক। না পেলে সামারি টেবিল থেকে শুধু নাম।
++List<ParsedPost> parsePosts(String text) {
++  final lines = text.split('\n');
++  final blocks = <_Block>[];
++  _Block? cur;
++  for (final raw in lines) {
++    final l = toEn(raw);
++    final h = _postHead.firstMatch(l);
++    if (h != null) {
++      cur = _Block(h[2]!.replaceAll('*', '').trim(), int.parse(h[3]!));
++      blocks.add(cur);
++      continue;
++    }
++    if (cur != null) {
++      if (RegExp(r'^##\s').hasMatch(l)) {
++        cur = null; // অন্য হেডিং এলে ব্লক শেষ
++      } else {
++        cur.lines.add(raw);
++      }
++    }
++  }
++  if (blocks.isNotEmpty) {
++    return blocks.map((b) => ParsedPost(b.title, b.count, b.lines.join('\n'))).toList();
++  }
++  final rows = <ParsedPost>[];
++  for (final raw in lines) {
++    final m = _tableRow.firstMatch(toEn(raw));
++    if (m != null) rows.add(ParsedPost(m[2]!.trim(), int.parse(m[3]!), ''));
++  }
++  return rows;
++}
++
++class _Block {
++  final String title;
++  final int count;
++  final List<String> lines = [];
++  _Block(this.title, this.count);
++}
++
++class Typing {
++  final int? bn;
++  final int? en;
++  const Typing(this.bn, this.en);
++}
++
++/// টাইপিং শর্ত (WPM)। ভাষা আলাদা না থাকলে দুটোতেই একই ধরা হয়।
++Typing parseTyping(String rawText) {
++  final t = toEn(rawText);
++  int? num(RegExp re) {
++    final m = re.firstMatch(t);
++    return m == null ? null : int.parse(m[1]!);
++  }
++
++  const tail = r'\s*(?:শব্দ|wpm|ওয়ার্ড|ও(?=\s|$)|এবং|,)';
++  var bn = num(RegExp(r'বাংলা(?:য়|তে|র)?[^0-9।]{0,14}?(\d+)' + tail, caseSensitive: false));
++  var en = num(RegExp(r'ইংরেজি(?:তে|র)?[^0-9।]{0,14}?(\d+)' + tail, caseSensitive: false));
++  if (bn == null && en == null) {
++    final g = num(RegExp(r'প্রতি\s*মিনিটে[^0-9।]{0,30}?(\d+)\s*(?:শব্দ|wpm)', caseSensitive: false));
++    if (g != null) {
++      bn = g;
++      en = g;
++    }
++  }
++  return Typing(bn, en);
++}
++
++class AgeInfo {
++  final int? min;
++  final int max;
++  final DateTime? refDate;
++  const AgeInfo(this.min, this.max, this.refDate);
++}
++
++/// বয়সসীমা: ন্যূনতম/সর্বোচ্চ ও গণনার তারিখ।
++AgeInfo? parseAge(String rawText, DateTime? fallbackRef) {
++  final t = toEn(rawText);
++  int? min;
++  int? max;
++  var idx = -1;
++  final r1 = RegExp(r'(\d{1,2})\s*(?:থেকে|[-–])\s*(?:অনুর্ধ্ব|অনূর্ধ্ব|সর্বোচ্চ)?\s*(\d{1,2})\s*বছর');
++  final r2 = RegExp(r'(?:অনুর্ধ্ব|অনূর্ধ্ব|সর্বোচ্চ)\s*(\d{1,2})\s*বছর');
++  final m1 = r1.firstMatch(t);
++  if (m1 != null) {
++    min = int.parse(m1[1]!);
++    max = int.parse(m1[2]!);
++    idx = m1.start;
++  } else {
++    final m2 = r2.firstMatch(t);
++    if (m2 != null) {
++      max = int.parse(m2[1]!);
++      idx = m2.start;
++    }
++  }
++  if (max == null) return null;
++  var ref = fallbackRef;
++  final from = (idx - 90) < 0 ? 0 : idx - 90;
++  final to = (idx + 5) > t.length ? t.length : idx + 5;
++  final before = t.substring(from, to);
++  final ds = findDates(before);
++  if (ds.isNotEmpty && before.contains('তারিখে')) ref = ds.last.date;
++  return AgeInfo(min, max, ref);
++}
++
++class EduInfo {
++  final int? required; // 2=SSC 3=HSC 4=স্নাতক(পাস) 5=অনার্স 6=মাস্টার্স
++  final List<String> flags;
++  const EduInfo(this.required, this.flags);
++}
++
++EduInfo parseEducation(String rawText) {
++  var t = rawText;
++  final levels = <int>[];
++  final flags = <String>[];
++  if (RegExp(r'স্নাতকোত্তর|মাস্টার', caseSensitive: false).hasMatch(t)) levels.add(6);
++  t = t.replaceAll(RegExp(r'স্নাতকোত্তর|মাস্টার[স্সz]*', caseSensitive: false), ' ');
++  final hon = RegExp(r'স্নাতক\s*\(?\s*সম্মান\s*\)?|সম্মান\s*সহ|অনার্স|honou?rs|চার\s*বছর\s*মেয়াদী', caseSensitive: false);
++  final hasHon = hon.hasMatch(t);
++  if (hasHon) levels.add(5);
++  t = t.replaceAll(hon, ' ');
++  final bpass = RegExp(r'স্নাতক\s*\(?\s*পাস\s*\)?|স্নাতক\s*পাস|ডিগ্রি\s*পাস', caseSensitive: false);
++  if (bpass.hasMatch(t)) levels.add(4);
++  t = t.replaceAll(bpass, ' ');
++  if (RegExp(r'স্নাতক|bachelor', caseSensitive: false).hasMatch(t)) levels.add(4);
++  if (RegExp(r'এইচ\s*এস\s*সি|উচ্চ\s*মাধ্যমিক|\bhsc\b|ইন্টারমিডিয়েট|আলিম', caseSensitive: false).hasMatch(t)) levels.add(3);
++  t = t.replaceAll(RegExp(r'উচ্চ\s*মাধ্যমিক'), ' ');
++  if (RegExp(r'এস\s*এস\s*সি|মাধ্যমিক|\bssc\b|দাখিল', caseSensitive: false).hasMatch(t)) levels.add(2);
++  // শুধু "ডিগ্রি" লেখা থাকলে (স্নাতক শব্দ ছাড়া) সেটাকেও স্নাতক ধরি
++  if (levels.isEmpty && t.contains('ডিগ্রি') && !t.contains('ডিপ্লোমা')) levels.add(4);
++  if (rawText.contains('ডিপ্লোমা')) flags.add('diploma');
++  int? required;
++  if (levels.isNotEmpty) required = levels.reduce((a, b) => a < b ? a : b);
++  return EduInfo(required, flags);
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/html_text.dart b/lib/jobs/radar/engine/html_text.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/engine/html_text.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/engine/html_text.dart	2026-10-20 19:30:07.723513893 +0000
+@@ -0,0 +1,39 @@
++const _ent = {
++  'amp': '&', 'lt': '<', 'gt': '>', 'quot': '"', 'apos': "'", 'nbsp': ' ', 'ndash': '–', 'mdash': '—', 'hellip': '…',
++};
++
++String decodeEntities(String s) {
++  return s
++      .replaceAllMapped(RegExp(r'&#(\d+);'), (m) => String.fromCharCode(int.parse(m[1]!)))
++      .replaceAllMapped(RegExp(r'&#x([0-9a-fA-F]+);'), (m) => String.fromCharCode(int.parse(m[1]!, radix: 16)))
++      .replaceAllMapped(RegExp(r'&([a-zA-Z]+);'), (m) => _ent[m[1]!.toLowerCase()] ?? m[0]!);
++}
++
++/// HTML → লাইনভিত্তিক টেক্সট। হেডিং হয় "## ..." লাইন, টেবিলের ঘর "|" দিয়ে আলাদা।
++String htmlToText(String html) {
++  var s = html
++      .replaceAll(RegExp(r'<(script|style|noscript|svg|template)[\s\S]*?</\1>', caseSensitive: false), '')
++      .replaceAll(RegExp(r'<!--[\s\S]*?-->'), '')
++      .replaceAll(RegExp(r'<h[1-6][^>]*>', caseSensitive: false), '\n## ')
++      .replaceAll(
++          RegExp(r'</(h[1-6]|p|div|li|tr|table|section|ul|ol|article|header|footer|blockquote)>', caseSensitive: false),
++          '\n')
++      .replaceAll(RegExp(r'<(br|hr)\s*/?>', caseSensitive: false), '\n')
++      .replaceAll(RegExp(r'</t[dh]>', caseSensitive: false), ' | ')
++      .replaceAll(RegExp(r'<li[^>]*>', caseSensitive: false), '\n')
++      .replaceAll(RegExp(r'<[^>]+>'), '');
++  s = decodeEntities(s);
++  final ws = RegExp('[\\s\u00a0\u200b]+');
++  return s
++      .split('\n')
++      .map((l) => l.replaceAll(ws, ' ').trim())
++      .where((l) => l.isNotEmpty)
++      .join('\n');
++}
++
++String titleOf(String html) {
++  final m = RegExp(r'<h1[^>]*>([\s\S]*?)</h1>', caseSensitive: false).firstMatch(html) ??
++      RegExp(r'<title[^>]*>([\s\S]*?)</title>', caseSensitive: false).firstMatch(html);
++  if (m == null) return '';
++  return decodeEntities(m[1]!.replaceAll(RegExp(r'<[^>]+>'), '')).replaceAll(RegExp(r'\s+'), ' ').trim();
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/match_engine.dart b/lib/jobs/radar/engine/match_engine.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/engine/match_engine.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/engine/match_engine.dart	2026-10-20 19:30:43.884742341 +0000
+@@ -0,0 +1,204 @@
++import '../radar_models.dart';
++import 'bn_util.dart';
++import 'circular_parser.dart';
++
++/// রাডারের জন্য ব্যবহারকারীর প্রোফাইল।
++class RadarProfile {
++  final DateTime dob; // UTC-মধ্যরাত
++  final int eduRank; // 2..6
++  final String eduLabel;
++  final String subject;
++  final int typingBn;
++  final int typingEn;
++  final List<String> targetKeywords;
++  final List<String> excludeKeywords;
++  const RadarProfile({
++    required this.dob,
++    required this.eduRank,
++    required this.eduLabel,
++    this.subject = '',
++    required this.typingBn,
++    required this.typingEn,
++    required this.targetKeywords,
++    required this.excludeKeywords,
++  });
++}
++
++class EvalResult {
++  final bool expired;
++  final List<DateTime> deadlines;
++  final DateTime? nearest;
++  final String org;
++  final String method;
++  final String fee;
++  final List<RadarPost> posts; // শুধু টার্গেট পদগুলো
++  final String verdict; // ok | warn | fail | none
++  const EvalResult({
++    required this.expired,
++    required this.deadlines,
++    required this.nearest,
++    required this.org,
++    required this.method,
++    required this.fee,
++    required this.posts,
++    required this.verdict,
++  });
++}
++
++const _eduLabel = {
++  2: 'এসএসসি',
++  3: 'এইচএসসি',
++  4: 'স্নাতক (পাস)',
++  5: 'স্নাতক (সম্মান/অনার্স)',
++  6: 'স্নাতকোত্তর',
++};
++
++bool _any(List<String> pats, String s) => pats.any((k) => RegExp(k, caseSensitive: false).hasMatch(s));
++
++/// 'yes' | 'shorthand' | 'no'
++String postRelevance(String title, RadarProfile p) {
++  if (!_any(p.targetKeywords, title)) return 'no';
++  if (_any(p.excludeKeywords, title)) return 'shorthand';
++  return 'yes';
++}
++
++List<DateTime> parseDeadlines(String text) {
++  final f = field(text, 'আবেদনের শেষ তারিখ');
++  var ds = f.isNotEmpty ? findDates(f) : <FoundDate>[];
++  if (ds.isEmpty) {
++    final m = RegExp(r'আবেদনের\s*শেষ\s*(?:তারিখ|সময়)[^\n]{0,80}').firstMatch(text);
++    if (m != null) ds = findDates(m[0]!);
++  }
++  return ds.map((d) => d.date).toList();
++}
++
++RadarCheck _ok(String k, String m) => RadarCheck(key: k, s: 'ok', msg: m);
++RadarCheck _warn(String k, String m) => RadarCheck(key: k, s: 'warn', msg: m);
++RadarCheck _fail(String k, String m) => RadarCheck(key: k, s: 'fail', msg: m);
++
++/// একটি সার্কুলারের টেক্সট যাচাই। (JS ইঞ্জিনের হুবহু অনুবাদ — একই টেস্টে যাচাই করা)
++EvalResult evaluate(String text, RadarProfile profile, {String? title, DateTime? now}) {
++  final today = todayDhaka(now);
++  final expiredBanner = RegExp(r'আবেদনের\s*সময়\s*শেষ\s*হয়েছে').hasMatch(text);
++  final deadlines = parseDeadlines(text);
++  final upcoming = deadlines.where((d) => daysBetween(today, d) >= 0).toList()..sort();
++  final nearest = upcoming.isEmpty ? null : upcoming.first;
++  final lastDeadline = deadlines.isEmpty ? null : deadlines.last;
++  final expired = expiredBanner || (deadlines.isNotEmpty && upcoming.isEmpty);
++
++  final summaryEdu = field(text, 'শিক্ষাগত যোগ্যতা');
++  final method = field(text, 'আবেদন পদ্ধতি');
++  final fee = field(text, 'আবেদনের ফি');
++  final org = field(text, 'প্রতিষ্ঠানের নাম');
++
++  // বয়স — পুরো সার্কুলারের জন্য
++  final ageInfo = parseAge(text, lastDeadline);
++  RadarCheck ageCheck;
++  if (ageInfo == null) {
++    ageCheck = _warn('age', 'বয়সসীমা খুঁজে পাইনি — বিজ্ঞপ্তিতে দেখো');
++  } else {
++    final ref = ageInfo.refDate ?? lastDeadline ?? today;
++    final age = ageAt(profile.dob, ref);
++    final refTxt = fmtDateBn(ref);
++    if (age > ageInfo.max) {
++      ageCheck = _fail('age', 'বয়স বেশি: ${toBnStr(age)} বছর (সীমা ${toBnStr(ageInfo.max)}, $refTxt-এর হিসাবে)');
++    } else if (ageInfo.min != null && age < ageInfo.min!) {
++      ageCheck = _fail('age', 'বয়স কম: ${toBnStr(age)} (ন্যূনতম ${toBnStr(ageInfo.min)})');
++    } else {
++      ageCheck = _ok('age', 'বয়স ${toBnStr(age)} ≤ ${toBnStr(ageInfo.max)} ($refTxt-এর হিসাবে)');
++    }
++  }
++
++  var posts = parsePosts(text);
++  if (posts.isEmpty && title != null && title.isNotEmpty && postRelevance(title, profile) != 'no') {
++    posts = [ParsedPost(title, null, '')];
++  }
++
++  final evaluated = <RadarPost>[];
++  for (final p in posts) {
++    final rel = postRelevance(p.title, profile);
++    if (rel == 'no') continue;
++    final checks = <RadarCheck>[ageCheck];
++
++    if (rel == 'shorthand') {
++      evaluated.add(RadarPost(
++          title: p.title, count: p.count, verdict: 'fail', checks: [_fail('post', 'সাঁটলিপি/শর্টহ্যান্ড লাগে')]));
++      continue;
++    }
++
++    final eduText = p.text.trim().isNotEmpty ? p.text : summaryEdu;
++    final edu = parseEducation(eduText);
++    if (edu.required == null) {
++      checks.add(_warn('edu', 'শিক্ষাগত যোগ্যতা পরিষ্কার না — বিজ্ঞপ্তিতে দেখো'));
++    } else if (edu.required! > profile.eduRank) {
++      checks.add(_fail('edu', '${_eduLabel[edu.required]} চায় — তোমার ${profile.eduLabel}'));
++    } else {
++      checks.add(_ok('edu', '${_eduLabel[edu.required]} চায় — তোমার ${profile.eduLabel}'));
++      if (edu.required! >= 4 &&
++          RegExp(r'(বিভাগে|বিষয়ে|সংশ্লিষ্ট\s*বিষয়)').hasMatch(eduText) &&
++          profile.subject.isEmpty) {
++        checks.add(_warn('subject', 'নির্দিষ্ট বিষয়/বিভাগের শর্ত থাকতে পারে — মিলিয়ে নাও'));
++      }
++    }
++    if (edu.flags.contains('diploma') && edu.required == null) checks.add(_fail('edu', 'ডিপ্লোমা শর্ত আছে'));
++    final cls = RegExp(r'(২য়|দ্বিতীয়|১ম|প্রথম)\s*(শ্রেণি|বিভাগ)|সিজিপিএ|CGPA|GPA', caseSensitive: false).firstMatch(eduText);
++    if (cls != null) checks.add(_warn('result', 'ফলাফলের শর্ত: "${cls[0]}" — নিজের ফল মিলিয়ে নাও'));
++
++    final typingText = p.text.trim().isNotEmpty ? p.text : text;
++    final ty = parseTyping(typingText);
++    if (ty.bn == null && ty.en == null) {
++      checks.add(_warn('typing', 'টাইপিং গতির উল্লেখ পাইনি'));
++    } else {
++      final gaps = <String>[];
++      if (ty.bn != null && ty.bn! > profile.typingBn) gaps.add('বাংলা ${toBnStr(ty.bn)} (তোমার ${toBnStr(profile.typingBn)})');
++      if (ty.en != null && ty.en! > profile.typingEn) gaps.add('ইংরেজি ${toBnStr(ty.en)} (তোমার ${toBnStr(profile.typingEn)})');
++      final need = [
++        if (ty.bn != null) 'বাংলা ${toBnStr(ty.bn)}',
++        if (ty.en != null) 'ইংরেজি ${toBnStr(ty.en)}',
++      ].join(', ');
++      checks.add(gaps.isNotEmpty
++          ? _warn('typing', 'টাইপিং বাড়াতে হবে — ${gaps.join(', ')}')
++          : _ok('typing', 'টাইপিং $need WPM — তোমার গতিতে মেলে'));
++    }
++
++    final blk = p.text;
++    if (RegExp(r'কম্পিউটার[^।\n]{0,60}(সনদ|প্রশিক্ষণ|কোর্স|সার্টিফিকেট|ডিপ্লোমা)').hasMatch(blk)) {
++      checks.add(_warn('cert', 'কম্পিউটার সনদ/প্রশিক্ষণের শর্ত আছে'));
++    }
++    if (RegExp(r'(\d+)\s*বছর(?:ের)?\s*(?:কাজের\s*)?অভিজ্ঞতা|অভিজ্ঞতা[^।\n]{0,20}(\d+)\s*বছর').hasMatch(toEn(blk))) {
++      checks.add(_warn('exp', 'অভিজ্ঞতার শর্ত আছে'));
++    }
++
++    final verdict = checks.any((c) => c.s == 'fail') ? 'fail' : (checks.any((c) => c.s == 'warn') ? 'warn' : 'ok');
++    evaluated.add(RadarPost(title: p.title, count: p.count, verdict: verdict, checks: checks));
++  }
++
++  // নিরাপত্তা-জাল: পদ আলাদা করা না গেলেও পেজে টার্গেট শব্দ থাকলে "যাচাই বাকি" — যেন কিছু মিস না হয়।
++  if (evaluated.isEmpty && _any(profile.targetKeywords, text)) {
++    evaluated.add(RadarPost(
++      title: (title == null || title.isEmpty) ? 'সার্কুলার' : title,
++      verdict: 'warn',
++      checks: [
++        ageCheck,
++        _warn('parse', 'পেজে কম্পিউটার অপারেটর/ডাটা এন্ট্রি-জাতীয় শব্দ আছে, কিন্তু পদভিত্তিক শর্ত আলাদা করতে পারিনি — মূল বিজ্ঞপ্তি দেখো'),
++      ],
++    ));
++  }
++
++  const rank = {'ok': 0, 'warn': 1, 'fail': 2};
++  var verdict = 'none';
++  if (evaluated.isNotEmpty) {
++    verdict = evaluated.map((e) => e.verdict).reduce((a, b) => rank[a]! <= rank[b]! ? a : b);
++  }
++
++  return EvalResult(
++    expired: expired,
++    deadlines: deadlines,
++    nearest: nearest,
++    org: org,
++    method: method,
++    fee: fee,
++    posts: evaluated,
++    verdict: verdict,
++  );
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/phone_alerts_sheet.dart b/lib/jobs/radar/phone_alerts_sheet.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/phone_alerts_sheet.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/phone_alerts_sheet.dart	2026-10-13 14:56:14.473928703 +0000
+@@ -0,0 +1,228 @@
++import 'package:flutter/material.dart';
++import '../../reminder/models/reminder.dart' show bn;
++import '../../widgets/app_theme.dart';
++import '../services/app_launcher.dart';
++import 'phone_notif_service.dart';
++
++/// "ফোন নোটিফিকেশন" শিট: অনুমতির অবস্থা, কোন অ্যাপ ট্র্যাক হবে, আর ধরা নোটিফিকেশনের তালিকা।
++Future<void> showPhoneAlertsSheet(BuildContext context, {required VoidCallback onChanged}) {
++  return showModalBottomSheet<void>(
++    context: context,
++    isScrollControlled: true,
++    backgroundColor: AppTheme.bg2,
++    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
++    builder: (_) => _PhoneAlertsBody(onChanged: onChanged),
++  );
++}
++
++class _PhoneAlertsBody extends StatefulWidget {
++  final VoidCallback onChanged;
++  const _PhoneAlertsBody({required this.onChanged});
++  @override
++  State<_PhoneAlertsBody> createState() => _PhoneAlertsBodyState();
++}
++
++class _PhoneAlertsBodyState extends State<_PhoneAlertsBody> with WidgetsBindingObserver {
++  bool _enabled = false;
++  List<String> _pkgs = [];
++  List<AppInfo> _results = [];
++  List<PhoneAlert> _alerts = [];
++  final _q = TextEditingController();
++
++  @override
++  void initState() {
++    super.initState();
++    WidgetsBinding.instance.addObserver(this);
++    _load();
++  }
++
++  @override
++  void dispose() {
++    WidgetsBinding.instance.removeObserver(this);
++    _q.dispose();
++    super.dispose();
++  }
++
++  // সেটিংস থেকে ফিরে এলে অবস্থা আবার দেখি
++  @override
++  void didChangeAppLifecycleState(AppLifecycleState state) {
++    if (state == AppLifecycleState.resumed) _load();
++  }
++
++  Future<void> _load() async {
++    final en = await PhoneNotifService.isEnabled();
++    final pk = await PhoneNotifService.packages();
++    await PhoneNotifService.sync();
++    if (!mounted) return;
++    setState(() {
++      _enabled = en;
++      _pkgs = pk;
++      _alerts = PhoneNotifService.alerts();
++    });
++    widget.onChanged();
++  }
++
++  Future<void> _search() async {
++    final r = await PhoneNotifService.searchApps(_q.text);
++    if (mounted) setState(() => _results = r);
++  }
++
++  Future<void> _togglePkg(String pkg) async {
++    final next = [..._pkgs];
++    next.contains(pkg) ? next.remove(pkg) : next.add(pkg);
++    await PhoneNotifService.setPackages(next);
++    if (mounted) setState(() => _pkgs = next..sort());
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final h = MediaQuery.of(context).size.height;
++    return Padding(
++      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
++      child: ConstrainedBox(
++        constraints: BoxConstraints(maxHeight: h * 0.88),
++        child: ListView(padding: const EdgeInsets.all(16), children: [
++          Text('📱 ফোনের নোটিফিকেশন',
++              style: TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w800)),
++          const SizedBox(height: 6),
++          Text(
++            'শুধু তুমি যে অ্যাপগুলো বেছে দেবে সেগুলোর নোটিফিকেশনের শিরোনাম ও লেখা ধরা হয়। অন্য অ্যাপের কিছু পড়া হয় না। সবকিছু শুধু তোমার ফোনেই থাকে।',
++            style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.45),
++          ),
++          const SizedBox(height: 12),
++          _card(
++            Row(children: [
++              Expanded(
++                child: Text(_enabled ? '✅ নোটিফিকেশন অ্যাক্সেস চালু' : '⛔ নোটিফিকেশন অ্যাক্সেস বন্ধ',
++                    style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
++              ),
++              if (!_enabled)
++                FilledButton(
++                  style: FilledButton.styleFrom(backgroundColor: AppTheme.accent),
++                  onPressed: PhoneNotifService.openSettings,
++                  child: const Text('চালু করো'),
++                ),
++            ]),
++          ),
++          if (!_enabled)
++            Padding(
++              padding: const EdgeInsets.only(top: 6),
++              child: Text(
++                'সেটিংসে "My Manager" খুঁজে চালু করো। Android ১৩+ এ APK থেকে ইনস্টল করা অ্যাপে অপশনটা ধূসর থাকলে: Settings → Apps → My Manager → ⋮ → "Allow restricted settings", তারপর আবার চেষ্টা করো।',
++                style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5, height: 1.45),
++              ),
++            ),
++          const SizedBox(height: 16),
++          Text('ট্র্যাক করা অ্যাপ', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w700)),
++          const SizedBox(height: 6),
++          if (_pkgs.isEmpty)
++            Text('এখনো কোনো অ্যাপ বাছা হয়নি — নিচে নাম লিখে খুঁজে যোগ করো।',
++                style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5))
++          else
++            Wrap(spacing: 8, runSpacing: 6, children: [
++              for (final p in _pkgs)
++                InputChip(label: Text(p, style: const TextStyle(fontSize: 11.5)), onDeleted: () => _togglePkg(p)),
++            ]),
++          const SizedBox(height: 8),
++          Row(children: [
++            Expanded(
++              child: TextField(
++                controller: _q,
++                onSubmitted: (_) => _search(),
++                decoration: InputDecoration(
++                  isDense: true,
++                  hintText: 'অ্যাপের নাম (যেমন: bdjobs)',
++                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
++                ),
++              ),
++            ),
++            const SizedBox(width: 8),
++            IconButton.filledTonal(onPressed: _search, icon: const Icon(Icons.search)),
++          ]),
++          for (final a in _results)
++            ListTile(
++              dense: true,
++              contentPadding: EdgeInsets.zero,
++              title: Text(a.label, style: TextStyle(color: AppTheme.textPrimary)),
++              subtitle: Text(a.pkg, style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
++              trailing: Icon(_pkgs.contains(a.pkg) ? Icons.check_circle : Icons.add_circle_outline,
++                  color: _pkgs.contains(a.pkg) ? AppTheme.green : AppTheme.textSecondary),
++              onTap: () => _togglePkg(a.pkg),
++            ),
++          const SizedBox(height: 16),
++          Row(children: [
++            Expanded(
++              child: Text('ধরা নোটিফিকেশন (${bn(_alerts.length)})',
++                  style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w700)),
++            ),
++            if (_alerts.isNotEmpty)
++              TextButton(
++                onPressed: () async {
++                  await PhoneNotifService.clear();
++                  await _load();
++                },
++                child: const Text('সব মুছো'),
++              ),
++          ]),
++          if (_alerts.isEmpty)
++            Padding(
++              padding: const EdgeInsets.only(top: 6),
++              child: Text('এখনো কিছু ধরা পড়েনি।', style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5)),
++            ),
++          for (final a in _alerts) _alertCard(a),
++        ]),
++      ),
++    );
++  }
++
++  Widget _alertCard(PhoneAlert a) {
++    return Padding(
++      padding: const EdgeInsets.only(top: 8),
++      child: _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
++        Row(children: [
++          if (a.match)
++            Container(
++              margin: const EdgeInsets.only(right: 8),
++              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
++              decoration: BoxDecoration(color: AppTheme.green.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
++              child: Text('🎯 পদ মিলেছে', style: TextStyle(color: AppTheme.green, fontSize: 11, fontWeight: FontWeight.w700)),
++            ),
++          Expanded(
++            child: Text('${bn(a.time.day)}/${bn(a.time.month)} · ${a.pkg}',
++                overflow: TextOverflow.ellipsis, style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
++          ),
++        ]),
++        const SizedBox(height: 4),
++        if (a.title.isNotEmpty)
++          Text(a.title, style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700, fontSize: 13.5)),
++        if (a.text.isNotEmpty)
++          Text(a.text, maxLines: 4, overflow: TextOverflow.ellipsis,
++              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5, height: 1.4)),
++        Row(children: [
++          TextButton(
++            onPressed: () => AppLauncher.openUrl(a.searchUrl),
++            child: const Text('🔎 ওয়েবে খোঁজো'),
++          ),
++          TextButton(
++            onPressed: () async {
++              await PhoneNotifService.remove(a.key);
++              await _load();
++            },
++            child: const Text('মুছো'),
++          ),
++        ]),
++      ])),
++    );
++  }
++
++  Widget _card(Widget child) => Container(
++        width: double.infinity,
++        padding: const EdgeInsets.all(12),
++        decoration: BoxDecoration(
++          color: AppTheme.bg,
++          borderRadius: BorderRadius.circular(14),
++          border: Border.all(color: AppTheme.border),
++        ),
++        child: child,
++      );
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/phone_notif_service.dart b/lib/jobs/radar/phone_notif_service.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/phone_notif_service.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/phone_notif_service.dart	2026-10-13 14:56:14.472616159 +0000
+@@ -0,0 +1,157 @@
++import 'dart:convert';
++import 'package:flutter/services.dart';
++import '../../services/settings_service.dart';
++import 'radar_service.dart';
++
++/// ফোনে ইনস্টল করা চাকরির অ্যাপের নোটিফিকেশন থেকে ধরা এন্ট্রি।
++class PhoneAlert {
++  final String pkg;
++  final String title;
++  final String text;
++  final DateTime time;
++  final bool match; // টার্গেট পদের কীওয়ার্ড মিলেছে কি না
++
++  PhoneAlert({required this.pkg, required this.title, required this.text, required this.time, required this.match});
++
++  String get key => '$pkg|$title|$text';
++
++  Map<String, dynamic> toMap() => {
++        'pkg': pkg, 'title': title, 'text': text, 'time': time.millisecondsSinceEpoch, 'match': match,
++      };
++
++  factory PhoneAlert.fromMap(Map<String, dynamic> m) => PhoneAlert(
++        pkg: (m['pkg'] as String?) ?? '',
++        title: (m['title'] as String?) ?? '',
++        text: (m['text'] as String?) ?? '',
++        time: DateTime.fromMillisecondsSinceEpoch((m['time'] as num?)?.toInt() ?? 0),
++        match: (m['match'] as bool?) ?? false,
++      );
++
++  /// ব্রাউজারে খোঁজার লিংক (স্বয়ংক্রিয় ওয়েব-অনুসন্ধান রাডারের কাজ; এটা হাতে দেখার শর্টকাট)।
++  String get searchUrl =>
++      'https://www.google.com/search?q=${Uri.encodeQueryComponent('${title.isEmpty ? text : title} নিয়োগ বিজ্ঞপ্তি')}';
++}
++
++class AppInfo {
++  final String label;
++  final String pkg;
++  AppInfo(this.label, this.pkg);
++}
++
++/// Kotlin NotificationListenerService-এর সাথে সংযোগ। শুধু ব্যবহারকারীর বেছে দেওয়া অ্যাপ।
++class PhoneNotifService {
++  static const _ch = MethodChannel('com.hanif.mymanager/jobnotif');
++  static const _kAlerts = 'radar_phone_alerts';
++  static const _maxAlerts = 100;
++
++  static Future<bool> isEnabled() async {
++    try {
++      return (await _ch.invokeMethod<bool>('isEnabled')) ?? false;
++    } catch (_) {
++      return false;
++    }
++  }
++
++  static Future<void> openSettings() async {
++    try {
++      await _ch.invokeMethod('openSettings');
++    } catch (_) {}
++  }
++
++  static Future<List<String>> packages() async {
++    try {
++      final r = await _ch.invokeMethod<List<dynamic>>('getPackages');
++      return (r ?? const []).map((e) => e.toString()).toList()..sort();
++    } catch (_) {
++      return [];
++    }
++  }
++
++  static Future<void> setPackages(List<String> pkgs) async {
++    try {
++      await _ch.invokeMethod('setPackages', {'packages': pkgs});
++    } catch (_) {}
++  }
++
++  static Future<List<AppInfo>> searchApps(String q) async {
++    try {
++      final r = await _ch.invokeMethod<List<dynamic>>('searchApps', {'query': q});
++      return (r ?? const [])
++          .map((e) => Map<String, dynamic>.from(e as Map))
++          .map((m) => AppInfo((m['label'] ?? '').toString(), (m['pkg'] ?? '').toString()))
++          .toList();
++    } catch (_) {
++      return [];
++    }
++  }
++
++  static bool _matches(String s) =>
++      RadarService.keywords.any((k) => RegExp(k, caseSensitive: false).hasMatch(s));
++
++  static List<PhoneAlert> alerts() {
++    final raw = SettingsService.getString(_kAlerts);
++    if (raw.isEmpty) return [];
++    try {
++      final list = (jsonDecode(raw) as List)
++          .map((e) => PhoneAlert.fromMap(Map<String, dynamic>.from(e as Map)))
++          .toList();
++      list.sort((a, b) {
++        if (a.match != b.match) return a.match ? -1 : 1;
++        return b.time.compareTo(a.time);
++      });
++      return list;
++    } catch (_) {
++      return [];
++    }
++  }
++
++  static Future<void> _save(List<PhoneAlert> l) async {
++    final keep = l.length > _maxAlerts ? l.sublist(l.length - _maxAlerts) : l;
++    await SettingsService.setString(_kAlerts, jsonEncode(keep.map((e) => e.toMap()).toList()));
++  }
++
++  /// নেটিভ কিউ থেকে নতুন নোটিফিকেশন এনে জমা করে। নতুন যোগ হওয়ার সংখ্যা ফেরত দেয়।
++  static Future<int> sync() async {
++    String raw;
++    try {
++      raw = (await _ch.invokeMethod<String>('drain')) ?? '[]';
++    } catch (_) {
++      return 0;
++    }
++    List<dynamic> incoming;
++    try {
++      incoming = jsonDecode(raw) as List<dynamic>;
++    } catch (_) {
++      return 0;
++    }
++    if (incoming.isEmpty) return 0;
++    final cur = alerts();
++    final keys = cur.map((e) => e.key).toSet();
++    var added = 0;
++    for (final e in incoming) {
++      final m = Map<String, dynamic>.from(e as Map);
++      final title = (m['title'] ?? '').toString();
++      final text = (m['text'] ?? '').toString();
++      final a = PhoneAlert(
++        pkg: (m['pkg'] ?? '').toString(),
++        title: title,
++        text: text,
++        time: DateTime.fromMillisecondsSinceEpoch((m['time'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch),
++        match: _matches('$title\n$text'),
++      );
++      if (keys.add(a.key)) {
++        cur.add(a);
++        added++;
++      }
++    }
++    await _save(cur);
++    return added;
++  }
++
++  static Future<void> remove(String key) async {
++    final cur = alerts()..removeWhere((e) => e.key == key);
++    await _save(cur);
++  }
++
++  static Future<void> clear() => SettingsService.setString(_kAlerts, '[]');
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_models.dart b/lib/jobs/radar/radar_models.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/radar_models.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/radar_models.dart	2026-10-20 19:30:07.717774787 +0000
+@@ -0,0 +1,121 @@
++import '../../reminder/models/reminder.dart' show Reminder, dateOnly;
++
++/// Job Radar-এর ফলাফলের মডেল (ইঞ্জিন → ক্যাশ → UI)।
++class RadarCheck {
++  final String key;
++  final String s; // ok | warn | fail
++  final String msg;
++  const RadarCheck({required this.key, required this.s, required this.msg});
++
++  factory RadarCheck.fromMap(Map<String, dynamic> m) => RadarCheck(
++        key: (m['key'] as String?) ?? '',
++        s: (m['s'] as String?) ?? 'warn',
++        msg: (m['msg'] as String?) ?? '',
++      );
++
++  Map<String, dynamic> toMap() => {'key': key, 's': s, 'msg': msg};
++
++  String get icon => s == 'ok' ? '✅' : (s == 'fail' ? '❌' : '⚠️');
++}
++
++class RadarPost {
++  final String title;
++  final int? count;
++  final String verdict; // ok | warn | fail
++  final List<RadarCheck> checks;
++  const RadarPost({required this.title, this.count, required this.verdict, required this.checks});
++
++  factory RadarPost.fromMap(Map<String, dynamic> m) => RadarPost(
++        title: (m['title'] as String?) ?? '',
++        count: (m['count'] as num?)?.toInt(),
++        verdict: (m['verdict'] as String?) ?? 'warn',
++        checks: ((m['checks'] as List?) ?? const [])
++            .map((e) => RadarCheck.fromMap(Map<String, dynamic>.from(e as Map)))
++            .toList(),
++      );
++
++  Map<String, dynamic> toMap() => {
++        'title': title,
++        'count': count,
++        'verdict': verdict,
++        'checks': checks.map((c) => c.toMap()).toList(),
++      };
++}
++
++class RadarItem {
++  final String url;
++  final String title;
++  final String verdict; // ok | warn
++  final String org;
++  final DateTime? deadline; // স্থানীয় মধ্যরাত
++  final String method;
++  final String fee;
++  final List<RadarPost> posts;
++
++  const RadarItem({
++    required this.url,
++    required this.title,
++    required this.verdict,
++    this.org = '',
++    this.deadline,
++    this.method = '',
++    this.fee = '',
++    this.posts = const [],
++  });
++
++  factory RadarItem.fromMap(Map<String, dynamic> m) {
++    final d = m['deadline'] as String?;
++    return RadarItem(
++      url: (m['url'] as String?) ?? '',
++      title: (m['title'] as String?) ?? '',
++      verdict: (m['verdict'] as String?) ?? 'warn',
++      org: (m['org'] as String?) ?? '',
++      deadline: (d == null || d.length < 10) ? null : Reminder.parseYmd(d.substring(0, 10)),
++      method: (m['method'] as String?) ?? '',
++      fee: (m['fee'] as String?) ?? '',
++      posts: ((m['posts'] as List?) ?? const [])
++          .map((e) => RadarPost.fromMap(Map<String, dynamic>.from(e as Map)))
++          .toList(),
++    );
++  }
++
++  Map<String, dynamic> toMap() => {
++        'url': url,
++        'title': title,
++        'verdict': verdict,
++        'org': org,
++        'deadline': deadline == null ? null : Reminder.ymd(deadline!),
++        'method': method,
++        'fee': fee,
++        'posts': posts.map((p) => p.toMap()).toList(),
++      };
++
++  /// আজকের হিসাবে বাকি দিন (সংরক্ষিত সংখ্যা পুরনো হয়ে যায়, তাই প্রতিবার নিজে হিসাব)।
++  int? get daysLeft =>
++      deadline == null ? null : dateOnly(deadline!).difference(dateOnly(DateTime.now())).inDays;
++}
++
++class RadarFeed {
++  final DateTime? generatedAt;
++  final List<RadarItem> items;
++  /// শেষ রিপোর্টের পর যেগুলো প্রথমবার পাওয়া গেছে।
++  final List<String> newUrls;
++  const RadarFeed({this.generatedAt, required this.items, this.newUrls = const []});
++
++  factory RadarFeed.fromMap(Map<String, dynamic> m) {
++    final g = m['generatedAt'] as String?;
++    return RadarFeed(
++      generatedAt: g == null ? null : DateTime.tryParse(g)?.toLocal(),
++      items: ((m['items'] as List?) ?? const [])
++          .map((e) => RadarItem.fromMap(Map<String, dynamic>.from(e as Map)))
++          .toList(),
++      newUrls: ((m['newUrls'] as List?) ?? const []).map((e) => e.toString()).toList(),
++    );
++  }
++
++  Map<String, dynamic> toMap() => {
++        'generatedAt': generatedAt?.toUtc().toIso8601String(),
++        'items': items.map((i) => i.toMap()).toList(),
++        'newUrls': newUrls,
++      };
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart b/lib/jobs/radar/radar_runner.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/radar_runner.dart	2026-10-20 19:32:10.454835317 +0000
+@@ -0,0 +1,196 @@
++import 'dart:convert';
++import '../../reminder/models/reminder.dart' show Reminder;
++import '../../services/notification_service.dart';
++import '../../services/settings_service.dart';
++import 'engine/bdgovtjob_source.dart';
++import 'engine/bn_util.dart';
++import 'engine/match_engine.dart';
++import 'radar_models.dart';
++import 'radar_service.dart';
++
++class RadarRunSummary {
++  final int total; // তালিকায় মোট চলমান উপযুক্ত
++  final int ok;
++  final int warn;
++  final int fresh; // নতুন
++  final String? error;
++  const RadarRunSummary({this.total = 0, this.ok = 0, this.warn = 0, this.fresh = 0, this.error});
++}
++
++/// রাডার চালায়: সাইট থেকে পড়া → যাচাই → ক্যাশ → (রাতে) একটাই নোটিফিকেশন।
++/// অ্যাপ খোলা অবস্থায় ও ব্যাকগ্রাউন্ড টাস্ক — দুই জায়গা থেকেই চলে।
++class RadarRunner {
++  static const _kState = 'radar_runner_state';
++  static const _kRunning = 'radar_running_at';
++  static const _maxFetch = 25;
++
++  static String _today() => Reminder.ymd(DateTime.now());
++
++  static Map<String, dynamic> _loadState() {
++    final raw = SettingsService.getString(_kState);
++    if (raw.isEmpty) return {'items': <String, dynamic>{}, 'lastReport': '', 'reported': <dynamic>[]};
++    try {
++      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
++    } catch (_) {
++      return {'items': <String, dynamic>{}, 'lastReport': '', 'reported': <dynamic>[]};
++    }
++  }
++
++  /// আজকের রিপোর্ট বাকি আছে এবং রিপোর্টের সময় পেরিয়েছে কি না।
++  static bool isDue([DateTime? now]) {
++    if (!RadarService.dailyOn) return false;
++    final n = now ?? DateTime.now();
++    final at = DateTime(n.year, n.month, n.day, RadarService.reportHour, RadarService.reportMinute);
++    if (n.isBefore(at)) return false;
++    return _loadState()['lastReport'] != _today();
++  }
++
++  /// প্রোফাইল বদলালে: সব সংরক্ষিত ফলাফল "পুরনো" চিহ্নিত — পরের রানে নতুন প্রোফাইলে আবার যাচাই হবে।
++  static Future<void> markStale() async {
++    final s = _loadState();
++    final items = Map<String, dynamic>.from((s['items'] as Map?) ?? {});
++    for (final k in items.keys.toList()) {
++      final v = Map<String, dynamic>.from(items[k] as Map);
++      v['modified'] = null;
++      v['checkedAt'] = 0;
++      items[k] = v;
++    }
++    s['items'] = items;
++    await SettingsService.setString(_kState, jsonEncode(s));
++  }
++
++  /// সময় হলে চালিয়ে নোটিফিকেশন দেয়। ব্যাকগ্রাউন্ড টাস্ক ও অ্যাপ চালু — দুই জায়গা থেকেই ডাকা হয়।
++  static Future<RadarRunSummary?> runIfDue() async {
++    await RadarService.reload();
++    if (!isDue()) return null;
++    return run(report: true);
++  }
++
++  /// এখনই চালায়। [report] সত্য হলে রাতের নোটিফিকেশন দেয় ও "আজকের রিপোর্ট হয়ে গেছে" চিহ্নিত করে।
++  static Future<RadarRunSummary> run({bool report = false}) async {
++    final now = DateTime.now().millisecondsSinceEpoch;
++    final running = SettingsService.getInt(_kRunning);
++    if (running != 0 && now - running < 10 * 60 * 1000) {
++      return const RadarRunSummary(error: 'আরেকটা রান চলছে — একটু পরে দেখো');
++    }
++    await SettingsService.setInt(_kRunning, now);
++    try {
++      return await _run(report);
++    } finally {
++      await SettingsService.setInt(_kRunning, 0);
++    }
++  }
++
++  static Future<RadarRunSummary> _run(bool report) async {
++    final profile = RadarService.profile();
++    final state = _loadState();
++    final items = Map<String, dynamic>.from((state['items'] as Map?) ?? {});
++    final nowMs = DateTime.now().millisecondsSinceEpoch;
++
++    List<ListedPost> list;
++    try {
++      list = await listLatest(limit: 40);
++    } catch (e) {
++      list = [];
++    }
++    if (list.isEmpty) {
++      // সাইট পাওয়া যায়নি — আগের ক্যাশই থাকুক, রিপোর্ট চিহ্নিত করব না (পরের টাস্কে আবার চেষ্টা)।
++      return const RadarRunSummary(error: 'সাইট থেকে তালিকা পাওয়া যায়নি — ইন্টারনেট/সাইট দেখো');
++    }
++
++    var fetched = 0;
++    for (final it in list) {
++      final prev = items[it.url] as Map?;
++      if (prev != null) {
++        if (it.modified != null && prev['modified'] == it.modified) continue;
++        if (it.modified == null && nowMs - ((prev['checkedAt'] as num?)?.toInt() ?? 0) < 6 * 3600 * 1000) continue;
++      }
++      if (fetched >= _maxFetch) break;
++      fetched++;
++      await Future<void>.delayed(const Duration(milliseconds: 800));
++      FetchedDetail d;
++      try {
++        d = await fetchDetail(it.url);
++      } catch (_) {
++        continue;
++      }
++      final title = it.title.isNotEmpty ? it.title : d.title;
++      final r = evaluate(d.text, profile, title: title);
++      final good = (r.verdict == 'ok' || r.verdict == 'warn') && !r.expired;
++      items[it.url] = {
++        'modified': it.modified,
++        'checkedAt': nowMs,
++        'item': good
++            ? RadarItem(
++                url: it.url,
++                title: title,
++                verdict: r.verdict,
++                org: r.org,
++                deadline: r.nearest == null ? null : DateTime(r.nearest!.year, r.nearest!.month, r.nearest!.day),
++                method: r.method,
++                fee: r.fee,
++                posts: r.posts.where((p) => p.verdict != 'fail').toList(),
++              ).toMap()
++            : null,
++      };
++    }
++
++    // ১২০ দিনের পুরনো এন্ট্রি ছাঁটাই
++    items.removeWhere((_, v) => nowMs - (((v as Map)['checkedAt'] as num?)?.toInt() ?? 0) > 120 * 86400000);
++
++    // ফিড: চলমান, উপযুক্ত — শেষ তারিখ অনুযায়ী
++    final feedItems = <RadarItem>[];
++    for (final v in items.values) {
++      final m = (v as Map)['item'];
++      if (m == null) continue;
++      final ri = RadarItem.fromMap(Map<String, dynamic>.from(m as Map));
++      if (ri.daysLeft != null && ri.daysLeft! < 0) continue;
++      feedItems.add(ri);
++    }
++    feedItems.sort((a, b) => (a.daysLeft ?? 999).compareTo(b.daysLeft ?? 999));
++
++    final reported = ((state['reported'] as List?) ?? const []).map((e) => e.toString()).toSet();
++    final fresh = feedItems.where((i) => !reported.contains(i.url)).map((i) => i.url).toList();
++
++    final feed = RadarFeed(generatedAt: DateTime.now(), items: feedItems, newUrls: fresh);
++    await RadarService.saveFeed(feed);
++
++    state['items'] = items;
++    if (report) {
++      await _notify(feed);
++      state['lastReport'] = _today();
++      state['reported'] = feedItems.map((i) => i.url).toList(); // এখনকার সবই "জানানো" হলো
++    }
++    await SettingsService.setString(_kState, jsonEncode(state));
++
++    final ok = feedItems.where((i) => i.verdict == 'ok').length;
++    return RadarRunSummary(total: feedItems.length, ok: ok, warn: feedItems.length - ok, fresh: fresh.length);
++  }
++
++  // ── রাতের নোটিফিকেশন: একটাই, পুরো তালিকাসহ ──
++  static Future<void> _notify(RadarFeed feed) async {
++    final its = feed.items;
++    if (its.isEmpty) {
++      await NotificationService.showRadarReport(
++        '📡 আজকের রাডার',
++        'আজ তোমার যোগ্যতার সাথে মেলে এমন চলমান সার্কুলার নেই।',
++        'আজ তোমার যোগ্যতার সাথে মেলে এমন চলমান সার্কুলার নেই। কাল আবার দেখব।',
++      );
++      return;
++    }
++    final ok = its.where((i) => i.verdict == 'ok').length;
++    final warn = its.length - ok;
++    final fresh = feed.newUrls.toSet();
++    final head = '📡 আজকের রাডার: ${toBnStr(its.length)}টি সার্কুলার'
++        '${fresh.isNotEmpty ? ' (🆕 ${toBnStr(fresh.length)}টি নতুন)' : ''}';
++    final short = '🟢 ${toBnStr(ok)}টি সম্ভাব্য যোগ্য · 🟡 ${toBnStr(warn)}টি যাচাই বাকি';
++    final lines = <String>[];
++    for (final i in its.take(10)) {
++      final dl = i.daysLeft;
++      final when = dl == null ? '' : (dl == 0 ? ' — আজই শেষ' : ' — আর ${toBnStr(dl)} দিন');
++      lines.add('${fresh.contains(i.url) ? '🆕' : (i.verdict == 'ok' ? '🟢' : '🟡')} ${i.title}$when');
++    }
++    if (its.length > 10) lines.add('… আরও ${toBnStr(its.length - 10)}টি — অ্যাপে দেখো');
++    await NotificationService.showRadarReport(head, short, '$short\n\n${lines.join('\n')}');
++  }
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_service.dart b/lib/jobs/radar/radar_service.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/radar_service.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/radar_service.dart	2026-10-20 19:31:32.494624829 +0000
+@@ -0,0 +1,162 @@
++import 'dart:convert';
++import 'package:shared_preferences/shared_preferences.dart';
++import '../../reminder/models/reminder.dart' show Reminder;
++import '../../services/settings_service.dart';
++import '../models/job_models.dart';
++import 'engine/match_engine.dart';
++import 'radar_models.dart';
++
++/// Job Radar-এর প্রোফাইল, সেটিংস, ক্যাশ ও রূপান্তর। (সবকিছু ফোনের ভেতরে — কোনো সার্ভার/টোকেন লাগে না।)
++class RadarService {
++  // SharedPreferences কী — সবই স্ট্রিং, যাতে ব্যাকআপে সহজে যায়
++  static const kDob = 'radar_dob';
++  static const kEdu = 'radar_edu';
++  static const kSubject = 'radar_subject';
++  static const kTypBn = 'radar_typ_bn';
++  static const kTypEn = 'radar_typ_en';
++  static const kDaily = 'radar_daily_on'; // '1' / '0'
++  static const kReportTime = 'radar_report_time'; // 'HH:mm'
++  static const _kCache = 'radar_cache';
++  static const _kDismissed = 'radar_dismissed';
++
++  /// ব্যাকআপে যাবে এমন কী।
++  static const backupKeys = [kDob, kEdu, kSubject, kTypBn, kTypEn, kDaily, kReportTime];
++
++  static const eduLevels = <String, String>{
++    'ssc': 'এসএসসি / সমমান',
++    'hsc': 'এইচএসসি / সমমান',
++    'degree_pass': 'স্নাতক (পাস কোর্স, ৩ বছর)',
++    'honours': 'স্নাতক (সম্মান)',
++    'masters': 'স্নাতকোত্তর',
++  };
++  static const _eduRank = {'ssc': 2, 'hsc': 3, 'degree_pass': 4, 'honours': 5, 'masters': 6};
++
++  // ── প্রোফাইল ──
++  static String get dob => SettingsService.getString(kDob, defaultValue: '1999-01-01');
++  static String get eduLevel => SettingsService.getString(kEdu, defaultValue: 'degree_pass');
++  static String get subject => SettingsService.getString(kSubject);
++  static int get typingBn => int.tryParse(SettingsService.getString(kTypBn)) ?? 20;
++  static int get typingEn => int.tryParse(SettingsService.getString(kTypEn)) ?? 20;
++
++  // ── রাতের রিপোর্ট ──
++  static bool get dailyOn => SettingsService.getString(kDaily, defaultValue: '1') != '0';
++  static String get reportTime => SettingsService.getString(kReportTime, defaultValue: '21:00');
++  static int get reportHour => int.tryParse(reportTime.split(':').first) ?? 21;
++  static int get reportMinute => int.tryParse(reportTime.split(':').last) ?? 0;
++
++  static const _keywords = [
++    r'কম্পিউটার\s*অপারেটর',
++    r'কম্পিউটার\s*মুদ্রাক্ষরিক',
++    r'ডাটা\s*এন্ট্রি',
++    r'ডেটা\s*এন্ট্রি',
++    r'ডাটা\s*অপারেটর',
++    r'ডেটা\s*অপারেটর',
++    r'অফিস\s*সহায়ক\s*[-–]?\s*কাম',
++    r'computer\s*operator',
++    r'data\s*entry',
++    r'computer\s*typist',
++  ];
++  static const _exclude = ['সাঁট', 'সীট', 'শর্টহ্যান্ড', 'stenograph', 'shorthand'];
++  static List<String> get keywords => _keywords;
++
++  /// ইঞ্জিনের জন্য প্রোফাইল অবজেক্ট।
++  static RadarProfile profile() {
++    final p = dob.split('-').map((e) => int.tryParse(e) ?? 0).toList();
++    final d = (p.length == 3 && p[0] > 0) ? DateTime.utc(p[0], p[1], p[2]) : DateTime.utc(1999, 1, 1);
++    return RadarProfile(
++      dob: d,
++      eduRank: _eduRank[eduLevel] ?? 4,
++      eduLabel: eduLevels[eduLevel] ?? eduLevel,
++      subject: subject,
++      typingBn: typingBn,
++      typingEn: typingEn,
++      targetKeywords: _keywords,
++      excludeKeywords: _exclude,
++    );
++  }
++
++  // ── ক্যাশ (শেষ ফলাফল) ──
++  /// ব্যাকগ্রাউন্ড টাস্ক অন্য আইসোলেটে লিখে থাকলে সেটা এখানে দেখার জন্য।
++  static Future<void> reload() async {
++    try {
++      final p = await SharedPreferences.getInstance();
++      await p.reload();
++    } catch (_) {}
++  }
++
++  static RadarFeed? cached() {
++    final raw = SettingsService.getString(_kCache);
++    if (raw.isEmpty) return null;
++    try {
++      return RadarFeed.fromMap(jsonDecode(raw) as Map<String, dynamic>);
++    } catch (_) {
++      return null;
++    }
++  }
++
++  static Future<void> saveFeed(RadarFeed f) => SettingsService.setString(_kCache, jsonEncode(f.toMap()));
++
++  // ── লুকানো (dismissed) ──
++  static Set<String> dismissed() {
++    final raw = SettingsService.getString(_kDismissed);
++    if (raw.isEmpty) return {};
++    try {
++      return (jsonDecode(raw) as List).map((e) => e.toString()).toSet();
++    } catch (_) {
++      return {};
++    }
++  }
++
++  static Future<void> dismiss(String url) async {
++    final list = (dismissed()..add(url)).toList();
++    final keep = list.length > 300 ? list.sublist(list.length - 300) : list;
++    await SettingsService.setString(_kDismissed, jsonEncode(keep));
++  }
++
++  static Future<void> restore(String url) async {
++    final s = dismissed()..remove(url);
++    await SettingsService.setString(_kDismissed, jsonEncode(s.toList()));
++  }
++
++  // ── রূপান্তর ──
++  static const _bnDigits = '০১২৩৪৫৬৭৮৯';
++  static String _toEn(String s) =>
++      s.replaceAllMapped(RegExp('[০-৯]'), (m) => _bnDigits.indexOf(m[0]!).toString());
++
++  static int _feeOf(String s) {
++    final m = RegExp(r'\d+').firstMatch(_toEn(s));
++    return m == null ? 0 : int.tryParse(m[0]!) ?? 0;
++  }
++
++  /// রাডারের সার্কুলার → জব হাবের Circular (নজরে)। সংরক্ষণ করবে JobService.saveCircular।
++  static Circular toCircular(RadarItem it) {
++    final note = StringBuffer(it.verdict == 'ok' ? 'রাডার: সম্ভাব্য যোগ্য' : 'রাডার: যাচাই বাকি');
++    for (final p in it.posts) {
++      for (final c in p.checks) {
++        if (c.s != 'ok') note.write('\n${c.icon} ${p.title}: ${c.msg}');
++      }
++    }
++    if (it.method.isNotEmpty) note.write('\nআবেদন: ${it.method}');
++    note.write('\n(স্বয়ংক্রিয় যাচাই — মূল বিজ্ঞপ্তি দেখে নিশ্চিত হও)');
++    return Circular(
++      title: it.title,
++      org: it.org,
++      post: it.posts.map((p) => p.title).take(3).join(', '),
++      deadline: it.deadline,
++      fee: _feeOf(it.fee),
++      url: it.url,
++      note: note.toString(),
++    );
++  }
++
++  static String ymd(DateTime d) => Reminder.ymd(d);
++}
++
++/// সেটিংস শিট থেকে একসাথে একাধিক স্ট্রিং মান সংরক্ষণ।
++class SettingsPersist {
++  static Future<void> save(Map<String, String> strings) async {
++    for (final e in strings.entries) {
++      await SettingsService.setString(e.key, e.value);
++    }
++  }
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_tab.dart b/lib/jobs/radar/radar_tab.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/radar_tab.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/radar_tab.dart	2026-10-20 19:32:45.346850841 +0000
+@@ -0,0 +1,411 @@
++import 'package:flutter/material.dart';
++import '../../reminder/models/reminder.dart' show bn, Reminder;
++import '../../widgets/app_theme.dart';
++import '../services/app_launcher.dart';
++import '../services/job_service.dart';
++import 'phone_alerts_sheet.dart';
++import 'phone_notif_service.dart';
++import 'radar_models.dart';
++import 'radar_runner.dart';
++import 'radar_service.dart';
++
++/// চাকরি হাবের "রাডার" ট্যাব — Job Radar যে সার্কুলারগুলো তোমার যোগ্যতার সাথে মিলিয়ে
++/// বেছেছে সেগুলো এখানে দেখায়। "নজরে নাও" চাপলে সার্কুলার ট্যাবে চলে যায় (রিমাইন্ডারসহ)।
++class RadarTab extends StatefulWidget {
++  /// সার্কুলার যোগ হলে হাব রিফ্রেশ করার কলব্যাক।
++  final VoidCallback onSaved;
++  const RadarTab({super.key, required this.onSaved});
++  @override
++  State<RadarTab> createState() => _RadarTabState();
++}
++
++class _RadarTabState extends State<RadarTab> {
++  RadarFeed? _feed;
++  bool _loading = false;
++  bool _showHidden = false;
++  String? _error;
++  Set<String> _saved = {};
++
++  @override
++  void initState() {
++    super.initState();
++    _feed = RadarService.cached();
++    _init();
++  }
++
++  Future<void> _init() async {
++    await PhoneNotifService.sync();
++    await RadarService.reload();
++    _feed = RadarService.cached();
++    await _loadSaved();
++    if (mounted) setState(() {});
++    // অ্যাপ খুললে: রাতের রিপোর্টের সময় পেরিয়ে থাকলে ও আজকের রিপোর্ট বাকি থাকলে এখনই করে দিই;
++    // একেবারে প্রথমবার (ক্যাশ নেই) হলে একবার চালিয়ে দেখাই।
++    if (RadarRunner.isDue()) {
++      await _refresh(report: true);
++    } else if (_feed == null) {
++      await _refresh();
++    }
++  }
++
++  Future<void> _loadSaved() async {
++    final list = await JobService.circulars();
++    _saved = list.map((c) => c.url).where((u) => u.isNotEmpty).toSet();
++  }
++
++  /// এখনই সাইট থেকে পড়ে নতুন করে যাচাই (হাতে রিফ্রেশ — নোটিফিকেশন দেয় না)।
++  Future<void> _refresh({bool report = false}) async {
++    if (_loading) return;
++    setState(() { _loading = true; _error = null; });
++    try {
++      final r = await RadarRunner.run(report: report);
++      await RadarService.reload();
++      await _loadSaved();
++      if (mounted) {
++        setState(() {
++          _feed = RadarService.cached();
++          _loading = false;
++          _error = r.error;
++        });
++      }
++    } catch (e) {
++      if (mounted) setState(() { _loading = false; _error = 'রাডার চালানো যায়নি: $e'; });
++    }
++  }
++
++  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
++
++  Future<void> _watch(RadarItem it) async {
++    await JobService.saveCircular(RadarService.toCircular(it));
++    _saved.add(it.url);
++    widget.onSaved();
++    if (mounted) {
++      setState(() {});
++      _snack('সার্কুলার ট্যাবে যোগ হয়েছে — শেষ তারিখের রিমাইন্ডারও সেট হয়েছে');
++    }
++  }
++
++  Color _urgency(int d) => d <= 3 ? AppTheme.red : (d <= 7 ? AppTheme.yellow : AppTheme.green);
++
++  String _stamp(DateTime d) =>
++      '${bn(d.day)}/${bn(d.month)} ${bn(d.hour.toString().padLeft(2, '0'))}:${bn(d.minute.toString().padLeft(2, '0'))}';
++
++  // ───────────────────────── বিল্ড ─────────────────────────
++
++  @override
++  Widget build(BuildContext context) {
++    final hidden = RadarService.dismissed();
++    final all = (_feed?.items ?? const <RadarItem>[])
++        .where((i) => i.daysLeft == null || i.daysLeft! >= 0)
++        .toList();
++    final items = _showHidden ? all : all.where((i) => !hidden.contains(i.url)).toList();
++
++    return Column(children: [
++      Padding(
++        padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
++        child: Row(children: [
++          Expanded(
++            child: Text(
++              _feed?.generatedAt != null
++                  ? 'শেষ খোঁজা: ${_stamp(_feed!.generatedAt!)} · প্রতি রাত ${bn(RadarService.reportHour)}:${bn(RadarService.reportMinute.toString().padLeft(2, '0'))}-এ রিপোর্ট'
++                  : 'রাডার',
++              style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
++            ),
++          ),
++          if (hidden.isNotEmpty)
++            TextButton(
++              onPressed: () => setState(() => _showHidden = !_showHidden),
++              child: Text(_showHidden ? 'লুকানো বাদ দাও' : 'লুকানো ${bn(hidden.length)}টি'),
++            ),
++          IconButton(
++            tooltip: 'রিফ্রেশ',
++            icon: _loading
++                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
++                : Icon(Icons.refresh, color: AppTheme.textSecondary),
++            onPressed: _refresh,
++          ),
++          IconButton(
++            tooltip: 'ফোনের নোটিফিকেশন',
++            icon: Badge(
++              isLabelVisible: PhoneNotifService.alerts().any((a) => a.match),
++              smallSize: 8,
++              child: Icon(Icons.notifications_active_outlined, color: AppTheme.textSecondary),
++            ),
++            onPressed: () => showPhoneAlertsSheet(context, onChanged: () {
++              if (mounted) setState(() {});
++            }),
++          ),
++          IconButton(
++            tooltip: 'সেটিংস',
++            icon: Icon(Icons.tune, color: AppTheme.textSecondary),
++            onPressed: _settingsSheet,
++          ),
++        ]),
++      ),
++      if (_error != null)
++        Padding(
++          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
++          child: Text('⚠️ $_error', style: TextStyle(color: AppTheme.red, fontSize: 12.5)),
++        ),
++      Expanded(
++        child: _feed == null
++            ? Center(child: Text(_loading ? 'সার্কুলার খোঁজা হচ্ছে…' : 'রিফ্রেশ চাপো', style: TextStyle(color: AppTheme.textMuted)))
++            : RefreshIndicator(
++                onRefresh: _refresh,
++                child: items.isEmpty
++                    ? ListView(children: [
++                        const SizedBox(height: 80),
++                        Icon(Icons.radar, size: 44, color: AppTheme.textMuted),
++                        const SizedBox(height: 12),
++                        Center(
++                          child: Text('এখন তোমার মতো কোনো চলমান সার্কুলার নেই',
++                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
++                        ),
++                      ])
++                    : ListView(
++                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
++                        children: items.map(_itemCard).toList(),
++                      ),
++              ),
++      ),
++    ]);
++  }
++
++  Widget _itemCard(RadarItem it) {
++    final ok = it.verdict == 'ok';
++    final dl = it.daysLeft;
++    final saved = _saved.contains(it.url);
++    final hidden = RadarService.dismissed().contains(it.url);
++    final accent = ok ? AppTheme.green : AppTheme.yellow;
++    return Opacity(
++      opacity: hidden ? 0.5 : 1,
++      child: Padding(
++        padding: const EdgeInsets.only(bottom: 10),
++        child: Container(
++          width: double.infinity,
++          padding: const EdgeInsets.all(14),
++          decoration: BoxDecoration(
++            color: AppTheme.bg2,
++            borderRadius: BorderRadius.circular(16),
++            border: Border.all(color: AppTheme.border),
++          ),
++          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
++            Wrap(spacing: 8, runSpacing: 6, children: [
++              _chip(ok ? '🟢 সম্ভাব্য যোগ্য' : '🟡 যাচাই বাকি', accent),
++              if (_feed?.newUrls.contains(it.url) ?? false) _chip('🆕 নতুন', AppTheme.accent),
++              if (dl != null) _chip(dl == 0 ? 'আজই শেষ' : 'আর ${bn(dl)} দিন', _urgency(dl)),
++            ]),
++            const SizedBox(height: 8),
++            Text(it.title,
++                style: TextStyle(color: AppTheme.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
++            if (it.org.isNotEmpty)
++              Text(it.org, style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5)),
++            for (final p in it.posts.take(4)) ...[
++              const SizedBox(height: 10),
++              Text('📌 ${p.title}${p.count != null ? ' (${bn(p.count!)}টি)' : ''}',
++                  style: TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
++              for (final c in p.checks)
++                Padding(
++                  padding: const EdgeInsets.only(top: 3),
++                  child: Text('${c.icon} ${c.msg}',
++                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5, height: 1.35)),
++                ),
++            ],
++            if (it.method.isNotEmpty || it.fee.isNotEmpty) ...[
++              const SizedBox(height: 10),
++              Text(
++                [if (it.method.isNotEmpty) '📝 ${it.method}', if (it.fee.isNotEmpty) '💰 ${it.fee}'].join('   '),
++                style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
++              ),
++            ],
++            const SizedBox(height: 10),
++            Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
++              saved
++                  ? _chip('✔ নজরে আছে', AppTheme.textSecondary)
++                  : FilledButton.tonal(onPressed: () => _watch(it), child: const Text('নজরে নাও')),
++              TextButton(
++                onPressed: () async {
++                  final ok = await AppLauncher.openUrl(it.url);
++                  if (!ok) _snack('লিংক খোলা যায়নি');
++                },
++                child: const Text('🔗 বিস্তারিত'),
++              ),
++              TextButton(
++                onPressed: () async {
++                  hidden ? await RadarService.restore(it.url) : await RadarService.dismiss(it.url);
++                  if (mounted) setState(() {});
++                },
++                child: Text(hidden ? 'ফিরিয়ে আনো' : 'লুকাও'),
++              ),
++            ]),
++            const SizedBox(height: 2),
++            Text('স্বয়ংক্রিয় যাচাই — মূল বিজ্ঞপ্তিই চূড়ান্ত।',
++                style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
++          ]),
++        ),
++      ),
++    );
++  }
++
++  Widget _chip(String text, Color color) => Container(
++        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
++        decoration: BoxDecoration(
++          color: color.withOpacity(0.14),
++          borderRadius: BorderRadius.circular(20),
++        ),
++        child: Text(text, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700)),
++      );
++
++  // ───────────────────────── সেটিংস ও প্রোফাইল ─────────────────────────
++
++  Future<void> _settingsSheet() async {
++    final subject = TextEditingController(text: RadarService.subject);
++    final typBn = TextEditingController(text: RadarService.typingBn.toString());
++    final typEn = TextEditingController(text: RadarService.typingEn.toString());
++    var dob = RadarService.dob;
++    var edu = RadarService.eduLevel;
++    if (!RadarService.eduLevels.containsKey(edu)) edu = 'degree_pass';
++    var daily = RadarService.dailyOn;
++    var time = RadarService.reportTime;
++
++    InputDecoration deco(String label, {String? hint}) => InputDecoration(
++          labelText: label,
++          hintText: hint,
++          isDense: true,
++          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
++        );
++
++    Future<void> persist() => SettingsPersist.save({
++          RadarService.kDob: dob,
++          RadarService.kEdu: edu,
++          RadarService.kSubject: subject.text.trim(),
++          RadarService.kTypBn: _num(typBn.text, 20).toString(),
++          RadarService.kTypEn: _num(typEn.text, 20).toString(),
++          RadarService.kDaily: daily ? '1' : '0',
++          RadarService.kReportTime: time,
++        });
++
++    await showModalBottomSheet<void>(
++      context: context,
++      isScrollControlled: true,
++      backgroundColor: AppTheme.bg2,
++      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
++      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
++        return Padding(
++          padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(ctx).viewInsets.bottom),
++          child: SingleChildScrollView(
++            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
++              Text('রাডার সেটিংস',
++                  style: TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w800)),
++              const SizedBox(height: 14),
++              Text('রাতের রিপোর্ট', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w700)),
++              SwitchListTile(
++                contentPadding: EdgeInsets.zero,
++                title: Text('প্রতি রাতে একবার জানাও', style: TextStyle(color: AppTheme.textPrimary)),
++                subtitle: Text('সারাদিনের সব উপযুক্ত সার্কুলারের তালিকা — একটাই নোটিফিকেশনে',
++                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
++                value: daily,
++                onChanged: (v) => setS(() => daily = v),
++              ),
++              OutlinedButton(
++                onPressed: !daily
++                    ? null
++                    : () async {
++                        final parts = time.split(':');
++                        final t = await showTimePicker(
++                          context: ctx,
++                          initialTime: TimeOfDay(
++                              hour: int.tryParse(parts.first) ?? 21, minute: int.tryParse(parts.last) ?? 0),
++                        );
++                        if (t != null) {
++                          setS(() => time = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}');
++                        }
++                      },
++                child: Text('রিপোর্টের সময়: ${bn(time.split(':').first)}:${bn(time.split(':').last)}'),
++              ),
++              const SizedBox(height: 4),
++              Text('অ্যান্ড্রয়েড ব্যাকগ্রাউন্ড কাজ ঠিক মিনিটে না-ও চালাতে পারে; কিছুক্ষণ দেরি হওয়া স্বাভাবিক।',
++                  style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5, height: 1.4)),
++              const SizedBox(height: 18),
++              Text('তোমার যোগ্যতা', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w700)),
++              const SizedBox(height: 8),
++              OutlinedButton(
++                onPressed: () async {
++                  final init = DateTime.tryParse(dob) ?? DateTime(1999, 1, 1);
++                  final d = await showDatePicker(
++                    context: ctx,
++                    initialDate: init,
++                    firstDate: DateTime(1960),
++                    lastDate: DateTime.now(),
++                  );
++                  if (d != null) setS(() => dob = Reminder.ymd(d));
++                },
++                child: Text('জন্মতারিখ: ${_dobBn(dob)}'),
++              ),
++              const SizedBox(height: 10),
++              DropdownButtonFormField<String>(
++                value: edu,
++                decoration: deco('সর্বোচ্চ শিক্ষাগত যোগ্যতা'),
++                items: RadarService.eduLevels.entries
++                    .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
++                    .toList(),
++                onChanged: (v) => setS(() => edu = v ?? edu),
++              ),
++              const SizedBox(height: 10),
++              TextField(controller: subject, decoration: deco('বিষয়/বিভাগ (ঐচ্ছিক)', hint: 'যেমন: বাংলা')),
++              const SizedBox(height: 10),
++              Row(children: [
++                Expanded(
++                  child: TextField(
++                    controller: typBn,
++                    keyboardType: TextInputType.number,
++                    decoration: deco('বাংলা টাইপিং (WPM)'),
++                  ),
++                ),
++                const SizedBox(width: 10),
++                Expanded(
++                  child: TextField(
++                    controller: typEn,
++                    keyboardType: TextInputType.number,
++                    decoration: deco('ইংরেজি টাইপিং (WPM)'),
++                  ),
++                ),
++              ]),
++              const SizedBox(height: 18),
++              SizedBox(
++                width: double.infinity,
++                child: FilledButton(
++                  style: FilledButton.styleFrom(backgroundColor: AppTheme.accent),
++                  onPressed: () async {
++                    await persist();
++                    if (ctx.mounted) Navigator.pop(ctx);
++                  },
++                  child: const Text('সংরক্ষণ'),
++                ),
++              ),
++            ]),
++          ),
++        );
++      }),
++    );
++
++    for (final c in [subject, typBn, typEn]) {
++      c.dispose();
++    }
++    if (mounted) setState(() {});
++    await RadarRunner.markStale();
++    await _refresh(); // প্রোফাইল বদলালে নতুন করে যাচাই
++  }
++
++  static int _num(String s, int fallback) {
++    const d = '০১২৩৪৫৬৭৮৯';
++    final en = s.replaceAllMapped(RegExp('[০-৯]'), (m) => d.indexOf(m[0]!).toString());
++    final n = int.tryParse(en.trim());
++    return (n == null || n <= 0) ? fallback : n;
++  }
++
++  static String _dobBn(String ymd) {
++    final d = DateTime.tryParse(ymd);
++    return d == null ? ymd : '${bn(d.day)}/${bn(d.month)}/${bn(d.year)}';
++  }
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/screens/job_hub_screen.dart b/lib/jobs/screens/job_hub_screen.dart
+--- orig/my-manager-flutter-main/lib/jobs/screens/job_hub_screen.dart	2026-10-10 10:13:42.000000000 +0000
++++ b/lib/jobs/screens/job_hub_screen.dart	2026-10-13 10:21:57.367678334 +0000
+@@ -6,6 +6,7 @@
+ import '../services/app_launcher.dart';
+ import '../services/job_backup_service.dart';
+ import '../services/job_service.dart';
++import '../radar/radar_tab.dart';
+ 
+ /// সরকারি চাকরির প্রস্তুতির "ম্যানেজার" দিক: সার্কুলার/ডেডলাইন, ডকুমেন্ট,
+ /// বয়সসীমা ও পরীক্ষার কাউন্টডাউন, সাপ্তাহিক রিভিউ। পড়াশোনার কনটেন্ট
+@@ -33,7 +34,7 @@
+   @override
+   void initState() {
+     super.initState();
+-    _tab = TabController(length: 3, vsync: this, initialIndex: widget.initialTab.clamp(0, 2))..addListener(() => setState(() {}));
++    _tab = TabController(length: 4, vsync: this, initialIndex: widget.initialTab.clamp(0, 3))..addListener(() => setState(() {}));
+     _load();
+   }
+ 
+@@ -130,10 +131,10 @@
+           indicatorColor: AppTheme.accent,
+           labelColor: AppTheme.accent,
+           unselectedLabelColor: AppTheme.textMuted,
+-          tabs: const [Tab(text: 'ওভারভিউ'), Tab(text: 'সার্কুলার'), Tab(text: 'ডকুমেন্ট')],
++          tabs: const [Tab(text: 'ওভারভিউ'), Tab(text: 'সার্কুলার'), Tab(text: 'ডকুমেন্ট'), Tab(text: 'রাডার')],
+         ),
+       ),
+-      floatingActionButton: _tab.index == 0
++      floatingActionButton: (_tab.index == 0 || _tab.index == 3)
+           ? null
+           : FloatingActionButton(
+               backgroundColor: AppTheme.accent,
+@@ -145,7 +146,7 @@
+           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
+           : TabBarView(
+               controller: _tab,
+-              children: [_overview(), _circularTab(), _docTab()],
++              children: [_overview(), _circularTab(), _docTab(), RadarTab(onSaved: _load)],
+             ),
+     );
+   }
+diff -ruN orig/my-manager-flutter-main/lib/jobs/services/job_service.dart b/lib/jobs/services/job_service.dart
+--- orig/my-manager-flutter-main/lib/jobs/services/job_service.dart	2026-10-10 10:13:42.000000000 +0000
++++ b/lib/jobs/services/job_service.dart	2026-10-13 10:21:57.366750362 +0000
+@@ -8,6 +8,7 @@
+ import '../../services/settings_service.dart';
+ import '../db/job_db.dart';
+ import '../models/job_models.dart';
++import '../radar/radar_service.dart' show RadarService;
+ import 'job_backup_service.dart';
+ 
+ /// চাকরি হাবের লজিক। সার্কুলারের তারিখ থেকে রিমাইন্ডার নিজে তৈরি হয় —
+@@ -24,6 +25,7 @@
+ 
+   static const _profileKeys = [
+     _kPost, _kGrade, _kSalary, _kAgeOut, _kExamName, _kExamDate,
++    ...RadarService.backupKeys, // রাডারের প্রোফাইল (টোকেন বাদে)
+   ];
+ 
+   static Map<String, String> profileMap() => {
+diff -ruN orig/my-manager-flutter-main/lib/main.dart b/lib/main.dart
+--- orig/my-manager-flutter-main/lib/main.dart	2026-10-10 10:13:42.000000000 +0000
++++ b/lib/main.dart	2026-10-20 19:32:45.346280139 +0000
+@@ -18,10 +18,12 @@
+ import 'screentime/screen_time_service.dart';
+ import 'cashbook/screens/cashbook_quick_add_app.dart';
+ import 'reminder/services/reminder_service.dart';
++import 'jobs/radar/radar_runner.dart';
+ 
+ const autoBackupTaskName = 'my_manager_auto_backup';
+ const cashbookReminderTaskName = 'cashbook_reminder_check';
+ const reminderRearmTaskName = 'reminder_rearm';
++const radarDailyTaskName = 'job_radar_daily';
+ 
+ void main() async {
+   WidgetsFlutterBinding.ensureInitialized();
+@@ -136,7 +138,19 @@
+       existingWorkPolicy: ExistingWorkPolicy.keep,
+     );
+   } catch (_) {}
++  // Job Radar: ঘণ্টায় একবার "আজকের রিপোর্টের সময় হয়েছে কি?" দেখে; সময় হলে একবার সার্চ করে
++  // রাতে একটাই নোটিফিকেশন দেয় (দিনে বারবার খোঁজে না, বারবার জানায় না)।
++  try {
++    await Workmanager().registerPeriodicTask(
++      radarDailyTaskName, radarDailyTaskName,
++      frequency: const Duration(hours: 1),
++      constraints: Constraints(networkType: NetworkType.connected),
++      existingWorkPolicy: ExistingWorkPolicy.keep,
++    );
++  } catch (_) {}
+   runApp(const MyManagerApp());
++  // অ্যাপ খুললেও: আজকের রাতের রিপোর্টের সময় পেরিয়ে থাকলে ও বাকি থাকলে এখনই করে দেয়।
++  RadarRunner.runIfDue().then((_) {}, onError: (_) {});
+   // Refresh the home screen widget on every cold start too, in case
+   // something changed while the app wasn't running.
+   WidgetService.update();
+@@ -161,6 +175,13 @@
+         } catch (_) {}
+         return true;
+       }
++      if (task == radarDailyTaskName) {
++        try {
++          await SettingsService.init();
++          await RadarRunner.runIfDue();
++        } catch (_) {}
++        return true;
++      }
+       if (task == cashbookReminderTaskName) {
+         await CashbookNotificationService.backgroundCheck();
+         // খরচ-প্রহরীর বারবার-নোটিফিকেশন (সতর্ক অবস্থায়, নির্দিষ্ট ব্যবধানে)
+diff -ruN orig/my-manager-flutter-main/lib/services/notification_service.dart b/lib/services/notification_service.dart
+--- orig/my-manager-flutter-main/lib/services/notification_service.dart	2026-10-10 10:13:42.000000000 +0000
++++ b/lib/services/notification_service.dart	2026-10-20 19:31:32.543800142 +0000
+@@ -156,6 +156,21 @@
+     debugPrint('Morning digest scheduled for $fireAt → ${summary.notificationShort}');
+   }
+ 
++  /// Job Radar-এর রাতের রিপোর্ট — দিনে একটাই (একই ID, তাই আগেরটা প্রতিস্থাপিত হয়)।
++  static Future<void> showRadarReport(String title, String body, String bigText) async {
++    await init();
++    final androidDetails = AndroidNotificationDetails(
++      'radar_daily_channel',
++      'Job Radar',
++      channelDescription: 'প্রতি রাতে উপযুক্ত সার্কুলারের তালিকা',
++      importance: Importance.defaultImportance,
++      priority: Priority.defaultPriority,
++      icon: '@mipmap/ic_launcher',
++      styleInformation: BigTextStyleInformation(bigText, contentTitle: title, summaryText: body),
++    );
++    await _plugin.show(9100, title, body, NotificationDetails(android: androidDetails), payload: 'job_radar');
++  }
++
+   static Future<void> cancelDailyDigest() async {
+     await _plugin.cancel(_digestId);
+   }
+diff -ruN orig/my-manager-flutter-main/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+--- orig/my-manager-flutter-main/android/app/src/main/AndroidManifest.xml	2026-10-10 10:13:42.000000000 +0000
++++ b/android/app/src/main/AndroidManifest.xml	2026-10-13 14:55:38.705188096 +0000
+@@ -259,5 +259,16 @@
+         <meta-data
+             android:name="flutterEmbedding"
+             android:value="2"/>
++            <!-- Job Radar: বেছে দেওয়া চাকরির অ্যাপের নোটিফিকেশন পড়ার সার্ভিস (ব্যবহারকারী Settings থেকে নিজে অনুমতি দেন) -->
++        <service
++            android:name=".JobNotificationListener"
++            android:label="Job Radar"
++            android:exported="true"
++            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
++            <intent-filter>
++                <action android:name="android.service.notification.NotificationListenerService"/>
++            </intent-filter>
++        </service>
++
+     </application>
+ </manifest>
+diff -ruN orig/my-manager-flutter-main/android/app/src/main/kotlin/com/hanif/mymanager/JobNotifBridge.kt b/android/app/src/main/kotlin/com/hanif/mymanager/JobNotifBridge.kt
+--- orig/my-manager-flutter-main/android/app/src/main/kotlin/com/hanif/mymanager/JobNotifBridge.kt	1970-01-01 00:00:00.000000000 +0000
++++ b/android/app/src/main/kotlin/com/hanif/mymanager/JobNotifBridge.kt	2026-10-13 14:55:38.664344479 +0000
+@@ -0,0 +1,91 @@
++package com.hanif.mymanager
++
++import android.content.Context
++import android.content.Intent
++import android.provider.Settings
++import io.flutter.embedding.engine.FlutterEngine
++import io.flutter.plugin.common.MethodChannel
++import org.json.JSONArray
++import org.json.JSONObject
++
++/** Flutter ↔ JobNotificationListener সেতু (চ্যানেল: com.hanif.mymanager/jobnotif)। */
++object JobNotifBridge {
++    const val PREFS = "job_radar_native"
++    const val KEY_PKGS = "pkgs"
++    private const val KEY_QUEUE = "queue"
++    private const val MAX_QUEUE = 100
++    private val lock = Any()
++
++    fun enqueue(ctx: Context, pkg: String, title: String, text: String, time: Long) {
++        synchronized(lock) {
++            val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++            val arr = try { JSONArray(prefs.getString(KEY_QUEUE, "[]")) } catch (e: Exception) { JSONArray() }
++            // একই নোটিফিকেশন বারবার এলে (আপডেট) ডুপ্লিকেট বাদ
++            for (i in 0 until arr.length()) {
++                val o = arr.getJSONObject(i)
++                if (o.optString("pkg") == pkg && o.optString("title") == title && o.optString("text") == text) return
++            }
++            arr.put(JSONObject().put("pkg", pkg).put("title", title).put("text", text).put("time", time))
++            // পুরনো ছাঁটাই
++            val out = JSONArray()
++            val start = maxOf(0, arr.length() - MAX_QUEUE)
++            for (i in start until arr.length()) out.put(arr.get(i))
++            prefs.edit().putString(KEY_QUEUE, out.toString()).apply()
++        }
++    }
++
++    private fun drain(ctx: Context): String = synchronized(lock) {
++        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++        val s = prefs.getString(KEY_QUEUE, "[]") ?: "[]"
++        prefs.edit().putString(KEY_QUEUE, "[]").apply()
++        s
++    }
++
++    private fun isEnabled(ctx: Context): Boolean {
++        val flat = Settings.Secure.getString(ctx.contentResolver, "enabled_notification_listeners") ?: return false
++        return flat.contains(ctx.packageName)
++    }
++
++    fun register(engine: FlutterEngine, ctx: Context) {
++        MethodChannel(engine.dartExecutor.binaryMessenger, "com.hanif.mymanager/jobnotif")
++            .setMethodCallHandler { call, result ->
++                try {
++                    when (call.method) {
++                        "isEnabled" -> result.success(isEnabled(ctx))
++                        "openSettings" -> {
++                            val i = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
++                            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
++                            ctx.startActivity(i)
++                            result.success(true)
++                        }
++                        "getPackages" -> {
++                            val set = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++                                .getStringSet(KEY_PKGS, emptySet()) ?: emptySet()
++                            result.success(set.toList())
++                        }
++                        "setPackages" -> {
++                            val list = call.argument<List<String>>("packages") ?: emptyList()
++                            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++                                .edit().putStringSet(KEY_PKGS, list.toSet()).apply()
++                            result.success(true)
++                        }
++                        "drain" -> result.success(drain(ctx))
++                        "searchApps" -> {
++                            val q = (call.argument<String>("query") ?: "").trim().lowercase()
++                            val pm = ctx.packageManager
++                            val found = pm.getInstalledApplications(0)
++                                .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
++                                .map { mapOf("label" to pm.getApplicationLabel(it).toString(), "pkg" to it.packageName) }
++                                .filter { q.isEmpty() || it["label"]!!.lowercase().contains(q) || it["pkg"]!!.lowercase().contains(q) }
++                                .sortedBy { it["label"]!!.lowercase() }
++                                .take(30)
++                            result.success(found)
++                        }
++                        else -> result.notImplemented()
++                    }
++                } catch (e: Exception) {
++                    result.error("jobnotif", e.message, null)
++                }
++            }
++    }
++}
+diff -ruN orig/my-manager-flutter-main/android/app/src/main/kotlin/com/hanif/mymanager/JobNotificationListener.kt b/android/app/src/main/kotlin/com/hanif/mymanager/JobNotificationListener.kt
+--- orig/my-manager-flutter-main/android/app/src/main/kotlin/com/hanif/mymanager/JobNotificationListener.kt	1970-01-01 00:00:00.000000000 +0000
++++ b/android/app/src/main/kotlin/com/hanif/mymanager/JobNotificationListener.kt	2026-10-13 14:55:38.663441217 +0000
+@@ -0,0 +1,29 @@
++package com.hanif.mymanager
++
++import android.app.Notification
++import android.content.Context
++import android.service.notification.NotificationListenerService
++import android.service.notification.StatusBarNotification
++
++/**
++ * শুধু ব্যবহারকারীর বেছে দেওয়া চাকরির অ্যাপগুলোর নোটিফিকেশন ধরে।
++ * অন্য কোনো অ্যাপের নোটিফিকেশনের বিষয়বস্তু পড়াই হয় না (প্যাকেজ মিলিয়ে সরাসরি ফিরে যায়)।
++ */
++class JobNotificationListener : NotificationListenerService() {
++    override fun onNotificationPosted(sbn: StatusBarNotification?) {
++        val n = sbn ?: return
++        val pkg = n.packageName ?: return
++        val prefs = getSharedPreferences(JobNotifBridge.PREFS, Context.MODE_PRIVATE)
++        val allowed = prefs.getStringSet(JobNotifBridge.KEY_PKGS, emptySet()) ?: emptySet()
++        if (pkg !in allowed) return
++        if (n.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
++
++        val ex = n.notification.extras
++        val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
++        val text = (ex.getCharSequence(Notification.EXTRA_BIG_TEXT)
++            ?: ex.getCharSequence(Notification.EXTRA_TEXT))?.toString()?.trim().orEmpty()
++        if (title.isEmpty() && text.isEmpty()) return
++
++        JobNotifBridge.enqueue(this, pkg, title.take(300), text.take(800), n.postTime)
++    }
++}
+diff -ruN orig/my-manager-flutter-main/android/app/src/main/kotlin/com/hanif/mymanager/MainActivity.kt b/android/app/src/main/kotlin/com/hanif/mymanager/MainActivity.kt
+--- orig/my-manager-flutter-main/android/app/src/main/kotlin/com/hanif/mymanager/MainActivity.kt	2026-10-10 10:13:42.000000000 +0000
++++ b/android/app/src/main/kotlin/com/hanif/mymanager/MainActivity.kt	2026-10-13 14:55:38.704653087 +0000
+@@ -12,6 +12,8 @@
+     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+         super.configureFlutterEngine(flutterEngine)
+         ScreenTimeBridge.register(flutterEngine, applicationContext)
++        // চাকরির অ্যাপের নোটিফিকেশন ট্র্যাক (শুধু বেছে দেওয়া অ্যাপ)।
++        JobNotifBridge.register(flutterEngine, applicationContext)
+         // চাকরি হাব থেকে SmartStudyBD খোলা / সার্কুলারের লিংক খোলা।
+         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.hanif.mymanager/launcher")
+             .setMethodCallHandler { call, result ->
+--- /dev/null	2026-10-19 22:00:49.527578007 +0000
++++ b/test/radar_engine_test.dart	2026-10-20 19:32:45.349784157 +0000
+@@ -0,0 +1,120 @@
++import 'package:flutter_test/flutter_test.dart';
++import 'package:my_manager/jobs/radar/engine/bn_util.dart';
++import 'package:my_manager/jobs/radar/engine/circular_parser.dart';
++import 'package:my_manager/jobs/radar/engine/html_text.dart';
++import 'package:my_manager/jobs/radar/engine/match_engine.dart';
++
++// JS ইঞ্জিনের টেস্টের হুবহু অনুবাদ — একই ইনপুটে একই ফল আসা উচিত।
++final profile = RadarProfile(
++  dob: DateTime.utc(1999, 1, 1),
++  eduRank: 4,
++  eduLabel: 'স্নাতক (পাস কোর্স, ৩ বছর)',
++  typingBn: 20,
++  typingEn: 20,
++  targetKeywords: const [
++    r'কম্পিউটার\s*অপারেটর', r'কম্পিউটার\s*মুদ্রাক্ষরিক', r'ডাটা\s*এন্ট্রি', r'ডেটা\s*এন্ট্রি',
++    r'ডাটা\s*অপারেটর', r'ডেটা\s*অপারেটর', r'অফিস\s*সহায়ক\s*[-–]?\s*কাম',
++    r'computer\s*operator', r'data\s*entry', r'computer\s*typist',
++  ],
++  excludeKeywords: const ['সাঁট', 'সীট', 'শর্টহ্যান্ড', 'stenograph', 'shorthand'],
++);
++
++final july15 = DateTime.utc(2026, 7, 15, 6);
++final oct13 = DateTime.utc(2026, 10, 13, 6);
++
++const planning = '''<article><h1>বাংলাদেশ পরিকল্পনা কমিশন নিয়োগ বিজ্ঞপ্তি ২০২৬</h1>
++<h2>এক নজরে জব সামারি</h2>
++<table><tr><td>প্রতিষ্ঠানের নাম</td><td>বাংলাদেশ পরিকল্পনা কমিশন</td></tr>
++<tr><td>বয়সসীমা</td><td>১৮-৩২ বছর</td></tr>
++<tr><td>শিক্ষাগত যোগ্যতা</td><td>এইচএসসি পাশ</td></tr>
++<tr><td>আবেদনের ফি</td><td>১০০/- টাকা</td></tr>
++<tr><td>আবেদনের শেষ তারিখ</td><td>৩০ জুলাই ২০২৬ অফিস চলাকালীন সময় পর্যন্ত</td></tr>
++<tr><td>আবেদন পদ্ধতি</td><td>অফলাইন/ডাকযোগে</td></tr></table>
++<h2>পদের সংক্ষিপ্ত বিবরণ</h2>
++<table><tr><td>ক্রমিক</td><td>পদের নাম</td><td>পদ সংখ্যা</td></tr><tr><td>১</td><td>ডাটা এন্ট্রি অপারেটর</td><td>১টি</td><td>গ্রেড-১৪</td></tr></table>
++<h2>বাংলাদেশ পরিকল্পনা কমিশন পদভিত্তিক শিক্ষাগত যোগ্যতা ও অভিজ্ঞতা</h2>
++<p><strong>১. ডাটা এন্ট্রি অপারেটর (১ টি পদ)</strong></p><p>শিক্ষাগত যোগ্যতা:</p>
++<ul><li>কোনো স্বীকৃত বোর্ড হতে উচ্চ মাধ্যমিক সার্টিফিকেট (এইচএসসি) বা সমমানের পরীক্ষায় উত্তীর্ণ হতে হবে।</li>
++<li>কম্পিউটার মুদ্রাক্ষরে প্রতি মিনিটে বাংলায় ২০ শব্দ এবং ইংরেজিতে ২০ শব্দের গতিসহ সংশ্লিষ্ট বিষয়ে Standard Aptitude Test এ উত্তীর্ণ হতে হবে।</li></ul>
++<h2>আবেদনের বয়সসীমা (Age Limit)</h2>
++<p>এই বিজ্ঞপ্তিতে আবেদনের জন্য প্রার্থীদের বয়স <strong>৩০ জুলাই ২০২৬ তারিখে ১৮ থেকে অনুর্ধ্ব ৩২ বছরের</strong> মধ্যে হতে হবে।</p>
++</article>''';
++
++const multi = '''<h2>এক নজরে</h2><table><tr><td>প্রতিষ্ঠানের নাম</td><td>কর অঞ্চল</td></tr>
++<tr><td>আবেদনের শেষ তারিখ</td><td>৩ নভেম্বর ২০২৬</td></tr></table>
++<h2>পদভিত্তিক যোগ্যতা</h2>
++<h3>১. সীট-মুদ্রাক্ষরিক কাম-কম্পিউটার অপারেটর (১০ টি পদ)</h3>
++<p>স্নাতক। সাঁটলিপিতে ইংরেজি ৭০ ও বাংলা ৪৫ শব্দ গতি।</p>
++<h3>২. কম্পিউটার অপারেটর (৩ টি পদ)</h3>
++<p>স্বীকৃত বিশ্ববিদ্যালয় থেকে বিজ্ঞান বিভাগে স্নাতক (সম্মান) বা সমমানের ডিগ্রি।</p>
++<h3>৩. অফিস সহকারী কাম-কম্পিউটার মুদ্রাক্ষরিক (৮ টি পদ)</h3>
++<p>এইচএসসি বা সমমান। কম্পিউটারে বাংলায় ২৫ শব্দ ও ইংরেজিতে ৩০ শব্দ গতি থাকতে হবে।</p>
++<h3>৪. অফিস সহায়ক (২০ টি পদ)</h3><p>এসএসসি বা সমমান।</p>
++<h2>বয়সসীমা</h2><p>০১.০৯.২০২৬ তারিখে ১৮-৩২ বছর</p>''';
++
++void main() {
++  test('পরিকল্পনা কমিশন: ডাটা এন্ট্রি, HSC, ২০/২০ → সম্ভাব্য যোগ্য', () {
++    final r = evaluate(htmlToText(planning), profile, now: july15, title: 'পরিকল্পনা কমিশন');
++    expect(r.expired, false);
++    expect(r.verdict, 'ok');
++    expect(r.posts.length, 1);
++    expect(daysBetween(todayDhaka(july15), r.nearest!), 15);
++    expect(r.method.contains('অফলাইন'), true);
++  });
++
++  test('শেষ তারিখ পার হলে মেয়াদোত্তীর্ণ', () {
++    final r = evaluate(htmlToText(planning), profile, now: oct13);
++    expect(r.expired, true);
++  });
++
++  test('বহু-পদ: সাঁটলিপি ❌, অনার্স ❌, মুদ্রাক্ষরিক ⚠️, অফিস সহায়ক বাদ', () {
++    final r = evaluate(htmlToText(multi), profile, now: oct13);
++    expect(r.posts.length, 3);
++    final by = {for (final p in r.posts) p.title: p};
++    expect(by['সীট-মুদ্রাক্ষরিক কাম-কম্পিউটার অপারেটর']!.verdict, 'fail');
++    expect(by['কম্পিউটার অপারেটর']!.verdict, 'fail');
++    expect(by['কম্পিউটার অপারেটর']!.checks.firstWhere((c) => c.key == 'edu').msg.contains('সম্মান'), true);
++    final m = by['অফিস সহকারী কাম-কম্পিউটার মুদ্রাক্ষরিক']!;
++    expect(m.verdict, 'warn');
++    expect(RegExp('বাংলা ২৫.*ইংরেজি ৩০').hasMatch(m.checks.firstWhere((c) => c.key == 'typing').msg), true);
++    expect(r.verdict, 'warn');
++  });
++
++  test('বয়স বেশি হলে ❌', () {
++    final old = RadarProfile(
++      dob: DateTime.utc(1990, 1, 1), eduRank: 4, eduLabel: 'স্নাতক', typingBn: 20, typingEn: 20,
++      targetKeywords: profile.targetKeywords, excludeKeywords: profile.excludeKeywords,
++    );
++    expect(evaluate(htmlToText(planning), old, now: july15).verdict, 'fail');
++  });
++
++  test('পদ আলাদা করা না গেলেও কীওয়ার্ড থাকলে ⚠️', () {
++    expect(evaluate('আজকের নিয়োগ\nকম্পিউটার অপারেটর পদে লোক নেওয়া হবে।', profile, now: oct13).verdict, 'warn');
++  });
++
++  test('অপ্রাসঙ্গিক সার্কুলার → none', () {
++    expect(evaluate('পুলিশ কনস্টেবল নিয়োগ\n১. কনস্টেবল (১০০ টি পদ)\nএইচএসসি', profile, now: oct13).verdict, 'none');
++  });
++
++  test('শিক্ষাগত যোগ্যতা পার্সার', () {
++    expect(parseEducation('স্নাতক (সম্মান) বা সমমানের ডিগ্রি').required, 5);
++    expect(parseEducation('স্নাতক বা সমমান').required, 4);
++    expect(parseEducation('স্নাতক (পাস) / স্নাতক (সম্মান)').required, 4);
++    expect(parseEducation('উচ্চ মাধ্যমিক সার্টিফিকেট (এইচএসসি) বা সমমান').required, 3);
++    expect(parseEducation('এসএসসি পাস').required, 2);
++    expect(parseEducation('স্নাতকোত্তর ডিগ্রি').required, 6);
++  });
++
++  test('টাইপিং ও বয়স পার্সার', () {
++    var t = parseTyping('বাংলায় ২০ শব্দ এবং ইংরেজিতে ২০ শব্দের গতি');
++    expect([t.bn, t.en], [20, 20]);
++    t = parseTyping('ইংরেজি ৩০ ও বাংলা ২৫ শব্দ');
++    expect([t.bn, t.en], [25, 30]);
++    t = parseTyping('প্রতি মিনিটে ২৫ শব্দ');
++    expect([t.bn, t.en], [25, 25]);
++    final a = parseAge('০১.০৯.২০২৬ তারিখে ১৮-৩২ বছর', null)!;
++    expect(a.max, 32);
++    expect(a.min, 18);
++    expect(a.refDate, DateTime.utc(2026, 9, 1));
++  });
++}
