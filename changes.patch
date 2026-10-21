@@ -1,6 +1,6 @@
 diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/bdgovtjob_source.dart b/lib/jobs/radar/engine/bdgovtjob_source.dart
 --- orig/my-manager-flutter-main/lib/jobs/radar/engine/bdgovtjob_source.dart	1970-01-01 00:00:00.000000000 +0000
-+++ b/lib/jobs/radar/engine/bdgovtjob_source.dart	2026-10-20 19:31:32.492836700 +0000
++++ b/lib/jobs/radar/engine/bdgovtjob_source.dart	2026-10-21 06:22:30.088210133 +0000
 @@ -0,0 +1,94 @@
 +import 'dart:convert';
 +import 'package:http/http.dart' as http;
@@ -27,7 +27,7 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/bdgovtjob_source.da
 +  const FetchedDetail(this.title, this.text);
 +}
 +
-+Future<String> _get(String url, {bool json = false}) async {
++Future<String> httpGet(String url, {bool json = false}) async {
 +  Object? last;
 +  for (var i = 0; i < 2; i++) {
 +    try {
@@ -49,7 +49,7 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/bdgovtjob_source.da
 +/// সর্বশেষ আপডেট হওয়া পোস্টের তালিকা। আগে WordPress REST, না হলে HTML থেকে লিংক।
 +Future<List<ListedPost>> listLatest({int limit = 40}) async {
 +  try {
-+    final body = await _get(
++    final body = await httpGet(
 +      '$_base/wp-json/wp/v2/posts?per_page=${limit > 50 ? 50 : limit}&orderby=modified&order=desc&_fields=link,title,modified',
 +      json: true,
 +    );
@@ -69,7 +69,7 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/bdgovtjob_source.da
 +  final seen = <String, ListedPost>{};
 +  for (final u in ['$_base/', '$_base/category/government-jobs-circular/', '$_base/category/teletalk-application/']) {
 +    try {
-+      final html = await _get(u);
++      final html = await httpGet(u);
 +      final re = RegExp(r'<a[^>]+href="(https://bdgovtjob\.net/([^"/?#]+)/)"[^>]*>([\s\S]*?)</a>', caseSensitive: false);
 +      for (final m in re.allMatches(html)) {
 +        final url = m[1]!, slug = m[2]!;
@@ -85,7 +85,7 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/bdgovtjob_source.da
 +
 +/// একটি সার্কুলার পেজ → শিরোনাম ও টেক্সট।
 +Future<FetchedDetail> fetchDetail(String url) async {
-+  final html = await _get(url);
++  final html = await httpGet(url);
 +  var body = html;
 +  final a = html.indexOf(RegExp(r'<article[\s>]', caseSensitive: false));
 +  final b = html.indexOf(RegExp(r'</article>', caseSensitive: false));
@@ -571,6 +571,146 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/match_engine.dart b
 +    posts: evaluated,
 +    verdict: verdict,
 +  );
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/teletalk_radar.dart b/lib/jobs/radar/engine/teletalk_radar.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/engine/teletalk_radar.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/engine/teletalk_radar.dart	2026-10-21 06:22:30.094366340 +0000
+@@ -0,0 +1,61 @@
++import '../radar_models.dart';
++import 'bn_util.dart';
++import 'match_engine.dart';
++import 'teletalk_source.dart';
++
++/// Teletalk-এর তালিকা থেকে তোমার টার্গেট পদগুলো বেছে একই প্রতিষ্ঠানের পদ একসাথে করে RadarItem বানায়।
++///
++/// তালিকার API-তে শুধু পদের নাম, প্রতিষ্ঠান, পদসংখ্যা, আবেদন শুরু ও শেষ তারিখ আছে — বয়স/শিক্ষা/টাইপিংয়ের
++/// শর্ত নেই। তাই ফলাফল সবসময় "যাচাই বাকি" (🟡); শর্ত দেখতে আবেদনের লিংকে যেতে হবে।
++List<RadarItem> teletalkItems(List<TeletalkJob> jobs, RadarProfile profile, {DateTime? now}) {
++  final today = todayDhaka(now);
++  final groups = <String, List<TeletalkJob>>{};
++  for (final j in jobs) {
++    if (j.deadline != null && daysBetween(today, j.deadline!) < 0) continue; // মেয়াদ শেষ
++    final rel = postRelevance('${j.titleBn} ${j.titleEn}', profile);
++    if (rel != 'yes') continue; // টার্গেট নয় বা সাঁটলিপি লাগে
++    final key = j.applyUrl.isNotEmpty ? j.applyUrl : j.shortName;
++    groups.putIfAbsent(key, () => []).add(j);
++  }
++
++  final items = <RadarItem>[];
++  groups.forEach((key, list) {
++    final first = list.first;
++    final org = first.orgNameBn.isNotEmpty ? first.orgNameBn : first.orgName;
++
++    final posts = <RadarPost>[];
++    for (final j in list) {
++      final checks = <RadarCheck>[
++        RadarCheck(key: 'post', s: 'ok', msg: 'পদের নাম মিলেছে: ${j.titleEn}'),
++      ];
++      if (j.published != null && daysBetween(today, j.published!) > 0) {
++        checks.add(RadarCheck(key: 'start', s: 'warn', msg: 'আবেদন শুরু: ${fmtDateBn(j.published!)} (এখনো শুরু হয়নি)'));
++      }
++      checks.add(const RadarCheck(
++        key: 'details',
++        s: 'warn',
++        msg: 'বয়স, শিক্ষা ও টাইপিংয়ের শর্ত Teletalk-এর বিজ্ঞপ্তিতে দেখো — এখনো স্বয়ংক্রিয় যাচাই হয়নি',
++      ));
++      posts.add(RadarPost(
++        title: j.titleBn.isNotEmpty ? j.titleBn : j.titleEn,
++        count: j.vacancy,
++        verdict: 'warn',
++        checks: checks,
++      ));
++    }
++
++    final deadlines = list.map((j) => j.deadline).whereType<DateTime>().toList()..sort();
++    final dl = deadlines.isEmpty ? null : deadlines.first;
++    items.add(RadarItem(
++      // একই প্রতিষ্ঠানের আবেদন-পোর্টাল একটাই; #teletalk যোগ করে bdgovtjob-এর লিংকের সাথে মিশে যাওয়া ঠেকানো
++      url: '${first.applyUrl}#teletalk',
++      title: '$org (Teletalk)',
++      verdict: 'warn',
++      org: org,
++      deadline: dl == null ? null : DateTime(dl.year, dl.month, dl.day),
++      method: 'অনলাইন — ${first.applyUrl}',
++      posts: posts,
++    ));
++  });
++  return items;
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/teletalk_source.dart b/lib/jobs/radar/engine/teletalk_source.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/engine/teletalk_source.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/engine/teletalk_source.dart	2026-10-21 06:22:30.093499506 +0000
+@@ -0,0 +1,71 @@
++import 'dart:convert';
++import 'bdgovtjob_source.dart' show httpGet;
++
++const _api = 'https://alljobs.teletalk.com.bd/api/v1/published-jobs/search';
++
++/// Teletalk AllJobs-এর সরকারি চাকরির এন্ট্রি (খোলা JSON API থেকে)।
++class TeletalkJob {
++  final String jobId; // GJOB15024
++  final String titleEn;
++  final String titleBn;
++  final int? vacancy;
++  final String applyUrl;
++  final DateTime? published; // আবেদন শুরু (বাংলাদেশ সময়ের তারিখ, UTC-মধ্যরাত)
++  final DateTime? deadline; // শেষ তারিখ (বাংলাদেশ সময়ের তারিখ, UTC-মধ্যরাত)
++  final String orgName;
++  final String orgNameBn;
++  final String shortName;
++
++  const TeletalkJob({
++    required this.jobId,
++    required this.titleEn,
++    required this.titleBn,
++    this.vacancy,
++    required this.applyUrl,
++    this.published,
++    this.deadline,
++    required this.orgName,
++    required this.orgNameBn,
++    required this.shortName,
++  });
++
++  /// "2026-11-14T10:00:00.000Z" → বাংলাদেশ সময়ের তারিখ (UTC-মধ্যরাত রূপে)।
++  static DateTime? _bdDate(Object? iso) {
++    final d = DateTime.tryParse((iso ?? '').toString());
++    if (d == null) return null;
++    final t = d.toUtc().add(const Duration(hours: 6));
++    return DateTime.utc(t.year, t.month, t.day);
++  }
++
++  factory TeletalkJob.fromMap(Map<String, dynamic> m) => TeletalkJob(
++        jobId: (m['job_id'] ?? '').toString(),
++        titleEn: (m['job_title'] ?? '').toString().trim(),
++        titleBn: (m['job_title_bn'] ?? '').toString().trim(),
++        vacancy: int.tryParse((m['vacancy'] ?? '').toString()),
++        applyUrl: (m['application_site_url'] ?? '').toString().trim(),
++        published: _bdDate(m['published_date']),
++        deadline: _bdDate(m['deadline_date']),
++        orgName: (m['org_name'] ?? '').toString().trim(),
++        orgNameBn: (m['org_name_bn'] ?? '').toString().trim(),
++        shortName: (m['short_name'] ?? '').toString().trim(),
++      );
++}
++
++/// সব চলমান সরকারি চাকরি (পেজ ধরে ধরে; ২০টা করে — যে মান যাচাই করা হয়েছে)। দিনে একবার চলে।
++Future<List<TeletalkJob>> fetchTeletalkJobs({int maxPages = 15}) async {
++  final out = <TeletalkJob>[];
++  var total = 0;
++  for (var page = 1; page <= maxPages; page++) {
++    final body = await httpGet('$_api?page=$page&limit=20&org=1', json: true);
++    final m = Map<String, dynamic>.from(jsonDecode(body) as Map);
++    total = (m['count'] as num?)?.toInt() ?? total;
++    final list = (m['govtJobs'] as List?) ?? const [];
++    if (list.isEmpty) break;
++    for (final e in list) {
++      out.add(TeletalkJob.fromMap(Map<String, dynamic>.from(e as Map)));
++    }
++    if (total > 0 && out.length >= total) break;
++    await Future<void>.delayed(const Duration(milliseconds: 500));
++  }
++  return out;
 +}
 diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/phone_alerts_sheet.dart b/lib/jobs/radar/phone_alerts_sheet.dart
 --- orig/my-manager-flutter-main/lib/jobs/radar/phone_alerts_sheet.dart	1970-01-01 00:00:00.000000000 +0000
@@ -1092,8 +1232,8 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_models.dart b/lib/jo
 +}
 diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart b/lib/jobs/radar/radar_runner.dart
 --- orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart	1970-01-01 00:00:00.000000000 +0000
-+++ b/lib/jobs/radar/radar_runner.dart	2026-10-20 19:32:10.454835317 +0000
-@@ -0,0 +1,196 @@
++++ b/lib/jobs/radar/radar_runner.dart	2026-10-21 06:22:30.105255711 +0000
+@@ -0,0 +1,210 @@
 +import 'dart:convert';
 +import '../../reminder/models/reminder.dart' show Reminder;
 +import '../../services/notification_service.dart';
@@ -1101,6 +1241,8 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart b/lib/jo
 +import 'engine/bdgovtjob_source.dart';
 +import 'engine/bn_util.dart';
 +import 'engine/match_engine.dart';
++import 'engine/teletalk_radar.dart';
++import 'engine/teletalk_source.dart';
 +import 'radar_models.dart';
 +import 'radar_service.dart';
 +
@@ -1189,11 +1331,6 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart b/lib/jo
 +    } catch (e) {
 +      list = [];
 +    }
-+    if (list.isEmpty) {
-+      // সাইট পাওয়া যায়নি — আগের ক্যাশই থাকুক, রিপোর্ট চিহ্নিত করব না (পরের টাস্কে আবার চেষ্টা)।
-+      return const RadarRunSummary(error: 'সাইট থেকে তালিকা পাওয়া যায়নি — ইন্টারনেট/সাইট দেখো');
-+    }
-+
 +    var fetched = 0;
 +    for (final it in list) {
 +      final prev = items[it.url] as Map?;
@@ -1229,6 +1366,23 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart b/lib/jo
 +              ).toMap()
 +            : null,
 +      };
++    }
++
++    // ── Teletalk (সরাসরি সরকারি উৎস) ──
++    var teletalkOk = true;
++    try {
++      final tj = await fetchTeletalkJobs();
++      // আগের Teletalk এন্ট্রি মুছে নতুন তালিকা বসাই (পদ সরে গেলে/শেষ হলে ঠিক থাকে)
++      items.removeWhere((k, _) => k.toString().startsWith('teletalk:'));
++      for (final ri in teletalkItems(tj, profile)) {
++        items['teletalk:${ri.url}'] = {'modified': null, 'checkedAt': nowMs, 'item': ri.toMap()};
++      }
++    } catch (_) {
++      teletalkOk = false;
++    }
++    if (list.isEmpty && !teletalkOk) {
++      // দুটো উৎসই ব্যর্থ — আগের ক্যাশ যেমন আছে থাকুক; রিপোর্ট চিহ্নিত হবে না, পরের ঘণ্টায় আবার চেষ্টা।
++      return const RadarRunSummary(error: 'সাইট থেকে তালিকা পাওয়া যায়নি — ইন্টারনেট/সাইট দেখো');
 +    }
 +
 +    // ১২০ দিনের পুরনো এন্ট্রি ছাঁটাই
@@ -1292,7 +1446,7 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart b/lib/jo
 +}
 diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_service.dart b/lib/jobs/radar/radar_service.dart
 --- orig/my-manager-flutter-main/lib/jobs/radar/radar_service.dart	1970-01-01 00:00:00.000000000 +0000
-+++ b/lib/jobs/radar/radar_service.dart	2026-10-20 19:31:32.494624829 +0000
++++ b/lib/jobs/radar/radar_service.dart	2026-10-21 06:22:30.088587573 +0000
 @@ -0,0 +1,162 @@
 +import 'dart:convert';
 +import 'package:shared_preferences/shared_preferences.dart';
@@ -1352,7 +1506,7 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_service.dart b/lib/j
 +    r'data\s*entry',
 +    r'computer\s*typist',
 +  ];
-+  static const _exclude = ['সাঁট', 'সীট', 'শর্টহ্যান্ড', 'stenograph', 'shorthand'];
++  static const _exclude = ['সাঁট', 'সীট', 'শর্টহ্যান্ড', 'stenograph', 'stenotyp', 'shorthand'];
 +  static List<String> get keywords => _keywords;
 +
 +  /// ইঞ্জিনের জন্য প্রোফাইল অবজেক্ট।
@@ -2167,7 +2321,7 @@ diff -ruN orig/my-manager-flutter-main/android/app/src/main/kotlin/com/hanif/mym
          // চাকরি হাব থেকে SmartStudyBD খোলা / সার্কুলারের লিংক খোলা।
          MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.hanif.mymanager/launcher")
              .setMethodCallHandler { call, result ->
---- /dev/null	2026-10-19 22:00:49.527578007 +0000
+--- /dev/null	2026-10-21 01:02:03.093899051 +0000
 +++ b/test/radar_engine_test.dart	2026-10-20 19:32:45.349784157 +0000
 @@ -0,0 +1,120 @@
 +import 'package:flutter_test/flutter_test.dart';
@@ -2288,5 +2442,73 @@ diff -ruN orig/my-manager-flutter-main/android/app/src/main/kotlin/com/hanif/mym
 +    expect(a.max, 32);
 +    expect(a.min, 18);
 +    expect(a.refDate, DateTime.utc(2026, 9, 1));
++  });
++}
+--- /dev/null	2026-10-21 01:02:03.093899051 +0000
++++ b/test/teletalk_test.dart	2026-10-21 06:22:49.635350556 +0000
+@@ -0,0 +1,65 @@
++import 'package:flutter_test/flutter_test.dart';
++import 'package:my_manager/jobs/radar/engine/match_engine.dart';
++import 'package:my_manager/jobs/radar/engine/teletalk_radar.dart';
++import 'package:my_manager/jobs/radar/engine/teletalk_source.dart';
++
++// alljobs.teletalk.com.bd/api/v1/published-jobs/search থেকে পাওয়া আসল এন্ট্রির নমুনা।
++final profile = RadarProfile(
++  dob: DateTime.utc(1999, 1, 1), eduRank: 4, eduLabel: 'স্নাতক (পাস কোর্স, ৩ বছর)', typingBn: 20, typingEn: 20,
++  targetKeywords: const [
++    r'কম্পিউটার\s*অপারেটর', r'কম্পিউটার\s*মুদ্রাক্ষরিক', r'ডাটা\s*এন্ট্রি', r'ডেটা\s*এন্ট্রি',
++    r'ডাটা\s*অপারেটর', r'ডেটা\s*অপারেটর', r'অফিস\s*সহায়ক\s*[-–]?\s*কাম',
++    r'computer\s*operator', r'data\s*entry', r'computer\s*typist',
++  ],
++  excludeKeywords: const ['সাঁট', 'সীট', 'শর্টহ্যান্ড', 'stenograph', 'stenotyp', 'shorthand'],
++);
++
++Map<String, dynamic> job(String id, String en, String bn, String vac, {String site = 'https://tax6.teletalk.com.bd/'}) => {
++      'job_id': id,
++      'job_title': en,
++      'job_title_bn': bn,
++      'vacancy': vac,
++      'application_site_url': site,
++      'published_date': '2026-10-25T04:00:00.000Z',
++      'deadline_date': '2026-11-14T10:00:00.000Z',
++      'org_name': 'Office of The Commissioner of Taxes Taxes Zone-6, Dhaka(TAX6)',
++      'org_name_bn': 'কর কমিশনারের কার্যালয় কর অঞ্চল-৬, ঢাকা',
++      'short_name': 'TAX6',
++    };
++
++void main() {
++  final jobs = [
++    job('GJOB15031', 'Office Support Staff', 'অফিস সহায়ক', '11', site: 'http://dcnoakhali.teletalk.com.bd/'),
++    job('GJOB15028', 'Office Assistant-Cum-Computer Typist', 'অফিস সহকারী-কাম-কম্পিউটার মুদ্রাক্ষরিক', '10'),
++    job('GJOB15027', 'Stenotypist-Cum-Computer Operator', 'সাঁটমুদ্রাক্ষরিক-কাম-কম্পিউটার অপারেটর', '09'),
++    job('GJOB15026', 'Stenographer Cum-Computer Operator', 'সাঁটলিপিকার কাম-কম্পিউটার অপারেটর', '02'),
++    job('GJOB15025', 'Head Assistant', 'প্রধান সহকারী', '08'),
++    job('GJOB15024', 'Computer Operator', 'কম্পিউটার অপারেটর', '01'),
++    job('GJOB15016', 'Sub Assistant Engineer(Computer/IT)', 'উপ-সহকারী প্রকৌশলী (কম্পিউটার/আইটি)', '08', site: 'http://bogmc.teletalk.com.bd/'),
++  ].map(TeletalkJob.fromMap).toList();
++
++  test('তারিখ: UTC → বাংলাদেশের তারিখ, পদসংখ্যা সংখ্যায়', () {
++    final j = jobs[1];
++    expect(j.deadline, DateTime.utc(2026, 11, 14));
++    expect(j.published, DateTime.utc(2026, 10, 25));
++    expect(j.vacancy, 10);
++  });
++
++  test('শুধু টার্গেট পদ; সাঁটলিপি/অন্য পদ বাদ; একই প্রতিষ্ঠানের পদ এক কার্ডে', () {
++    final items = teletalkItems(jobs, profile, now: DateTime.utc(2026, 10, 21, 6));
++    expect(items.length, 1);
++    final it = items.first;
++    expect(it.posts.length, 2);
++    expect(it.posts.map((p) => p.title).toSet(), {'অফিস সহকারী-কাম-কম্পিউটার মুদ্রাক্ষরিক', 'কম্পিউটার অপারেটর'});
++    expect(it.verdict, 'warn');
++    expect(it.url, 'https://tax6.teletalk.com.bd/#teletalk');
++    expect(it.deadline, DateTime(2026, 11, 14));
++    expect(it.org.contains('কর অঞ্চল-৬'), true);
++    // আবেদন এখনো শুরু হয়নি — সেটা জানানো হয়
++    expect(it.posts.first.checks.any((c) => c.key == 'start'), true);
++  });
++
++  test('মেয়াদ শেষ হলে বাদ', () {
++    expect(teletalkItems(jobs, profile, now: DateTime.utc(2026, 11, 20, 6)), isEmpty);
 +  });
 +}
