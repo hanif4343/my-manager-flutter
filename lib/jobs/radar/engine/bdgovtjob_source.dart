@@ -23,7 +23,7 @@ class FetchedDetail {
   const FetchedDetail(this.title, this.text);
 }
 
-Future<String> _get(String url, {bool json = false}) async {
+Future<String> httpGet(String url, {bool json = false}) async {
   Object? last;
   for (var i = 0; i < 2; i++) {
     try {
@@ -45,7 +45,7 @@ Future<String> _get(String url, {bool json = false}) async {
 /// সর্বশেষ আপডেট হওয়া পোস্টের তালিকা। আগে WordPress REST, না হলে HTML থেকে লিংক।
 Future<List<ListedPost>> listLatest({int limit = 40}) async {
   try {
-    final body = await _get(
+    final body = await httpGet(
       '$_base/wp-json/wp/v2/posts?per_page=${limit > 50 ? 50 : limit}&orderby=modified&order=desc&_fields=link,title,modified',
       json: true,
     );
@@ -65,7 +65,7 @@ Future<List<ListedPost>> listLatest({int limit = 40}) async {
   final seen = <String, ListedPost>{};
   for (final u in ['$_base/', '$_base/category/government-jobs-circular/', '$_base/category/teletalk-application/']) {
     try {
-      final html = await _get(u);
+      final html = await httpGet(u);
       final re = RegExp(r'<a[^>]+href="(https://bdgovtjob\.net/([^"/?#]+)/)"[^>]*>([\s\S]*?)</a>', caseSensitive: false);
       for (final m in re.allMatches(html)) {
         final url = m[1]!, slug = m[2]!;
@@ -81,7 +81,7 @@ Future<List<ListedPost>> listLatest({int limit = 40}) async {
 
 /// একটি সার্কুলার পেজ → শিরোনাম ও টেক্সট।
 Future<FetchedDetail> fetchDetail(String url) async {
-  final html = await _get(url);
+  final html = await httpGet(url);
   var body = html;
   final a = html.indexOf(RegExp(r'<article[\s>]', caseSensitive: false));
   final b = html.indexOf(RegExp(r'</article>', caseSensitive: false));
