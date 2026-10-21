@@ -4,6 +4,7 @@ import '../../reminder/models/reminder.dart' show Reminder;
 import '../../services/settings_service.dart';
 import '../models/job_models.dart';
 import 'engine/match_engine.dart';
+import 'engine/teletalk_source.dart';
 import 'radar_models.dart';
 
 /// Job Radar-এর প্রোফাইল, সেটিংস, ক্যাশ ও রূপান্তর। (সবকিছু ফোনের ভেতরে — কোনো সার্ভার/টোকেন লাগে না।)
@@ -95,6 +96,36 @@ class RadarService {
   }
 
   static Future<void> saveFeed(RadarFeed f) => SettingsService.setString(_kCache, jsonEncode(f.toMap()));
+
+  // ── Teletalk-এর পুরো তালিকা (ব্রাউজ ভিউয়ের জন্য) ──
+  static const _kTele = 'radar_teletalk_all';
+
+  static Future<void> saveTeletalkAll(List<TeletalkJob> jobs) =>
+      SettingsService.setString(_kTele, jsonEncode({'at': DateTime.now().millisecondsSinceEpoch, 'jobs': jobs.map((j) => j.toMap()).toList()}));
+
+  static List<TeletalkJob> teletalkAll() {
+    final raw = SettingsService.getString(_kTele);
+    if (raw.isEmpty) return [];
+    try {
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      return ((m['jobs'] as List?) ?? const [])
+          .map((e) => TeletalkJob.fromCache(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static DateTime? teletalkSavedAt() {
+    final raw = SettingsService.getString(_kTele);
+    if (raw.isEmpty) return null;
+    try {
+      final at = (jsonDecode(raw) as Map)['at'] as num?;
+      return at == null ? null : DateTime.fromMillisecondsSinceEpoch(at.toInt());
+    } catch (_) {
+      return null;
+    }
+  }
 
   // ── লুকানো (dismissed) ──
   static Set<String> dismissed() {
