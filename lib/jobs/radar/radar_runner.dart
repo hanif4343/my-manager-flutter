@@ -5,6 +5,8 @@ import '../../services/settings_service.dart';
 import 'engine/bdgovtjob_source.dart';
 import 'engine/bn_util.dart';
 import 'engine/match_engine.dart';
+import 'engine/teletalk_radar.dart';
+import 'engine/teletalk_source.dart';
 import 'radar_models.dart';
 import 'radar_service.dart';
 
@@ -93,11 +95,6 @@ class RadarRunner {
     } catch (e) {
       list = [];
     }
-    if (list.isEmpty) {
-      // সাইট পাওয়া যায়নি — আগের ক্যাশই থাকুক, রিপোর্ট চিহ্নিত করব না (পরের টাস্কে আবার চেষ্টা)।
-      return const RadarRunSummary(error: 'সাইট থেকে তালিকা পাওয়া যায়নি — ইন্টারনেট/সাইট দেখো');
-    }
-
     var fetched = 0;
     for (final it in list) {
       final prev = items[it.url] as Map?;
@@ -133,6 +130,23 @@ class RadarRunner {
               ).toMap()
             : null,
       };
+    }
+
+    // ── Teletalk (সরাসরি সরকারি উৎস) ──
+    var teletalkOk = true;
+    try {
+      final tj = await fetchTeletalkJobs();
+      // আগের Teletalk এন্ট্রি মুছে নতুন তালিকা বসাই (পদ সরে গেলে/শেষ হলে ঠিক থাকে)
+      items.removeWhere((k, _) => k.toString().startsWith('teletalk:'));
+      for (final ri in teletalkItems(tj, profile)) {
+        items['teletalk:${ri.url}'] = {'modified': null, 'checkedAt': nowMs, 'item': ri.toMap()};
+      }
+    } catch (_) {
+      teletalkOk = false;
+    }
+    if (list.isEmpty && !teletalkOk) {
+      // দুটো উৎসই ব্যর্থ — আগের ক্যাশ যেমন আছে থাকুক; রিপোর্ট চিহ্নিত হবে না, পরের ঘণ্টায় আবার চেষ্টা।
+      return const RadarRunSummary(error: 'সাইট থেকে তালিকা পাওয়া যায়নি — ইন্টারনেট/সাইট দেখো');
     }
 
     // ১২০ দিনের পুরনো এন্ট্রি ছাঁটাই
