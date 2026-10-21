@@ -6,6 +6,7 @@ import '../services/app_launcher.dart';
 import '../services/job_service.dart';
 import 'engine/bn_util.dart' show fmtDateBn, todayDhaka, daysBetween;
 import 'engine/match_engine.dart' show postRelevance;
+import 'engine/teletalk_radar.dart' show teletalkAgeCheck;
 import 'engine/teletalk_source.dart';
 import 'radar_service.dart';
 
@@ -86,6 +87,16 @@ class _TeletalkBrowseState extends State<TeletalkBrowse> {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('সার্কুলার ট্যাবে যোগ হয়েছে — শেষ তারিখের রিমাইন্ডারও সেট হয়েছে')));
     }
+  }
+
+  void _showDetail(TeletalkJob j) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.bg2,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _DetailSheet(job: j),
+    );
   }
 
   List<TeletalkJob> _visible() {
@@ -253,7 +264,117 @@ class _TeletalkBrowseState extends State<TeletalkBrowse> {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('লিংক খোলা যায়নি')));
                 }
               },
-              child: const Text('🔗 আবেদন/বিস্তারিত'),
+              child: const Text('🔗 আবেদন'),
+            ),
+            TextButton(onPressed: () => _showDetail(j), child: const Text('📄 শর্ত ও PDF')),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+
+/// একটি চাকরির শর্ত: বয়স স্বয়ংক্রিয় যাচাই + বিজ্ঞপ্তির PDF/পেজের লিংক।
+class _DetailSheet extends StatefulWidget {
+  final TeletalkJob job;
+  const _DetailSheet({required this.job});
+  @override
+  State<_DetailSheet> createState() => _DetailSheetState();
+}
+
+class _DetailSheetState extends State<_DetailSheet> {
+  TeletalkDetail? _d;
+  bool _loading = true;
+  bool _opening = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final d = await fetchTeletalkDetail(widget.job.primaryId);
+      if (mounted) setState(() { _d = d; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _loading = false; _error = 'বিস্তারিত আনা যায়নি — ইন্টারনেট দেখো'; });
+    }
+  }
+
+  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  Future<void> _openPdf() async {
+    final d = _d;
+    if (d == null || d.adFile.isEmpty) {
+      _snack('এই চাকরির PDF পাওয়া যায়নি — Teletalk পেজ খুলছি');
+      await AppLauncher.openUrl(widget.job.detailsUrl);
+      return;
+    }
+    setState(() => _opening = true);
+    final u = await resolveAdvertisementUrl(d.adFile);
+    if (!mounted) return;
+    setState(() => _opening = false);
+    if (u != null) {
+      await AppLauncher.openUrl(u);
+    } else {
+      _snack('PDF-এর সরাসরি লিংক পাওয়া যায়নি — Teletalk পেজে বিজ্ঞপ্তি আছে, সেটা খুলছি');
+      await AppLauncher.openUrl(widget.job.detailsUrl);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final j = widget.job;
+    final d = _d;
+    final age = teletalkAgeCheck(j, d, RadarService.profile());
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(j.titleBn.isNotEmpty ? j.titleBn : j.titleEn,
+              style: TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          Text(j.orgNameBn.isNotEmpty ? j.orgNameBn : j.orgName,
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5)),
+          const SizedBox(height: 12),
+          if (_loading)
+            const Padding(padding: EdgeInsets.all(8), child: Center(child: CircularProgressIndicator()))
+          else if (_error != null)
+            Text('⚠️ $_error', style: TextStyle(color: AppTheme.red, fontSize: 12.5))
+          else ...[
+            if (d != null && d.maxAge != null)
+              Text('বয়সসীমা: ${bn(d.minAge ?? 0)}–${bn(d.maxAge!)} বছর',
+                  style: TextStyle(color: AppTheme.textPrimary, fontSize: 13.5)),
+            if (age != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('${age.icon} ${age.msg}',
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5, height: 1.4)),
+              ),
+            if (d != null && d.adNo.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('বিজ্ঞপ্তি নং: ${d.adNo}', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5)),
+              ),
+            const SizedBox(height: 10),
+            Text(
+              '⚠️ শিক্ষাগত যোগ্যতা ও টাইপিংয়ের শর্ত শুধু বিজ্ঞপ্তির PDF-এ থাকে — আবেদনের আগে সেটা পড়ে নাও।',
+              style: TextStyle(color: AppTheme.yellow, fontSize: 12.5, height: 1.4),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Wrap(spacing: 8, runSpacing: 6, children: [
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppTheme.accent),
+              onPressed: _opening ? null : _openPdf,
+              child: Text(_opening ? 'খুঁজছি…' : '📄 বিজ্ঞপ্তি PDF খোলো'),
+            ),
+            OutlinedButton(
+              onPressed: () => AppLauncher.openUrl(j.detailsUrl),
+              child: const Text('Teletalk পেজ'),
             ),
           ]),
         ]),
