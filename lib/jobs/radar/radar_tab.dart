@@ -8,6 +8,7 @@ import 'phone_notif_service.dart';
 import 'radar_models.dart';
 import 'radar_runner.dart';
 import 'radar_service.dart';
+import 'teletalk_browse.dart';
 
 /// চাকরি হাবের "রাডার" ট্যাব — Job Radar যে সার্কুলারগুলো তোমার যোগ্যতার সাথে মিলিয়ে
 /// বেছেছে সেগুলো এখানে দেখায়। "নজরে নাও" চাপলে সার্কুলার ট্যাবে চলে যায় (রিমাইন্ডারসহ)।
@@ -23,6 +24,7 @@ class _RadarTabState extends State<RadarTab> {
   RadarFeed? _feed;
   bool _loading = false;
   bool _showHidden = false;
+  int _mode = 0; // 0 = আমার জন্য, 1 = সব সরকারি চাকরি (Teletalk)
   String? _error;
   Set<String> _saved = {};
 
@@ -142,12 +144,30 @@ class _RadarTabState extends State<RadarTab> {
           ),
         ]),
       ),
-      if (_error != null)
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+        child: Wrap(spacing: 8, children: [
+          ChoiceChip(
+            label: const Text('🎯 আমার জন্য'),
+            selected: _mode == 0,
+            onSelected: (_) => setState(() => _mode = 0),
+          ),
+          ChoiceChip(
+            label: const Text('📋 সব সরকারি চাকরি'),
+            selected: _mode == 1,
+            onSelected: (_) => setState(() => _mode = 1),
+          ),
+        ]),
+      ),
+      if (_error != null && _mode == 0)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
           child: Text('⚠️ $_error', style: TextStyle(color: AppTheme.red, fontSize: 12.5)),
         ),
-      Expanded(
+      if (_mode == 1)
+        Expanded(child: TeletalkBrowse(onSaved: widget.onSaved))
+      else
+        Expanded(
         child: _feed == null
             ? Center(child: Text(_loading ? 'সার্কুলার খোঁজা হচ্ছে…' : 'রিফ্রেশ চাপো', style: TextStyle(color: AppTheme.textMuted)))
             : RefreshIndicator(
