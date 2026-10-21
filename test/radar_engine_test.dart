@@ -53,6 +53,7 @@ const multi = '''<h2>এক নজরে</h2><table><tr><td>প্রতিষ�
 <h2>বয়সসীমা</h2><p>০১.০৯.২০২৬ তারিখে ১৮-৩২ বছর</p>''';
 
 void main() {
+  roundupTests();
   test('পরিকল্পনা কমিশন: ডাটা এন্ট্রি, HSC, ২০/২০ → সম্ভাব্য যোগ্য', () {
     final r = evaluate(htmlToText(planning), profile, now: july15, title: 'পরিকল্পনা কমিশন');
     expect(r.expired, false);
@@ -116,5 +117,13 @@ void main() {
     expect(a.max, 32);
     expect(a.min, 18);
     expect(a.refDate, DateTime.utc(2026, 9, 1));
+  });
+}
+
+void roundupTests() {
+  test('সাপ্তাহিক চাকরির খবর সংকলন → none (ভুল ধরা পড়ে না)', () {
+    final r = evaluate('কম্পিউটার অপারেটর ... অনেক বিজ্ঞপ্তির তালিকা', profile,
+        now: oct13, title: 'সাপ্তাহিক চাকরির খবর পত্রিকা ১৬ অক্টোবর ২০২৬ PDF সহ | Saptahik Chakrir Khobor 2026');
+    expect(r.verdict, 'none');
   });
 }
