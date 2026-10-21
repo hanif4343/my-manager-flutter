@@ -15,6 +15,8 @@ final profile = RadarProfile(
 );
 
 Map<String, dynamic> job(String id, String en, String bn, String vac, {String site = 'https://tax6.teletalk.com.bd/'}) => {
+      'job_primary_id': int.parse(id.replaceAll('GJOB', '')),
+      'organization_id': 1165,
       'job_id': id,
       'job_title': en,
       'job_title_bn': bn,
@@ -52,7 +54,7 @@ void main() {
     expect(it.posts.length, 2);
     expect(it.posts.map((p) => p.title).toSet(), {'অফিস সহকারী-কাম-কম্পিউটার মুদ্রাক্ষরিক', 'কম্পিউটার অপারেটর'});
     expect(it.verdict, 'warn');
-    expect(it.url, 'https://tax6.teletalk.com.bd/#teletalk');
+    expect(it.url, 'https://alljobs.teletalk.com.bd/jobs/government/1165?jobId=15024#teletalk');
     expect(it.deadline, DateTime(2026, 11, 14));
     expect(it.org.contains('কর অঞ্চল-৬'), true);
     // আবেদন এখনো শুরু হয়নি — সেটা জানানো হয়
@@ -61,5 +63,20 @@ void main() {
 
   test('মেয়াদ শেষ হলে বাদ', () {
     expect(teletalkItems(jobs, profile, now: DateTime.utc(2026, 11, 20, 6)), isEmpty);
+  });
+
+  test('বিস্তারিত API-র বয়সসীমা: ১৮–৩২ → ✅; সীমা ২৫ → কার্ডে আসে না', () {
+    final ok = {for (final j in jobs) j.primaryId: const TeletalkDetail(minAge: 18, maxAge: 32, adNo: '1-E-8/2026')};
+    final items = teletalkItems(jobs, profile, now: DateTime.utc(2026, 10, 21, 6), details: ok);
+    final age = items.first.posts.first.checks.firstWhere((c) => c.key == 'age');
+    expect(age.s, 'ok');
+    expect(items.first.posts.first.checks.any((c) => c.key == 'adno'), true);
+
+    final tight = {for (final j in jobs) j.primaryId: const TeletalkDetail(minAge: 18, maxAge: 25)};
+    expect(teletalkItems(jobs, profile, now: DateTime.utc(2026, 10, 21, 6), details: tight), isEmpty);
+  });
+
+  test('বিস্তারিত পেজের লিংক', () {
+    expect(jobs[1].detailsUrl, 'https://alljobs.teletalk.com.bd/jobs/government/1165?jobId=15028');
   });
 }
