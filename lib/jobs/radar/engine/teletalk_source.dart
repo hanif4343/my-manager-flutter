@@ -29,6 +29,35 @@ class TeletalkJob {
     required this.shortName,
   });
 
+  static String? _ymd(DateTime? d) =>
+      d == null ? null : '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  static DateTime? _fromYmd(Object? s) {
+    final p = (s ?? '').toString().split('-');
+    if (p.length != 3) return null;
+    final y = int.tryParse(p[0]), m = int.tryParse(p[1]), d = int.tryParse(p[2]);
+    return (y == null || m == null || d == null) ? null : DateTime.utc(y, m, d);
+  }
+
+  /// ক্যাশে রাখার সংক্ষিপ্ত রূপ।
+  Map<String, dynamic> toMap() => {
+        'id': jobId, 'en': titleEn, 'bn': titleBn, 'vac': vacancy, 'url': applyUrl,
+        'pub': _ymd(published), 'dl': _ymd(deadline), 'org': orgName, 'orgBn': orgNameBn, 'short': shortName,
+      };
+
+  factory TeletalkJob.fromCache(Map<String, dynamic> m) => TeletalkJob(
+        jobId: (m['id'] ?? '').toString(),
+        titleEn: (m['en'] ?? '').toString(),
+        titleBn: (m['bn'] ?? '').toString(),
+        vacancy: (m['vac'] as num?)?.toInt(),
+        applyUrl: (m['url'] ?? '').toString(),
+        published: _fromYmd(m['pub']),
+        deadline: _fromYmd(m['dl']),
+        orgName: (m['org'] ?? '').toString(),
+        orgNameBn: (m['orgBn'] ?? '').toString(),
+        shortName: (m['short'] ?? '').toString(),
+      );
+
   /// "2026-11-14T10:00:00.000Z" → বাংলাদেশ সময়ের তারিখ (UTC-মধ্যরাত রূপে)।
   static DateTime? _bdDate(Object? iso) {
     final d = DateTime.tryParse((iso ?? '').toString());
