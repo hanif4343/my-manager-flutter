@@ -366,8 +366,8 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/html_text.dart b/li
 +}
 diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/match_engine.dart b/lib/jobs/radar/engine/match_engine.dart
 --- orig/my-manager-flutter-main/lib/jobs/radar/engine/match_engine.dart	1970-01-01 00:00:00.000000000 +0000
-+++ b/lib/jobs/radar/engine/match_engine.dart	2026-10-20 19:30:43.884742341 +0000
-@@ -0,0 +1,204 @@
++++ b/lib/jobs/radar/engine/match_engine.dart	2026-10-21 08:50:24.485712805 +0000
+@@ -0,0 +1,211 @@
 +import '../radar_models.dart';
 +import 'bn_util.dart';
 +import 'circular_parser.dart';
@@ -446,9 +446,16 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/match_engine.dart b
 +RadarCheck _warn(String k, String m) => RadarCheck(key: k, s: 'warn', msg: m);
 +RadarCheck _fail(String k, String m) => RadarCheck(key: k, s: 'fail', msg: m);
 +
++/// "সাপ্তাহিক চাকরির খবর" ধরনের সংকলন/পত্রিকা-পোস্ট — আসল সার্কুলার নয়।
++final _roundup = RegExp(r'চাকরির\s*খবর|চাকরির\s*ডাক|সাপ্তাহিক|দৈনিক\s*পত্রিকা|পত্রিকা\s*(?:থেকে|সহ)|newspaper|chakrir\s*khobor|saptahik', caseSensitive: false);
++
 +/// একটি সার্কুলারের টেক্সট যাচাই। (JS ইঞ্জিনের হুবহু অনুবাদ — একই টেস্টে যাচাই করা)
 +EvalResult evaluate(String text, RadarProfile profile, {String? title, DateTime? now}) {
 +  final today = todayDhaka(now);
++  if (title != null && _roundup.hasMatch(title)) {
++    return const EvalResult(
++        expired: false, deadlines: [], nearest: null, org: '', method: '', fee: '', posts: [], verdict: 'none');
++  }
 +  final expiredBanner = RegExp(r'আবেদনের\s*সময়\s*শেষ\s*হয়েছে').hasMatch(text);
 +  final deadlines = parseDeadlines(text);
 +  final upcoming = deadlines.where((d) => daysBetween(today, d) >= 0).toList()..sort();
@@ -639,8 +646,8 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/teletalk_radar.dart
 +}
 diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/teletalk_source.dart b/lib/jobs/radar/engine/teletalk_source.dart
 --- orig/my-manager-flutter-main/lib/jobs/radar/engine/teletalk_source.dart	1970-01-01 00:00:00.000000000 +0000
-+++ b/lib/jobs/radar/engine/teletalk_source.dart	2026-10-21 06:22:30.093499506 +0000
-@@ -0,0 +1,71 @@
++++ b/lib/jobs/radar/engine/teletalk_source.dart	2026-10-21 08:50:24.483614416 +0000
+@@ -0,0 +1,100 @@
 +import 'dart:convert';
 +import 'bdgovtjob_source.dart' show httpGet;
 +
@@ -671,6 +678,35 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/engine/teletalk_source.dar
 +    required this.orgNameBn,
 +    required this.shortName,
 +  });
++
++  static String? _ymd(DateTime? d) =>
++      d == null ? null : '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
++
++  static DateTime? _fromYmd(Object? s) {
++    final p = (s ?? '').toString().split('-');
++    if (p.length != 3) return null;
++    final y = int.tryParse(p[0]), m = int.tryParse(p[1]), d = int.tryParse(p[2]);
++    return (y == null || m == null || d == null) ? null : DateTime.utc(y, m, d);
++  }
++
++  /// ক্যাশে রাখার সংক্ষিপ্ত রূপ।
++  Map<String, dynamic> toMap() => {
++        'id': jobId, 'en': titleEn, 'bn': titleBn, 'vac': vacancy, 'url': applyUrl,
++        'pub': _ymd(published), 'dl': _ymd(deadline), 'org': orgName, 'orgBn': orgNameBn, 'short': shortName,
++      };
++
++  factory TeletalkJob.fromCache(Map<String, dynamic> m) => TeletalkJob(
++        jobId: (m['id'] ?? '').toString(),
++        titleEn: (m['en'] ?? '').toString(),
++        titleBn: (m['bn'] ?? '').toString(),
++        vacancy: (m['vac'] as num?)?.toInt(),
++        applyUrl: (m['url'] ?? '').toString(),
++        published: _fromYmd(m['pub']),
++        deadline: _fromYmd(m['dl']),
++        orgName: (m['org'] ?? '').toString(),
++        orgNameBn: (m['orgBn'] ?? '').toString(),
++        shortName: (m['short'] ?? '').toString(),
++      );
 +
 +  /// "2026-11-14T10:00:00.000Z" → বাংলাদেশ সময়ের তারিখ (UTC-মধ্যরাত রূপে)।
 +  static DateTime? _bdDate(Object? iso) {
@@ -1232,8 +1268,8 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_models.dart b/lib/jo
 +}
 diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart b/lib/jobs/radar/radar_runner.dart
 --- orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart	1970-01-01 00:00:00.000000000 +0000
-+++ b/lib/jobs/radar/radar_runner.dart	2026-10-21 06:22:30.105255711 +0000
-@@ -0,0 +1,210 @@
++++ b/lib/jobs/radar/radar_runner.dart	2026-10-21 08:50:24.485176579 +0000
+@@ -0,0 +1,222 @@
 +import 'dart:convert';
 +import '../../reminder/models/reminder.dart' show Reminder;
 +import '../../services/notification_service.dart';
@@ -1261,6 +1297,7 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart b/lib/jo
 +  static const _kState = 'radar_runner_state';
 +  static const _kRunning = 'radar_running_at';
 +  static const _maxFetch = 25;
++  static const _engineVersion = 3; // যাচাই-নিয়ম বদলালে বাড়াই — পুরনো ফলাফল আবার যাচাই হবে
 +
 +  static String _today() => Reminder.ymd(DateTime.now());
 +
@@ -1324,6 +1361,16 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart b/lib/jo
 +    final state = _loadState();
 +    final items = Map<String, dynamic>.from((state['items'] as Map?) ?? {});
 +    final nowMs = DateTime.now().millisecondsSinceEpoch;
++    if (state['v'] != _engineVersion) {
++      // নিয়ম বদলেছে: সব এন্ট্রি "পুরনো" চিহ্নিত — এই রানেই নতুন নিয়মে আবার যাচাই হবে
++      for (final k in items.keys.toList()) {
++        final v = Map<String, dynamic>.from(items[k] as Map);
++        v['modified'] = null;
++        v['checkedAt'] = 0;
++        items[k] = v;
++      }
++      state['v'] = _engineVersion;
++    }
 +
 +    List<ListedPost> list;
 +    try {
@@ -1372,6 +1419,7 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart b/lib/jo
 +    var teletalkOk = true;
 +    try {
 +      final tj = await fetchTeletalkJobs();
++      await RadarService.saveTeletalkAll(tj);
 +      // আগের Teletalk এন্ট্রি মুছে নতুন তালিকা বসাই (পদ সরে গেলে/শেষ হলে ঠিক থাকে)
 +      items.removeWhere((k, _) => k.toString().startsWith('teletalk:'));
 +      for (final ri in teletalkItems(tj, profile)) {
@@ -1446,14 +1494,15 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_runner.dart b/lib/jo
 +}
 diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_service.dart b/lib/jobs/radar/radar_service.dart
 --- orig/my-manager-flutter-main/lib/jobs/radar/radar_service.dart	1970-01-01 00:00:00.000000000 +0000
-+++ b/lib/jobs/radar/radar_service.dart	2026-10-21 06:22:30.088587573 +0000
-@@ -0,0 +1,162 @@
++++ b/lib/jobs/radar/radar_service.dart	2026-10-21 08:50:24.484157364 +0000
+@@ -0,0 +1,193 @@
 +import 'dart:convert';
 +import 'package:shared_preferences/shared_preferences.dart';
 +import '../../reminder/models/reminder.dart' show Reminder;
 +import '../../services/settings_service.dart';
 +import '../models/job_models.dart';
 +import 'engine/match_engine.dart';
++import 'engine/teletalk_source.dart';
 +import 'radar_models.dart';
 +
 +/// Job Radar-এর প্রোফাইল, সেটিংস, ক্যাশ ও রূপান্তর। (সবকিছু ফোনের ভেতরে — কোনো সার্ভার/টোকেন লাগে না।)
@@ -1546,6 +1595,36 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_service.dart b/lib/j
 +
 +  static Future<void> saveFeed(RadarFeed f) => SettingsService.setString(_kCache, jsonEncode(f.toMap()));
 +
++  // ── Teletalk-এর পুরো তালিকা (ব্রাউজ ভিউয়ের জন্য) ──
++  static const _kTele = 'radar_teletalk_all';
++
++  static Future<void> saveTeletalkAll(List<TeletalkJob> jobs) =>
++      SettingsService.setString(_kTele, jsonEncode({'at': DateTime.now().millisecondsSinceEpoch, 'jobs': jobs.map((j) => j.toMap()).toList()}));
++
++  static List<TeletalkJob> teletalkAll() {
++    final raw = SettingsService.getString(_kTele);
++    if (raw.isEmpty) return [];
++    try {
++      final m = jsonDecode(raw) as Map<String, dynamic>;
++      return ((m['jobs'] as List?) ?? const [])
++          .map((e) => TeletalkJob.fromCache(Map<String, dynamic>.from(e as Map)))
++          .toList();
++    } catch (_) {
++      return [];
++    }
++  }
++
++  static DateTime? teletalkSavedAt() {
++    final raw = SettingsService.getString(_kTele);
++    if (raw.isEmpty) return null;
++    try {
++      final at = (jsonDecode(raw) as Map)['at'] as num?;
++      return at == null ? null : DateTime.fromMillisecondsSinceEpoch(at.toInt());
++    } catch (_) {
++      return null;
++    }
++  }
++
 +  // ── লুকানো (dismissed) ──
 +  static Set<String> dismissed() {
 +    final raw = SettingsService.getString(_kDismissed);
@@ -1612,8 +1691,8 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_service.dart b/lib/j
 +}
 diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_tab.dart b/lib/jobs/radar/radar_tab.dart
 --- orig/my-manager-flutter-main/lib/jobs/radar/radar_tab.dart	1970-01-01 00:00:00.000000000 +0000
-+++ b/lib/jobs/radar/radar_tab.dart	2026-10-20 19:32:45.346850841 +0000
-@@ -0,0 +1,411 @@
++++ b/lib/jobs/radar/radar_tab.dart	2026-10-21 08:50:56.509346294 +0000
+@@ -0,0 +1,431 @@
 +import 'package:flutter/material.dart';
 +import '../../reminder/models/reminder.dart' show bn, Reminder;
 +import '../../widgets/app_theme.dart';
@@ -1624,6 +1703,7 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_tab.dart b/lib/jobs/
 +import 'radar_models.dart';
 +import 'radar_runner.dart';
 +import 'radar_service.dart';
++import 'teletalk_browse.dart';
 +
 +/// চাকরি হাবের "রাডার" ট্যাব — Job Radar যে সার্কুলারগুলো তোমার যোগ্যতার সাথে মিলিয়ে
 +/// বেছেছে সেগুলো এখানে দেখায়। "নজরে নাও" চাপলে সার্কুলার ট্যাবে চলে যায় (রিমাইন্ডারসহ)।
@@ -1639,6 +1719,7 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_tab.dart b/lib/jobs/
 +  RadarFeed? _feed;
 +  bool _loading = false;
 +  bool _showHidden = false;
++  int _mode = 0; // 0 = আমার জন্য, 1 = সব সরকারি চাকরি (Teletalk)
 +  String? _error;
 +  Set<String> _saved = {};
 +
@@ -1758,12 +1839,30 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_tab.dart b/lib/jobs/
 +          ),
 +        ]),
 +      ),
-+      if (_error != null)
++      Padding(
++        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
++        child: Wrap(spacing: 8, children: [
++          ChoiceChip(
++            label: const Text('🎯 আমার জন্য'),
++            selected: _mode == 0,
++            onSelected: (_) => setState(() => _mode = 0),
++          ),
++          ChoiceChip(
++            label: const Text('📋 সব সরকারি চাকরি'),
++            selected: _mode == 1,
++            onSelected: (_) => setState(() => _mode = 1),
++          ),
++        ]),
++      ),
++      if (_error != null && _mode == 0)
 +        Padding(
 +          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
 +          child: Text('⚠️ $_error', style: TextStyle(color: AppTheme.red, fontSize: 12.5)),
 +        ),
-+      Expanded(
++      if (_mode == 1)
++        Expanded(child: TeletalkBrowse(onSaved: widget.onSaved))
++      else
++        Expanded(
 +        child: _feed == null
 +            ? Center(child: Text(_loading ? 'সার্কুলার খোঁজা হচ্ছে…' : 'রিফ্রেশ চাপো', style: TextStyle(color: AppTheme.textMuted)))
 +            : RefreshIndicator(
@@ -2023,6 +2122,273 @@ diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/radar_tab.dart b/lib/jobs/
 +  static String _dobBn(String ymd) {
 +    final d = DateTime.tryParse(ymd);
 +    return d == null ? ymd : '${bn(d.day)}/${bn(d.month)}/${bn(d.year)}';
++  }
++}
+diff -ruN orig/my-manager-flutter-main/lib/jobs/radar/teletalk_browse.dart b/lib/jobs/radar/teletalk_browse.dart
+--- orig/my-manager-flutter-main/lib/jobs/radar/teletalk_browse.dart	1970-01-01 00:00:00.000000000 +0000
++++ b/lib/jobs/radar/teletalk_browse.dart	2026-10-21 08:50:56.497833351 +0000
+@@ -0,0 +1,263 @@
++import 'package:flutter/material.dart';
++import '../../reminder/models/reminder.dart' show bn;
++import '../../widgets/app_theme.dart';
++import '../models/job_models.dart';
++import '../services/app_launcher.dart';
++import '../services/job_service.dart';
++import 'engine/bn_util.dart' show fmtDateBn, todayDhaka, daysBetween;
++import 'engine/match_engine.dart' show postRelevance;
++import 'engine/teletalk_source.dart';
++import 'radar_service.dart';
++
++/// Teletalk AllJobs-এর মতো তালিকা: সব চলমান সরকারি চাকরি, সার্চ ও ফিল্টারসহ।
++/// তোমার টার্গেট পদগুলোতে 🎯 চিহ্ন থাকে।
++class TeletalkBrowse extends StatefulWidget {
++  final VoidCallback onSaved;
++  const TeletalkBrowse({super.key, required this.onSaved});
++  @override
++  State<TeletalkBrowse> createState() => _TeletalkBrowseState();
++}
++
++enum _Filter { all, mine, soon3, soon7, newest }
++
++class _TeletalkBrowseState extends State<TeletalkBrowse> {
++  List<TeletalkJob> _jobs = [];
++  Set<String> _saved = {};
++  bool _loading = false;
++  String? _error;
++  _Filter _filter = _Filter.all;
++  final _q = TextEditingController();
++
++  @override
++  void initState() {
++    super.initState();
++    _jobs = RadarService.teletalkAll();
++    _loadSaved();
++    if (_jobs.isEmpty) _refresh();
++  }
++
++  @override
++  void dispose() {
++    _q.dispose();
++    super.dispose();
++  }
++
++  Future<void> _loadSaved() async {
++    final list = await JobService.circulars();
++    if (mounted) setState(() => _saved = list.map((c) => c.url).where((u) => u.isNotEmpty).toSet());
++  }
++
++  Future<void> _refresh() async {
++    if (_loading) return;
++    setState(() { _loading = true; _error = null; });
++    try {
++      final j = await fetchTeletalkJobs();
++      await RadarService.saveTeletalkAll(j);
++      if (mounted) setState(() { _jobs = j; _loading = false; });
++    } catch (e) {
++      if (mounted) setState(() { _loading = false; _error = 'Teletalk থেকে আনা যায়নি — ইন্টারনেট দেখো'; });
++    }
++  }
++
++  String _key(TeletalkJob j) => '${j.applyUrl}#${j.jobId}';
++
++  bool _mine(TeletalkJob j) => postRelevance('${j.titleBn} ${j.titleEn}', RadarService.profile()) == 'yes';
++
++  int? _daysLeft(TeletalkJob j) => j.deadline == null ? null : daysBetween(todayDhaka(), j.deadline!);
++
++  Future<void> _watch(TeletalkJob j) async {
++    final org = j.orgNameBn.isNotEmpty ? j.orgNameBn : j.orgName;
++    final title = j.titleBn.isNotEmpty ? j.titleBn : j.titleEn;
++    final note = StringBuffer('Teletalk ${j.jobId}');
++    if (j.published != null) note.write('\nআবেদন শুরু: ${fmtDateBn(j.published!)}');
++    note.write('\nশর্ত (বয়স/শিক্ষা/টাইপিং) আবেদনের সাইটের বিজ্ঞপ্তিতে দেখো');
++    await JobService.saveCircular(Circular(
++      title: '$org — $title',
++      org: org,
++      post: title,
++      deadline: j.deadline == null ? null : DateTime(j.deadline!.year, j.deadline!.month, j.deadline!.day),
++      fee: 0,
++      url: _key(j),
++      note: note.toString(),
++    ));
++    widget.onSaved();
++    await _loadSaved();
++    if (mounted) {
++      ScaffoldMessenger.of(context).showSnackBar(
++          const SnackBar(content: Text('সার্কুলার ট্যাবে যোগ হয়েছে — শেষ তারিখের রিমাইন্ডারও সেট হয়েছে')));
++    }
++  }
++
++  List<TeletalkJob> _visible() {
++    final q = _q.text.trim().toLowerCase();
++    var list = _jobs.where((j) {
++      final d = _daysLeft(j);
++      if (d != null && d < 0) return false;
++      if (q.isNotEmpty) {
++        final hay = '${j.titleBn} ${j.titleEn} ${j.orgName} ${j.orgNameBn} ${j.shortName}'.toLowerCase();
++        if (!hay.contains(q)) return false;
++      }
++      switch (_filter) {
++        case _Filter.mine:
++          return _mine(j);
++        case _Filter.soon3:
++          return d != null && d <= 3;
++        case _Filter.soon7:
++          return d != null && d <= 7;
++        case _Filter.newest:
++        case _Filter.all:
++          return true;
++      }
++    }).toList();
++    if (_filter == _Filter.soon3 || _filter == _Filter.soon7) {
++      list.sort((a, b) => (_daysLeft(a) ?? 999).compareTo(_daysLeft(b) ?? 999));
++    }
++    return list; // API ইতিমধ্যে নতুন-আগে ক্রমে আসে
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final list = _visible();
++    final mineCount = _jobs.where(_mine).length;
++    final at = RadarService.teletalkSavedAt();
++    return Column(children: [
++      Padding(
++        padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
++        child: Row(children: [
++          Expanded(
++            child: TextField(
++              controller: _q,
++              onChanged: (_) => setState(() {}),
++              decoration: InputDecoration(
++                isDense: true,
++                prefixIcon: const Icon(Icons.search, size: 20),
++                hintText: 'পদ / প্রতিষ্ঠান / keyword খোঁজো',
++                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
++              ),
++            ),
++          ),
++          IconButton(
++            tooltip: 'রিফ্রেশ',
++            icon: _loading
++                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
++                : Icon(Icons.refresh, color: AppTheme.textSecondary),
++            onPressed: _refresh,
++          ),
++        ]),
++      ),
++      SizedBox(
++        height: 46,
++        child: ListView(
++          scrollDirection: Axis.horizontal,
++          padding: const EdgeInsets.symmetric(horizontal: 16),
++          children: [
++            _fchip('সব (${bn(_jobs.length)})', _Filter.all),
++            _fchip('🎯 আমার পদ (${bn(mineCount)})', _Filter.mine),
++            _fchip('৩ দিনে শেষ', _Filter.soon3),
++            _fchip('৭ দিনে শেষ', _Filter.soon7),
++          ],
++        ),
++      ),
++      if (_error != null)
++        Padding(
++          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
++          child: Text('⚠️ $_error', style: TextStyle(color: AppTheme.red, fontSize: 12.5)),
++        ),
++      if (at != null)
++        Padding(
++          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
++          child: Align(
++            alignment: Alignment.centerLeft,
++            child: Text('তালিকা আনা হয়েছে: ${bn(at.day)}/${bn(at.month)} ${bn(at.hour.toString().padLeft(2, '0'))}:${bn(at.minute.toString().padLeft(2, '0'))} · উৎস: alljobs.teletalk.com.bd',
++                style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
++          ),
++        ),
++      Expanded(
++        child: list.isEmpty
++            ? Center(
++                child: Text(_loading ? 'তালিকা আনা হচ্ছে…' : 'কিছু পাওয়া যায়নি',
++                    style: TextStyle(color: AppTheme.textMuted)))
++            : ListView.builder(
++                padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
++                itemCount: list.length,
++                itemBuilder: (_, i) => _card(list[i]),
++              ),
++      ),
++    ]);
++  }
++
++  Widget _fchip(String label, _Filter f) => Padding(
++        padding: const EdgeInsets.only(right: 8, top: 4, bottom: 4),
++        child: ChoiceChip(
++          label: Text(label, style: const TextStyle(fontSize: 12.5)),
++          selected: _filter == f,
++          onSelected: (_) => setState(() => _filter = f),
++        ),
++      );
++
++  Color _urgency(int d) => d <= 3 ? AppTheme.red : (d <= 7 ? AppTheme.yellow : AppTheme.green);
++
++  Widget _chip(String text, Color color) => Container(
++        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
++        decoration: BoxDecoration(color: color.withOpacity(0.14), borderRadius: BorderRadius.circular(20)),
++        child: Text(text, style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w700)),
++      );
++
++  Widget _card(TeletalkJob j) {
++    final d = _daysLeft(j);
++    final mine = _mine(j);
++    final saved = _saved.contains(_key(j));
++    final org = j.orgNameBn.isNotEmpty ? j.orgNameBn : j.orgName;
++    final notStarted = j.published != null && daysBetween(todayDhaka(), j.published!) > 0;
++    return Padding(
++      padding: const EdgeInsets.only(bottom: 10),
++      child: Container(
++        width: double.infinity,
++        padding: const EdgeInsets.all(14),
++        decoration: BoxDecoration(
++          color: AppTheme.bg2,
++          borderRadius: BorderRadius.circular(16),
++          border: Border.all(color: mine ? AppTheme.green.withOpacity(0.6) : AppTheme.border),
++        ),
++        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
++          Wrap(spacing: 8, runSpacing: 6, children: [
++            if (mine) _chip('🎯 আমার পদ', AppTheme.green),
++            if (d != null) _chip(d == 0 ? 'আজই শেষ' : 'আর ${bn(d)} দিন', _urgency(d)),
++            if (notStarted) _chip('আবেদন শুরু ${fmtDateBn(j.published!)}', AppTheme.accent),
++          ]),
++          const SizedBox(height: 8),
++          Text(j.titleBn.isNotEmpty ? j.titleBn : j.titleEn,
++              style: TextStyle(color: AppTheme.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
++          if (j.titleBn.isNotEmpty && j.titleEn.isNotEmpty)
++            Text(j.titleEn, style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5)),
++          const SizedBox(height: 4),
++          Text(org, style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5)),
++          const SizedBox(height: 6),
++          Text(
++            [
++              if (j.vacancy != null) 'পদ: ${bn(j.vacancy!)}টি',
++              if (j.deadline != null) 'শেষ: ${fmtDateBn(j.deadline!)}',
++              j.jobId,
++            ].join('  ·  '),
++            style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
++          ),
++          const SizedBox(height: 6),
++          Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
++            saved
++                ? _chip('✔ নজরে আছে', AppTheme.textSecondary)
++                : FilledButton.tonal(onPressed: () => _watch(j), child: const Text('নজরে নাও')),
++            TextButton(
++              onPressed: () async {
++                final ok = await AppLauncher.openUrl(j.applyUrl);
++                if (!ok && mounted) {
++                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('লিংক খোলা যায়নি')));
++                }
++              },
++              child: const Text('🔗 আবেদন/বিস্তারিত'),
++            ),
++          ]),
++        ]),
++      ),
++    );
 +  }
 +}
 diff -ruN orig/my-manager-flutter-main/lib/jobs/screens/job_hub_screen.dart b/lib/jobs/screens/job_hub_screen.dart
@@ -2321,9 +2687,9 @@ diff -ruN orig/my-manager-flutter-main/android/app/src/main/kotlin/com/hanif/mym
          // চাকরি হাব থেকে SmartStudyBD খোলা / সার্কুলারের লিংক খোলা।
          MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.hanif.mymanager/launcher")
              .setMethodCallHandler { call, result ->
---- /dev/null	2026-10-21 01:02:03.093899051 +0000
-+++ b/test/radar_engine_test.dart	2026-10-20 19:32:45.349784157 +0000
-@@ -0,0 +1,120 @@
+--- /dev/null	2026-10-21 07:09:20.443321558 +0000
++++ b/test/radar_engine_test.dart	2026-10-21 08:50:24.505963187 +0000
+@@ -0,0 +1,129 @@
 +import 'package:flutter_test/flutter_test.dart';
 +import 'package:my_manager/jobs/radar/engine/bn_util.dart';
 +import 'package:my_manager/jobs/radar/engine/circular_parser.dart';
@@ -2379,6 +2745,7 @@ diff -ruN orig/my-manager-flutter-main/android/app/src/main/kotlin/com/hanif/mym
 +<h2>বয়সসীমা</h2><p>০১.০৯.২০২৬ তারিখে ১৮-৩২ বছর</p>''';
 +
 +void main() {
++  roundupTests();
 +  test('পরিকল্পনা কমিশন: ডাটা এন্ট্রি, HSC, ২০/২০ → সম্ভাব্য যোগ্য', () {
 +    final r = evaluate(htmlToText(planning), profile, now: july15, title: 'পরিকল্পনা কমিশন');
 +    expect(r.expired, false);
@@ -2444,7 +2811,15 @@ diff -ruN orig/my-manager-flutter-main/android/app/src/main/kotlin/com/hanif/mym
 +    expect(a.refDate, DateTime.utc(2026, 9, 1));
 +  });
 +}
---- /dev/null	2026-10-21 01:02:03.093899051 +0000
++
++void roundupTests() {
++  test('সাপ্তাহিক চাকরির খবর সংকলন → none (ভুল ধরা পড়ে না)', () {
++    final r = evaluate('কম্পিউটার অপারেটর ... অনেক বিজ্ঞপ্তির তালিকা', profile,
++        now: oct13, title: 'সাপ্তাহিক চাকরির খবর পত্রিকা ১৬ অক্টোবর ২০২৬ PDF সহ | Saptahik Chakrir Khobor 2026');
++    expect(r.verdict, 'none');
++  });
++}
+--- /dev/null	2026-10-21 07:09:20.443321558 +0000
 +++ b/test/teletalk_test.dart	2026-10-21 06:22:49.635350556 +0000
 @@ -0,0 +1,65 @@
 +import 'package:flutter_test/flutter_test.dart';
