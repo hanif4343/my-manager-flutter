@@ -1,10 +1,14 @@
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'bdgovtjob_source.dart' show httpGet;
 
-const _api = 'https://alljobs.teletalk.com.bd/api/v1/published-jobs/search';
+const _site = 'https://alljobs.teletalk.com.bd';
+const _api = '$_site/api/v1/published-jobs/search';
 
 /// Teletalk AllJobs-এর সরকারি চাকরির এন্ট্রি (খোলা JSON API থেকে)।
 class TeletalkJob {
+  final int primaryId; // 15024 — বিস্তারিত API-র আইডি
+  final int? orgId; // 1165
   final String jobId; // GJOB15024
   final String titleEn;
   final String titleBn;
@@ -17,6 +21,8 @@ class TeletalkJob {
   final String shortName;
 
   const TeletalkJob({
+    this.primaryId = 0,
+    this.orgId,
     required this.jobId,
     required this.titleEn,
     required this.titleBn,
@@ -40,12 +46,20 @@ class TeletalkJob {
   }
 
   /// ক্যাশে রাখার সংক্ষিপ্ত রূপ।
+  /// Teletalk সাইটে এই চাকরির বিস্তারিত পেজ।
+  String get detailsUrl => orgId == null || primaryId == 0
+      ? '$_site/jobs?orgid=1'
+      : '$_site/jobs/government/$orgId?jobId=$primaryId';
+
   Map<String, dynamic> toMap() => {
+        'pid': primaryId, 'oid': orgId,
         'id': jobId, 'en': titleEn, 'bn': titleBn, 'vac': vacancy, 'url': applyUrl,
         'pub': _ymd(published), 'dl': _ymd(deadline), 'org': orgName, 'orgBn': orgNameBn, 'short': shortName,
       };
 
   factory TeletalkJob.fromCache(Map<String, dynamic> m) => TeletalkJob(
+        primaryId: (m['pid'] as num?)?.toInt() ?? 0,
+        orgId: (m['oid'] as num?)?.toInt(),
         jobId: (m['id'] ?? '').toString(),
         titleEn: (m['en'] ?? '').toString(),
         titleBn: (m['bn'] ?? '').toString(),
@@ -67,6 +81,8 @@ class TeletalkJob {
   }
 
   factory TeletalkJob.fromMap(Map<String, dynamic> m) => TeletalkJob(
+        primaryId: (m['job_primary_id'] as num?)?.toInt() ?? 0,
+        orgId: (m['organization_id'] as num?)?.toInt(),
         jobId: (m['job_id'] ?? '').toString(),
         titleEn: (m['job_title'] ?? '').toString().trim(),
         titleBn: (m['job_title_bn'] ?? '').toString().trim(),
@@ -97,4 +113,42 @@ Future<List<TeletalkJob>> fetchTeletalkJobs({int maxPages = 15}) async {
     await Future<void>.delayed(const Duration(milliseconds: 500));
   }
   return out;
+}
+
+/// বিস্তারিত API থেকে পাওয়া শর্ত: বয়স, বিজ্ঞপ্তি নং, বিজ্ঞপ্তির PDF-এর পাথ।
+class TeletalkDetail {
+  final int? minAge;
+  final int? maxAge;
+  final String adNo;
+  final String adFile; // "public/uploads/governments/jobs/advertisement-….pdf"
+  const TeletalkDetail({this.minAge, this.maxAge, this.adNo = '', this.adFile = ''});
+
+  factory TeletalkDetail.fromMap(Map<String, dynamic> m) => TeletalkDetail(
+        minAge: (m['min_age'] as num?)?.toInt(),
+        maxAge: (m['max_age'] as num?)?.toInt(),
+        adNo: (m['advertisement_no'] ?? '').toString().trim(),
+        adFile: (m['advertisement_file'] ?? '').toString().trim(),
+      );
+}
+
+Future<TeletalkDetail> fetchTeletalkDetail(int primaryId) async {
+  final body = await httpGet('$_site/api/v1/govt-jobs/public-details?id=$primaryId', json: true);
+  final m = Map<String, dynamic>.from(jsonDecode(body) as Map);
+  return TeletalkDetail.fromMap(Map<String, dynamic>.from((m['details'] as Map?) ?? {}));
+}
+
+/// বিজ্ঞপ্তির PDF-এর আসল লিংক খুঁজে বের করে (পাথ থেকে সম্ভাব্য ঠিকানা পরীক্ষা করে; পাওয়া না গেলে null)।
+Future<String?> resolveAdvertisementUrl(String path) async {
+  if (path.isEmpty) return null;
+  final p = path.replaceFirst(RegExp(r'^/+'), '');
+  final candidates = <String>{'$_site/$p', '$_site/${p.replaceFirst(RegExp(r'^public/'), '')}'};
+  for (final u in candidates) {
+    try {
+      final r = await http.head(Uri.parse(u)).timeout(const Duration(seconds: 8));
+      final ct = (r.headers['content-type'] ?? '').toLowerCase();
+      // সাইট অজানা পাথে 200 + HTML ফেরত দিতে পারে, তাই কনটেন্ট-টাইপ দেখি
+      if (r.statusCode == 200 && (ct.contains('pdf') || ct.contains('octet-stream'))) return u;
+    } catch (_) {}
+  }
+  return null;
 }
