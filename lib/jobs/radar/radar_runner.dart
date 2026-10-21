@@ -25,6 +25,7 @@ class RadarRunner {
   static const _kState = 'radar_runner_state';
   static const _kRunning = 'radar_running_at';
   static const _maxFetch = 25;
+  static const _engineVersion = 3; // যাচাই-নিয়ম বদলালে বাড়াই — পুরনো ফলাফল আবার যাচাই হবে
 
   static String _today() => Reminder.ymd(DateTime.now());
 
@@ -88,6 +89,16 @@ class RadarRunner {
     final state = _loadState();
     final items = Map<String, dynamic>.from((state['items'] as Map?) ?? {});
     final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (state['v'] != _engineVersion) {
+      // নিয়ম বদলেছে: সব এন্ট্রি "পুরনো" চিহ্নিত — এই রানেই নতুন নিয়মে আবার যাচাই হবে
+      for (final k in items.keys.toList()) {
+        final v = Map<String, dynamic>.from(items[k] as Map);
+        v['modified'] = null;
+        v['checkedAt'] = 0;
+        items[k] = v;
+      }
+      state['v'] = _engineVersion;
+    }
 
     List<ListedPost> list;
     try {
@@ -136,6 +147,7 @@ class RadarRunner {
     var teletalkOk = true;
     try {
       final tj = await fetchTeletalkJobs();
+      await RadarService.saveTeletalkAll(tj);
       // আগের Teletalk এন্ট্রি মুছে নতুন তালিকা বসাই (পদ সরে গেলে/শেষ হলে ঠিক থাকে)
       items.removeWhere((k, _) => k.toString().startsWith('teletalk:'));
       for (final ri in teletalkItems(tj, profile)) {
