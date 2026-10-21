@@ -150,7 +150,15 @@ class RadarRunner {
       await RadarService.saveTeletalkAll(tj);
       // আগের Teletalk এন্ট্রি মুছে নতুন তালিকা বসাই (পদ সরে গেলে/শেষ হলে ঠিক থাকে)
       items.removeWhere((k, _) => k.toString().startsWith('teletalk:'));
-      for (final ri in teletalkItems(tj, profile)) {
+      // শুধু আমাদের টার্গেট পদগুলোর বিস্তারিত আনি (সাধারণত অল্প ক'টা) — বয়সসীমা যাচাইয়ের জন্য
+      final details = <int, TeletalkDetail>{};
+      for (final t in pickTeletalkTargets(tj, profile)) {
+        try {
+          details[t.primaryId] = await fetchTeletalkDetail(t.primaryId);
+        } catch (_) {}
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+      for (final ri in teletalkItems(tj, profile, details: details)) {
         items['teletalk:${ri.url}'] = {'modified': null, 'checkedAt': nowMs, 'item': ri.toMap()};
       }
     } catch (_) {
