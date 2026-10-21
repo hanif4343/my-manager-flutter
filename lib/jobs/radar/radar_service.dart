@@ -56,7 +56,7 @@ class RadarService {
     r'data\s*entry',
     r'computer\s*typist',
   ];
-  static const _exclude = ['সাঁট', 'সীট', 'শর্টহ্যান্ড', 'stenograph', 'shorthand'];
+  static const _exclude = ['সাঁট', 'সীট', 'শর্টহ্যান্ড', 'stenograph', 'stenotyp', 'shorthand'];
   static List<String> get keywords => _keywords;
 
   /// ইঞ্জিনের জন্য প্রোফাইল অবজেক্ট।
