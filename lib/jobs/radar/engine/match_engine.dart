@@ -76,9 +76,16 @@ RadarCheck _ok(String k, String m) => RadarCheck(key: k, s: 'ok', msg: m);
 RadarCheck _warn(String k, String m) => RadarCheck(key: k, s: 'warn', msg: m);
 RadarCheck _fail(String k, String m) => RadarCheck(key: k, s: 'fail', msg: m);
 
+/// "সাপ্তাহিক চাকরির খবর" ধরনের সংকলন/পত্রিকা-পোস্ট — আসল সার্কুলার নয়।
+final _roundup = RegExp(r'চাকরির\s*খবর|চাকরির\s*ডাক|সাপ্তাহিক|দৈনিক\s*পত্রিকা|পত্রিকা\s*(?:থেকে|সহ)|newspaper|chakrir\s*khobor|saptahik', caseSensitive: false);
+
 /// একটি সার্কুলারের টেক্সট যাচাই। (JS ইঞ্জিনের হুবহু অনুবাদ — একই টেস্টে যাচাই করা)
 EvalResult evaluate(String text, RadarProfile profile, {String? title, DateTime? now}) {
   final today = todayDhaka(now);
+  if (title != null && _roundup.hasMatch(title)) {
+    return const EvalResult(
+        expired: false, deadlines: [], nearest: null, org: '', method: '', fee: '', posts: [], verdict: 'none');
+  }
   final expiredBanner = RegExp(r'আবেদনের\s*সময়\s*শেষ\s*হয়েছে').hasMatch(text);
   final deadlines = parseDeadlines(text);
   final upcoming = deadlines.where((d) => daysBetween(today, d) >= 0).toList()..sort();
