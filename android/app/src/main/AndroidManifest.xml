@@ -207,6 +207,23 @@
              tools:replace manifest-merge override on the plugin's own
              component, not a second competing <service> block. -->
 
+        <!-- "My Manager Autofill (শুধু সেভ করা)": প্লাগইনের সার্ভিসের সামনের ছাঁকনি। সাধারণ টেক্সটবক্সে
+             চিপ দেখায় না; লগইন ফর্ম বা সেভ করা সাইট/অ্যাপে প্লাগইনকে ডাকে। এটা আলাদা এন্ট্রি —
+             ফোনের Settings > Autofill service থেকে এটা বাছলে চালু হয়; আগেরটা (Flutter Autofill
+             Service) যেমন ছিল তেমনই থাকে, চাইলে ফিরে যাওয়া যায়। -->
+        <service
+            android:name=".FilteredAutofillService"
+            android:label="My Manager Autofill (শুধু সেভ করা)"
+            android:exported="true"
+            android:permission="android.permission.BIND_AUTOFILL_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.autofill.AutofillService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.autofill"
+                android:resource="@xml/autofill_service_config"/>
+        </service>
+
         <!-- ফাইল-পিকারে "ডকুমেন্ট ভল্ট" চাপলে VaultDocumentsProvider এটা PendingIntent দিয়ে চালু করে:
              যাচাই + ভল্ট থেকে ফাইল বাছা। নিজের PendingIntent দিয়ে চলে, তাই exported লাগে না। -->
         <activity

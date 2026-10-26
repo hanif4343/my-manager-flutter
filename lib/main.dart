@@ -9,6 +9,7 @@ import 'screens/home_shell.dart';
 import 'widgets/app_theme.dart';
 import 'widgets/overlay_bubble.dart';
 import 'screens/autofill_picker_screen.dart';
+import 'services/vault_service.dart';
 import 'services/notification_service.dart';
 import 'services/settings_service.dart';
 import 'services/drive_service.dart';
@@ -60,6 +61,8 @@ void main() async {
   // Drive-এ আগে সাইন-ইন করা থাকলে অ্যাপ খোলার সাথেই চুপচাপ ফিরিয়ে আনি, নইলে
   // ক্যাশবুকসহ সব সাইলেন্ট ব্যাকআপ "সাইন-ইন নেই" ভেবে বাদ পড়ত। ব্যর্থ হলে কিছু হয় না।
   DriveService.instance.signInSilently().catchError((_) => false);
+  // Autofill ছাঁকনির জন্য সেভ-করা-সাইটের তালিকা (পাসওয়ার্ড ছাড়া) হালনাগাদ।
+  VaultService.publishAutofillIndex().catchError((_) {});
   try {
     await NotificationService.init();
     // সকালের "আজকের ম্যানেজার" নোটিফিকেশন (সময়/চালু-বন্ধ সেটিংস থেকে)

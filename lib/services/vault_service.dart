@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/vault_entry.dart';
 
 /// Stores vault entries in Android's encrypted, Keystore-backed
@@ -34,6 +35,25 @@ class VaultService {
       key: _key,
       value: jsonEncode(entries.map((e) => e.toJson()).toList()),
     );
+    await _publishAutofillIndex(entries);
+  }
+
+  /// Autofill ছাঁকনির (FilteredAutofillService) জন্য: কোন সাইট/অ্যাপের লগইন সেভ আছে তার তালিকা।
+  /// শুধু url + টাইটেল — ইউজারনেম, পাসওয়ার্ড বা অন্য গোপন কিছু নয়।
+  static Future<void> _publishAutofillIndex(List<VaultEntry> entries) async {
+    try {
+      final idx = entries
+          .where((e) => e.type == 'login')
+          .map((e) => {'u': e.url ?? '', 't': e.title})
+          .toList();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('af_index', jsonEncode(idx));
+    } catch (_) {}
+  }
+
+  /// অ্যাপ চালুর সময় একবার — আগে থেকে থাকা এন্ট্রির তালিকাও ছাঁকনি পেয়ে যায়।
+  static Future<void> publishAutofillIndex() async {
+    await _publishAutofillIndex(await getAll());
   }
 
   static Future<void> insert(VaultEntry entry) async {
