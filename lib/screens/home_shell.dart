@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import '../widgets/app_theme.dart';
@@ -197,6 +198,41 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     }
   }
 
+  bool _exitAsking = false;
+
+  /// ফোনের নিজস্ব ব্যাক চাপলে (এই শেল সবার নিচের স্ক্রিন, তাই এখানে পৌঁছালে আর কোনো
+  /// পুশ-করা স্ক্রিন/ডায়ালগ/শিট খোলা নেই — সেগুলো নিজেরাই আগে বন্ধ হয়ে যায়):
+  ///  ১. প্রজেক্ট/খোঁজো/সেটিংস ট্যাবে থাকলে → হোম ট্যাবে ফেরে, অ্যাপ বন্ধ হয় না।
+  ///  ২. হোমে থাকলে → "অ্যাপ বন্ধ করবে?" জিজ্ঞেস করে; হ্যাঁ হলেই কেবল বন্ধ।
+  Future<void> _onBack() async {
+    if (_index != 0) {
+      setState(() => _index = 0);
+      return;
+    }
+    if (_exitAsking) return;
+    _exitAsking = true;
+    final exit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.bg2,
+        title: const Text('অ্যাপ বন্ধ করবে?'),
+        content: const Text('My Manager থেকে বেরিয়ে যেতে চাও?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('না'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('হ্যাঁ', style: TextStyle(color: AppTheme.red)),
+          ),
+        ],
+      ),
+    );
+    _exitAsking = false;
+    if (exit == true) SystemNavigator.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final tabs = [
@@ -212,7 +248,12 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       SettingsScreen(onThemeToggle: widget.onThemeToggle),
     ];
 
-    return Scaffold(
+    return PopScope(
+      canPop: false, // ব্যাক চাপলে অ্যাপ নিজে থেকে কেটে যাবে না — _onBack সামলাবে
+      onPopInvoked: (didPop) {
+        if (!didPop) _onBack();
+      },
+      child: Scaffold(
       backgroundColor: AppTheme.bg,
       // IndexedStack keeps each tab's state (scroll position, search
       // query, etc.) alive when switching, instead of rebuilding it.
@@ -279,6 +320,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           ],
         ),
       ),
+    ),
     );
   }
 }

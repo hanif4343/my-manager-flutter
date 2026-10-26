@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/app_theme.dart';
 import '../db/cashbook_db.dart';
+import '../services/cashbook_backup_service.dart';
 import '../services/cashbook_widget_service.dart';
 import 'cashbook_entry_sheet.dart';
 
@@ -60,9 +61,14 @@ class _LauncherState extends State<_Launcher> {
       return;
     }
     try {
-      await CashbookEntrySheet.show(context, accountId: id, initialType: widget.type);
+      final saved = await CashbookEntrySheet.show(context, accountId: id, initialType: widget.type);
       // সেভ হোক বা না হোক, উইজেটের সংখ্যা হালনাগাদ করে তারপর বন্ধ।
       await CashbookWidgetService.refresh();
+      // উইজেট থেকে সেভ হলে ড্রাইভ ব্যাকআপও যাক (আগে এই পথে কখনো ব্যাকআপ হতো না)।
+      // বন্ধ করার আগে আপলোড শেষ হওয়া পর্যন্ত অপেক্ষা, তবে সর্বোচ্চ ২০ সেকেন্ড।
+      if (saved == true) {
+        await CashbookBackupService.backupSilently().timeout(const Duration(seconds: 20), onTimeout: () {});
+      }
     } catch (_) {}
     SystemNavigator.pop();
   }

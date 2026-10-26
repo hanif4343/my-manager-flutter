@@ -55,35 +55,6 @@ object ScreenTimeBridge {
                         result.success(true)
                     }
                     "openWellbeing" -> result.success(openWellbeing(ctx))
-                    "guardStatus" -> result.success(guardStatus(ctx))
-                    "previewStop" -> {
-                        // থামো স্ক্রিনের নমুনা — আসল ছাড়পত্র/গণনায় প্রভাব ফেলে না
-                        val i = Intent(ctx, StopActivity::class.java).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            putExtra("preview", true)
-                            putExtra("label", call.argument<String>("label") ?: "Facebook")
-                            putExtra("pkg", "")
-                            putExtra("reason", call.argument<String>("reason") ?: "studyfirst")
-                            putExtra("windowText", "০৯:০০ – ১২:০০")
-                            putExtra("study", (call.argument<Number>("study") ?: 0).toLong())
-                            putExtra("need", (call.argument<Number>("need") ?: 0).toLong())
-                            putExtra("waste", (call.argument<Number>("waste") ?: 0).toLong())
-                            putExtra("limit", (call.argument<Number>("limit") ?: 0).toLong())
-                            putExtra("goal", (call.argument<Number>("goal") ?: 0).toLong())
-                            putExtra("graceLeft", call.argument<Int>("graceLeft") ?: 1)
-                            putExtra("graceMin", call.argument<Int>("graceMin") ?: 5)
-                        }
-                        ctx.startActivity(i)
-                        result.success(true)
-                    }
-                    "openAccessibilitySettings" -> {
-                        startActivity(ctx, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                        result.success(true)
-                    }
-                    "openOverlaySettings" -> {
-                        startActivity(ctx, Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")))
-                        result.success(true)
-                    }
                     "openAppNotifications" -> {
                         val pkg = call.argument<String>("package") ?: ""
                         startActivity(ctx, Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -103,8 +74,7 @@ object ScreenTimeBridge {
         }
     }
 
-    /** প্রহরীর অবস্থা: Accessibility সেবা চালু? অন্য অ্যাপের উপরে দেখানোর অনুমতি? আজ কতবার থামানো হলো? */
-    /** আজকের তারিখ "yyyy-MM-dd" (প্রহরী ও সতর্কবার্তা দুটোই এটা ব্যবহার করে)। */
+    /** আজকের তারিখ "yyyy-MM-dd" (সতর্কবার্তা এটা ব্যবহার করে)। */
     fun todayKey(): String {
         val c = Calendar.getInstance()
         return "%04d-%02d-%02d".format(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
@@ -115,20 +85,6 @@ object ScreenTimeBridge {
         val c = Calendar.getInstance()
         c.set(Calendar.HOUR_OF_DAY, 0); c.set(Calendar.MINUTE, 0); c.set(Calendar.SECOND, 0); c.set(Calendar.MILLISECOND, 0)
         return c.timeInMillis
-    }
-
-    private fun guardStatus(ctx: Context): Map<String, Any> {
-        val enabledList = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
-        val accessibility = enabledList.contains(ctx.packageName + "/") && enabledList.contains("ScreenGuardService")
-        val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val today = todayKey()
-        val sameDay = sp.getString("guard_day", "") == today
-        return mapOf(
-            "accessibility" to accessibility,
-            "overlay" to Settings.canDrawOverlays(ctx),
-            "blocked" to (if (sameDay) sp.getInt("blocked", 0) else 0),
-            "graceUsed" to (if (sameDay) sp.getInt("grace_used", 0) else 0),
-        )
     }
 
     private fun startActivity(ctx: Context, i: Intent) {

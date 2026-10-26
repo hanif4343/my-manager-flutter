@@ -57,6 +57,9 @@ void main() async {
   SpendingGuard.nudgeIfNeeded(); // জরুরি টাকা কমে থাকলে লাল সতর্কতা (ব্যবধান মেনে)
   // স্ক্রিন টাইমের সতর্কবার্তার কনফিগ (অনুমতি না থাকলে চুপচাপ কিছু করে না)
   ScreenTimeService.syncConfig();
+  // Drive-এ আগে সাইন-ইন করা থাকলে অ্যাপ খোলার সাথেই চুপচাপ ফিরিয়ে আনি, নইলে
+  // ক্যাশবুকসহ সব সাইলেন্ট ব্যাকআপ "সাইন-ইন নেই" ভেবে বাদ পড়ত। ব্যর্থ হলে কিছু হয় না।
+  DriveService.instance.signInSilently().catchError((_) => false);
   try {
     await NotificationService.init();
     // সকালের "আজকের ম্যানেজার" নোটিফিকেশন (সময়/চালু-বন্ধ সেটিংস থেকে)

@@ -1,0 +1,6 @@
+প্রজেক্টে zip-এর ফাইলগুলো বসানোর পর এই ৪টা ফাইল ডিলিট করো (স্ক্রিন প্রহরী/Accessibility সরানো হয়েছে):
+
+android/app/src/main/kotlin/com/hanif/mymanager/ScreenGuardService.kt
+android/app/src/main/kotlin/com/hanif/mymanager/StopActivity.kt
+android/app/src/main/res/xml/screen_guard_config.xml
+android/app/src/main/res/values/screen_guard.xml

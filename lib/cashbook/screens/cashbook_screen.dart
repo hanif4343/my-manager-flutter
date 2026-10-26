@@ -318,7 +318,7 @@ class _CashbookScreenState extends State<CashbookScreen> {
     await _afterMutation();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(ok ? '✓ ব্যাকআপ থেকে ফিরিয়ে আনা হয়েছে' : 'কোনো ব্যাকআপ পাওয়া যায়নি বা Drive সাইন-ইন করা নেই')));
+          content: Text(ok ? '✓ ব্যাকআপ থেকে ফিরিয়ে আনা হয়েছে' : 'ফিরিয়ে আনা যায়নি — ${CashbookBackupService.failReason ?? 'Drive-এ ব্যাকআপ নেই বা সাইন-ইন করা নেই'}')));
     }
   }
 

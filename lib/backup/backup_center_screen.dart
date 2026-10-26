@@ -263,7 +263,7 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
           final r = await CashbookBackupService.restoreFromDrive();
           r
               ? _setMsg(m.id, '✅ ক্যাশবুক ফিরে এসেছে')
-              : _setMsg(m.id, 'Drive-এ ক্যাশবুকের ব্যাকআপ পাওয়া যায়নি বা সাইন-ইন নেই', error: true);
+              : _setMsg(m.id, CashbookBackupService.failReason ?? 'Drive-এ ক্যাশবুকের ব্যাকআপ পাওয়া যায়নি বা সাইন-ইন নেই', error: true);
           break;
         case 'jobs':
           final r = await JobBackupService.restoreFromDrive();

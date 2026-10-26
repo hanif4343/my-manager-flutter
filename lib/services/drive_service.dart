@@ -67,6 +67,16 @@ class DriveService {
     }
   }
 
+  /// সাইন-ইন না থাকলে আগে চুপচাপ (silent) চেষ্টা করে; [interactive] true হলে
+  /// তাতেও না হলে Google অ্যাকাউন্ট বাছাইয়ের পর্দা দেখায়।
+  /// অ্যাপ নতুন করে চালুর পর [isSignedIn] false থাকে — তাই ব্যাকআপ/রিস্টোরের আগে এটা ডাকা দরকার।
+  Future<bool> ensureSignedIn({bool interactive = false}) async {
+    if (isSignedIn) return true;
+    if (await signInSilently()) return true;
+    if (interactive) return signIn();
+    return false;
+  }
+
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     _account = null;
@@ -87,7 +97,7 @@ class DriveService {
     if (_driveApi == null) return null;
     try {
       final q = "mimeType='application/vnd.google-apps.folder' and name='$_folderName' and trashed=false";
-      final list = await _driveApi!.files.list(q: q, $fields: 'files(id,name)');
+      final list = await _driveApi!.files.list(q: q, $fields: 'files(id,name)', orderBy: 'createdTime');
       if (list.files != null && list.files!.isNotEmpty) {
         return list.files!.first.id;
       }
@@ -97,6 +107,7 @@ class DriveService {
       final created = await _driveApi!.files.create(folder, $fields: 'id');
       return created.id;
     } catch (e) {
+      lastError = e.toString();
       debugPrint('DriveService _ensureFolder error: $e');
       return null;
     }
@@ -246,22 +257,39 @@ class DriveService {
   // ── GENERIC NAMED-JSON BACKUP (used by the Cashbook module, which
   // keeps its own separate database and therefore its own backup file
   // rather than being folded into _exportAllDataAsJson above) ────────
-  Future<DriveBackupResult> backupJson(String fileName, String jsonData) async {
-    if (!isSignedIn) return DriveBackupResult.notSignedIn;
+  /// একই নামে একাধিক ফাইল থাকলে (আগের রেস-কন্ডিশনে তৈরি) সবচেয়ে নতুনটা — রিস্টোরে পুরনো
+  /// ফাইল উঠে আসা ঠেকাতে modifiedTime অনুযায়ী সাজানো।
+  Future<String?> _findNewestFileId(String fileName) async {
+    final q = "name='$fileName' and '${_backupFolderId!}' in parents and trashed=false";
+    final list = await _driveApi!.files.list(q: q, $fields: 'files(id,modifiedTime)', orderBy: 'modifiedTime desc');
+    if (list.files == null || list.files!.isEmpty) return null;
+    return list.files!.first.id;
+  }
+
+  // একসাথে দুটো ব্যাকআপ চললে দুটোই "ফাইল নেই" দেখে দুটো ফাইল বানিয়ে ফেলত; তাই লাইনে দাঁড় করানো।
+  Future<void> _backupQueue = Future.value();
+
+  Future<DriveBackupResult> backupJson(String fileName, String jsonData) {
+    final run = _backupQueue.then((_) => _backupJsonNow(fileName, jsonData));
+    _backupQueue = run.then((_) {}, onError: (_) {});
+    return run;
+  }
+
+  Future<DriveBackupResult> _backupJsonNow(String fileName, String jsonData) async {
+    if (!await ensureSignedIn()) return DriveBackupResult.notSignedIn;
     try {
       lastError = null;
       await _initApi();
       _backupFolderId ??= await _ensureFolder();
       if (_backupFolderId == null) {
-        lastError = 'Backup ফোল্ডার তৈরি/খুঁজে পাওয়া যায়নি';
+        lastError ??= 'Backup ফোল্ডার তৈরি/খুঁজে পাওয়া যায়নি';
         return DriveBackupResult.failed;
       }
       final bytes = utf8.encode(jsonData);
-      final q = "name='$fileName' and '${_backupFolderId!}' in parents and trashed=false";
-      final existing = await _driveApi!.files.list(q: q, $fields: 'files(id)');
-      if (existing.files != null && existing.files!.isNotEmpty) {
+      final existingId = await _findNewestFileId(fileName);
+      if (existingId != null) {
         await _driveApi!.files.update(
-          drive.File(), existing.files!.first.id!,
+          drive.File(), existingId,
           uploadMedia: drive.Media(Stream.value(bytes), bytes.length), $fields: 'id',
         );
       } else {
@@ -277,22 +305,34 @@ class DriveService {
     }
   }
 
+  /// null → সাইন-ইন নেই / ফাইল নেই / ত্রুটি; কারণটা [lastError]-এ থাকে।
   Future<String?> restoreJson(String fileName) async {
-    if (!isSignedIn) return null;
+    // সাইন-ইন না থাকলে আগে চুপচাপ, না হলে অ্যাকাউন্ট বাছাইয়ের পর্দা — রিস্টোর হাতে চালানো কাজ।
+    if (!await ensureSignedIn(interactive: true)) {
+      lastError ??= 'Google Drive-এ সাইন-ইন করা নেই';
+      return null;
+    }
     try {
+      lastError = null;
       await _initApi();
       _backupFolderId ??= await _ensureFolder();
-      if (_backupFolderId == null) return null;
-      final q = "name='$fileName' and '${_backupFolderId!}' in parents and trashed=false";
-      final list = await _driveApi!.files.list(q: q, $fields: 'files(id)');
-      if (list.files == null || list.files!.isEmpty) return null;
-      final media = await _driveApi!.files.get(list.files!.first.id!,
+      if (_backupFolderId == null) {
+        lastError ??= 'Backup ফোল্ডার খুঁজে পাওয়া যায়নি';
+        return null;
+      }
+      final id = await _findNewestFileId(fileName);
+      if (id == null) {
+        lastError = 'Drive-এর MyManager_Backup ফোল্ডারে $fileName নেই';
+        return null;
+      }
+      final media = await _driveApi!.files.get(id,
           downloadOptions: drive.DownloadOptions.fullMedia) as drive.Media;
       final bytes = <int>[];
       await for (final chunk in media.stream) { bytes.addAll(chunk); }
       return utf8.decode(bytes);
     } catch (e) {
       lastError = e.toString();
+      debugPrint('DriveService restoreJson error: $e');
       return null;
     }
   }

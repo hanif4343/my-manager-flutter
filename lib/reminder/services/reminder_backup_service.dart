@@ -33,14 +33,13 @@ class ReminderBackupService {
 
   static Future<DriveBackupResult> backupNow() async {
     final drive = DriveService.instance;
-    if (!drive.isSignedIn) return DriveBackupResult.notSignedIn;
+    if (!await drive.ensureSignedIn(interactive: true)) return DriveBackupResult.notSignedIn;
     return drive.backupJson(fileName, await _export());
   }
 
   /// নতুন যোগ হওয়া সংখ্যা; null → ব্যাকআপ নেই/সাইন-ইন নেই।
   static Future<int?> restoreFromDrive() async {
     final drive = DriveService.instance;
-    if (!drive.isSignedIn) return null;
     final text = await drive.restoreJson(fileName);
     if (text == null || text.isEmpty) return null;
     final Map<String, dynamic> data;
