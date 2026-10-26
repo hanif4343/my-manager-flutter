@@ -172,6 +172,48 @@ class CashbookNotificationService {
     await _plugin.show(7800, title, body.split('\n').first, NotificationDetails(android: details));
   }
 
+  // ───────────── খরচ-প্রহরীর ৩ বেলার সতর্কতা (আইডি ৭৮১০–৭৮১৯) ─────────────
+  static const _guardSlotBase = 7810;
+  static const _guardSlotCount = 10;
+
+  static Future<void> cancelGuardSlots() async {
+    await _init();
+    for (var i = 0; i < _guardSlotCount; i++) {
+      await _plugin.cancel(_guardSlotBase + i);
+    }
+  }
+
+  /// আগের বসানো সব ৩-বেলা নোটিফিকেশন বাতিল করে [msgs]-এর প্রতিটা সঠিক সময়ে (exact alarm) বসায়।
+  /// প্রতিবার নতুন করে বসানো হয় বলে কিস্তি মেটানোর পরের ডাটাই সবসময় দেখায়।
+  static Future<void> scheduleGuardSlots(
+      List<({DateTime when, String title, String body, bool danger})> msgs) async {
+    await cancelGuardSlots();
+    var id = _guardSlotBase;
+    for (final m in msgs.take(_guardSlotCount)) {
+      final details = AndroidNotificationDetails(
+        'spending_guard_channel',
+        'খরচ সতর্কতা',
+        channelDescription: 'কিস্তি/আবশ্যিক খরচ বাকি থাকলে প্রতিদিন ৩ বেলা সতর্কতা',
+        importance: Importance.max,
+        priority: Priority.max,
+        icon: '@mipmap/ic_launcher',
+        color: m.danger ? const Color(0xFFDC2626) : const Color(0xFFF59E0B),
+        colorized: true,
+        category: AndroidNotificationCategory.reminder,
+        styleInformation: BigTextStyleInformation(m.body, contentTitle: m.title),
+      );
+      await _plugin.zonedSchedule(
+        id++,
+        m.title,
+        m.body.split('\n').first,
+        tz.TZDateTime.from(m.when, tz.local),
+        NotificationDetails(android: details),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    }
+  }
+
   /// MIUI/FunTouch/ColorOS-style battery managers on Xiaomi, Vivo, Oppo
   /// and some Samsung phones aggressively kill background work — no
   /// amount of app-side code fixes that, only the person granting an

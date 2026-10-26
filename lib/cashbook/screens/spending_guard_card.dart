@@ -65,10 +65,13 @@ class _SpendingGuardCardState extends State<SpendingGuardCard> with SingleTicker
   // ───────────── সব ঠিক ─────────────
 
   Widget _calm(GuardReport r) {
+    // কিস্তি/আবশ্যিক খরচ বাকি থাকলে টাকা যথেষ্ট হলেও কার্ড হলদে + তালিকা সবসময় খোলা।
+    final pending = r.hasPending;
+    final open = _open || pending;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
       child: Material(
-        color: AppTheme.green.withOpacity(0.10),
+        color: (pending ? _amber : AppTheme.green).withOpacity(0.12),
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
@@ -77,11 +80,11 @@ class _SpendingGuardCardState extends State<SpendingGuardCard> with SingleTicker
             padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                Icon(Icons.shield_rounded, size: 18, color: AppTheme.green),
+                Icon(pending ? Icons.push_pin_rounded : Icons.shield_rounded, size: 18, color: pending ? _amber : AppTheme.green),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(r.essentialsLine,
-                      maxLines: _open ? 4 : 2, overflow: TextOverflow.ellipsis,
+                  child: Text(pending ? '${r.headline}\n${r.essentialsLine}' : r.essentialsLine,
+                      maxLines: open ? 6 : 2, overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5, height: 1.35)),
                 ),
                 IconButton(
@@ -90,7 +93,7 @@ class _SpendingGuardCardState extends State<SpendingGuardCard> with SingleTicker
                   onPressed: () => showGuardSettings(context),
                 ),
               ]),
-              if (_open)
+              if (open)
                 for (final l in r.detailLines)
                   Padding(
                     padding: const EdgeInsets.only(left: 26, top: 2),
@@ -243,7 +246,7 @@ class _NudgeDialogState extends State<_NudgeDialog> {
           const SizedBox(height: 6),
           Text('এই খরচের পরে: ${r.essentialsLine}',
               style: TextStyle(color: Colors.white.withOpacity(0.95), fontSize: 13, height: 1.4)),
-          for (final l in r.detailLines.take(4))
+          for (final l in r.detailLines.take(6))
             Padding(
               padding: const EdgeInsets.only(top: 3),
               child: Text('• $l', style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 12.5, height: 1.35)),
@@ -294,11 +297,16 @@ class _GuardSettingsSheet extends StatefulWidget {
 }
 
 class _GuardSettingsSheetState extends State<_GuardSettingsSheet> {
+  String _fmtSlot(int m) {
+    final h = m ~/ 60, mm = m % 60;
+    final h12 = h % 12 == 0 ? 12 : h % 12;
+    return '${bn(h12)}:${bn(mm.toString().padLeft(2, '0'))}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final on = SpendingGuard.enabled;
     final margin = SpendingGuard.marginPct;
-    final nag = SpendingGuard.nagMinutes;
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
@@ -307,7 +315,8 @@ class _GuardSettingsSheetState extends State<_GuardSettingsSheet> {
           const SizedBox(height: 4),
           Text(
             'ক্যাশবুকে যত টাকা আছে তা থেকে বাকি আবশ্যিক খরচ মেটানোর পরে হাতে কত থাকবে হিসাব করে। '
-            'আবশ্যিক খরচের কাছাকাছি গেলে লাল সতর্কতা দেয়: "টাকা কম খরচ করুন, আবশ্যিক কাজ আগে করুন"।',
+            'আবশ্যিক খরচ (কিস্তি, হাসু, বিল) বাকি থাকলে অকারণ খরচ লেখার সময় আর প্রতিদিন ৩ বেলা সতর্ক করে। '
+            'টাকা আবশ্যিক খরচের কাছাকাছি গেলে লাল সতর্কতা: "টাকা কম খরচ করুন, আবশ্যিক কাজ আগে করুন"।',
             style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5, height: 1.45),
           ),
           SwitchListTile(
@@ -339,19 +348,25 @@ class _GuardSettingsSheetState extends State<_GuardSettingsSheet> {
               ),
           ]),
           const SizedBox(height: 14),
-          Text('নোটিফিকেশনে বারবার বলার ব্যবধান', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700, fontSize: 13.5)),
+          Text('প্রতিদিন ৩ বেলা মনে করানোর সময়', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700, fontSize: 13.5)),
           const SizedBox(height: 2),
-          Text('সকাল ৮টা–রাত ১০টায়, সতর্ক অবস্থায়। জরুরি (লাল) অবস্থায় এর অর্ধেক সময়ে।',
-              style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+          Text('এ মাসের কিস্তি/আবশ্যিক খরচ বাকি থাকলেই দিনে ৩ বার নোটিফিকেশন আসবে — সব মিটে গেলে আর আসবে না। সময় বদলাতে ট্যাপ করো।',
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.4)),
           const SizedBox(height: 6),
           Wrap(spacing: 8, children: [
-            for (final v in [60, 120, 180, 360])
-              ChoiceChip(
-                label: Text(v < 120 ? '${bn(v)} মি' : '${bn(v ~/ 60)} ঘণ্টা'),
-                selected: nag == v,
-                showCheckmark: false,
-                onSelected: (_) async {
-                  await SpendingGuard.saveSettings(nag: v);
+            for (var i = 0; i < 3; i++)
+              ActionChip(
+                avatar: const Icon(Icons.access_time_rounded, size: 16),
+                label: Text('${SpendingGuard.slotNames[i]} ${_fmtSlot(SpendingGuard.slotMinute(i))}'),
+                onPressed: () async {
+                  final cur = SpendingGuard.slotMinute(i);
+                  final t = await showTimePicker(
+                    context: context,
+                    initialTime: TimeOfDay(hour: cur ~/ 60, minute: cur % 60),
+                    helpText: '${SpendingGuard.slotNames[i]}ের সতর্কতার সময়',
+                  );
+                  if (t == null) return;
+                  await SpendingGuard.setSlotMinute(i, t.hour * 60 + t.minute);
                   if (mounted) setState(() {});
                 },
               ),

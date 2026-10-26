@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../widgets/app_theme.dart';
 import '../db/cashbook_db.dart';
 import '../services/cashbook_backup_service.dart';
+import '../services/spending_guard.dart';
 import '../services/cashbook_widget_service.dart';
 import 'cashbook_entry_sheet.dart';
 
@@ -67,6 +68,8 @@ class _LauncherState extends State<_Launcher> {
       // উইজেট থেকে সেভ হলে ড্রাইভ ব্যাকআপও যাক (আগে এই পথে কখনো ব্যাকআপ হতো না)।
       // বন্ধ করার আগে আপলোড শেষ হওয়া পর্যন্ত অপেক্ষা, তবে সর্বোচ্চ ২০ সেকেন্ড।
       if (saved == true) {
+        // কিস্তি/আবশ্যিক খরচের ৩ বেলার সতর্কতা নতুন ব্যালেন্সে আবার বসাই (এই আলাদা engine-এ লিসেনার নেই)।
+        try { await SpendingGuard.rearmSlots(); } catch (_) {}
         await CashbookBackupService.backupSilently().timeout(const Duration(seconds: 20), onTimeout: () {});
       }
     } catch (_) {}

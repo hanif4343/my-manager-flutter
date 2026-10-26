@@ -187,11 +187,13 @@ class _CashbookEntrySheetState extends State<CashbookEntrySheet> {
         ? CashbookService.categoryById(_category).name
         : _noteCtrl.text.trim();
 
-    // খরচ-প্রহরী: নতুন অকারণ-হতে-পারে খরচ লেখার আগে লাল সতর্কতা (বিল দেওয়ায় নয়)।
+    // খরচ-প্রহরী: নতুন অকারণ-হতে-পারে খরচ লেখার আগে সতর্কতা (বিল/কিস্তি দেওয়ায় নয়)।
+    // কিস্তি, হাসু ইত্যাদি কোনো আবশ্যিক খরচ এ মাসে বাকি থাকলে — টাকা যথেষ্ট থাকলেও — প্রতিবার
+    // জানানো হয় কী কী বাকি; টাকা কমে এলে (হলুদ/লাল) আরও জোরালো।
     if (!_isEdit && _type == 'out' && !SpendingGuard.isEssentialCategory(_category) && SpendingGuard.enabled) {
       try {
         final r = await SpendingGuard.assess(extraSpend: amount, category: _category);
-        if (r.level != GuardLevel.ok && mounted) {
+        if (r.hasPending && mounted) {
           final go = await showSpendingNudge(context, r, amount);
           if (go != true) {
             if (mounted) Navigator.pop(context, false); // "বাদ দিই" — এন্ট্রি না লিখেই বন্ধ

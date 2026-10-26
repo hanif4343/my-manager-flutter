@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../reminder/models/reminder.dart' show bn, dateOnly;
 import '../../services/settings_service.dart';
@@ -39,9 +40,14 @@ class GuardReport {
   /// জরুরি খরচ-সতর্কতার পুরনো নাম (বাইরের কোড এটাও ব্যবহার করে)।
   GuardLevel get essentialsLevel => level;
 
+  /// এ মাসে কোনো আবশ্যিক খরচ (কিস্তি, হাসু...) এখনও বাকি আছে? থাকলে টাকা যথেষ্ট হলেও
+  /// অকারণ খরচে সতর্ক করা হয় — "হিসাব করে ব্যয় করো"।
+  bool get hasPending => unpaid.isNotEmpty;
+
   String get headline {
     if (level == GuardLevel.danger) return '🚨 আবশ্যিক খরচের টাকাই নেই!';
     if (level == GuardLevel.near) return '⚠️ আবশ্যিক খরচের টাকা প্রায় শেষ!';
+    if (hasPending) return '📌 কিস্তি/আবশ্যিক খরচ বাকি আছে — হিসাব করে ব্যয় করো';
     return '✅ সব ঠিক আছে';
   }
 
@@ -51,18 +57,23 @@ class GuardReport {
       : 'ব্যালেন্স ${_money(balance)} · এ মাসের কোনো আবশ্যিক খরচ বাকি নেই';
 
   /// বিস্তারিত লাইন: বাকি আবশ্যিক খরচ (তারিখ অনুযায়ী)
-  List<String> get detailLines {
+  List<String> get detailLines => pendingLines(unpaid, DateTime.now(), max: 6);
+
+  /// [ref] দিনের হিসাবে "আর কত দিন / কত দিন বকেয়া"সহ প্রতিটা বাকি খরচের লাইন।
+  static List<String> pendingLines(List<CashbookEssential> items, DateTime ref, {int max = 6}) {
     final out = <String>[];
-    final now = dateOnly(DateTime.now());
-    for (final e in unpaid.take(5)) {
+    final day = dateOnly(ref);
+    final lastDay = DateTime(day.year, day.month + 1, 0).day; // ৩০/৩১ তারিখ ছোট মাসে উপচে না পড়ুক
+    for (final e in items.take(max)) {
       var when = '';
       if (e.dueDay > 0) {
-        final due = DateTime(now.year, now.month, e.dueDay);
-        final d = due.difference(now).inDays;
+        final due = DateTime(day.year, day.month, e.dueDay > lastDay ? lastDay : e.dueDay);
+        final d = due.difference(day).inDays;
         when = d < 0 ? ' (${bn(-d)} দিন বকেয়া)' : (d == 0 ? ' (আজই শেষ দিন)' : ' (আর ${bn(d)} দিন)');
       }
       out.add('${e.title} ${_money(e.amount)}$when');
     }
+    if (items.length > max) out.add('আরও ${bn(items.length - max)}টা...');
     return out;
   }
 
@@ -127,28 +138,127 @@ class SpendingGuard {
     return GuardReport(balance, reserved, unpaid, margin);
   }
 
-  // ───────────── বারবার নোটিফিকেশন ─────────────
+  // ───────────── প্রতিদিন ৩ বেলা নোটিফিকেশন ─────────────
 
-  /// সকাল ৮টা–রাত ১০টায়, সতর্কতার অবস্থায় থাকলে নির্দিষ্ট ব্যবধানে লাল নোটিফিকেশন।
-  /// ব্যাকগ্রাউন্ড টাস্ক (প্রতি ~৩০ মিনিটে), অ্যাপ চালু ও রিজিউমে ডাকা হয়।
-  /// danger-এ ব্যবধান অর্ধেক, তাই জরুরি অবস্থায় আরও ঘনঘন বলে।
-  static Future<void> nudgeIfNeeded({bool force = false}) async {
-    if (!enabled && !force) return;
+  /// ৩ বেলার সময় (দিনের মিনিটে)। ডিফল্ট: সকাল ৯টা, দুপুর ২টা, রাত ৮টা।
+  static const _slotKeys = ['guard_slot_1', 'guard_slot_2', 'guard_slot_3'];
+  static const _slotDefaults = [9 * 60, 14 * 60, 20 * 60];
+  static const slotNames = ['সকাল', 'দুপুর', 'রাত'];
+
+  static int slotMinute(int i) => SettingsService.getInt(_slotKeys[i], defaultValue: _slotDefaults[i]).clamp(0, 1439);
+
+  static Future<void> setSlotMinute(int i, int minute) async {
+    await SettingsService.setInt(_slotKeys[i], minute.clamp(0, 1439));
+    changes.value++; // বদলালেই নতুন সময়ে আবার বসে যাবে
+  }
+
+  static Timer? _rearmTimer;
+  static bool _listening = false;
+
+  /// ডাটা (এন্ট্রি / আবশ্যিক খরচ / সেটিংস) বদলালেই নোটিফিকেশন নতুন করে বসানো — যাতে কিস্তি মেটানোর
+  /// সাথে সাথে ওই কিস্তির ওয়ার্নিং বন্ধ হয়, আর সব মিটলে ৩ বেলার ওয়ার্নিংই বন্ধ।
+  static void _listenForChanges() {
+    if (_listening) return;
+    _listening = true;
+    changes.addListener(() {
+      _rearmTimer?.cancel();
+      _rearmTimer = Timer(const Duration(seconds: 2), () {
+        rearmSlots().catchError((_) {});
+      });
+    });
+  }
+
+  static String _tone(int slot) {
+    switch (slot) {
+      case 0:
+        return 'আজ সকাল থেকেই অকারণ খরচ এড়িয়ে চলুন।';
+      case 1:
+        return 'দুপুরের হিসাব: অন্য কাজে টাকা খরচ করার আগে একবার ভাবুন।';
+      default:
+        return 'রাতের হিসাব: আজ আর অকারণ খরচ নয় — আগে এগুলো মেটান।';
+    }
+  }
+
+  /// [items] — [ref] দিনে যেগুলো বাকি; [balance] null হলে (অন্য মাসের স্লট) ব্যালেন্সের লাইন বাদ।
+  static ({String title, String body}) _message(
+      List<CashbookEssential> items, DateTime ref, int slot, double? balance, bool danger) {
+    final total = items.fold<double>(0, (a, e) => a + e.amount);
+    final summary = balance == null
+        ? 'মোট বাকি ${_money(total)} (${bn(items.length)}টা)'
+        : 'মোট বাকি ${_money(total)} (${bn(items.length)}টা) · ক্যাশ ${_money(balance)} → নিরাপদ খরচ ${_money(balance - total)}';
+    final lines = <String>[
+      summary,
+      ...GuardReport.pendingLines(items, ref, max: 8).map((e) => '• $e'),
+      'টাকা হিসাব করে ব্যয় করুন — কিস্তি/আবশ্যিক খরচ আগে মেটান। ${_tone(slot)}',
+    ];
+    final title = danger
+        ? '🚨 আবশ্যিক খরচের টাকাই নেই — অন্য খরচ বন্ধ!'
+        : '📌 ${bn(items.length)}টা আবশ্যিক খরচ বাকি — হিসাব করে ব্যয় করুন';
+    return (title: title, body: lines.join('\n'));
+  }
+
+  /// আজকের বাকি ৩ বেলা + আগামীকালের ৩ বেলার সঠিক-সময়ের (exact alarm) নোটিফিকেশন বসায়।
+  /// বাকি কোনো আবশ্যিক খরচ না থাকলে বা প্রহরী বন্ধ থাকলে সব বাতিল। idempotent — যতবার খুশি ডাকা যায়।
+  static Future<void> rearmSlots() async {
+    if (!enabled) {
+      await CashbookNotificationService.cancelGuardSlots();
+      return;
+    }
     final now = DateTime.now();
-    if (!force && (now.hour < 8 || now.hour >= 22)) return;
+    final r = await assess();
+    if (!r.hasPending) {
+      await CashbookNotificationService.cancelGuardSlots();
+      return;
+    }
+    final all = await CashbookDB.getEssentials();
+    final todayMk = CashbookDB.todayIso().substring(0, 7);
+
+    final msgs = <({DateTime when, String title, String body, bool danger})>[];
+    for (var dayOff = 0; dayOff < 2; dayOff++) {
+      final day = DateTime(now.year, now.month, now.day + dayOff);
+      final mk = '${day.year.toString().padLeft(4, '0')}-${day.month.toString().padLeft(2, '0')}';
+      final sameMonth = mk == todayMk;
+      // অন্য মাসে গেলে: প্রতিমাসের সবগুলোই আবার বাকি — তখনকার ব্যালেন্স জানা নেই, তাই ব্যালেন্সের লাইন নেই।
+      final items = sameMonth ? r.unpaid : (all.where((e) => e.unpaidIn(mk) && e.amount > 0).toList()
+        ..sort((a, b) => (a.dueDay == 0 ? 99 : a.dueDay).compareTo(b.dueDay == 0 ? 99 : b.dueDay)));
+      if (items.isEmpty) continue;
+      for (var i = 0; i < 3; i++) {
+        final m = slotMinute(i);
+        final when = DateTime(day.year, day.month, day.day, m ~/ 60, m % 60);
+        if (!when.isAfter(now)) continue;
+        final danger = sameMonth && r.level == GuardLevel.danger;
+        final msg = _message(items, day, i, sameMonth ? r.balance : null, danger);
+        msgs.add((when: when, title: msg.title, body: msg.body, danger: danger));
+      }
+    }
+    await CashbookNotificationService.scheduleGuardSlots(msgs);
+  }
+
+  /// অ্যাপ চালু / রিজিউম / ব্যাকগ্রাউন্ড টাস্ক / সেভের পর ডাকা হয়: ৩ বেলার নোটিফিকেশন ঠিকঠাক বসিয়ে রাখে।
+  /// [force] = সেটিংসের "পরীক্ষা" বাটন — এখনই একটা নোটিফিকেশন দেখায়।
+  static Future<void> nudgeIfNeeded({bool force = false}) async {
+    _listenForChanges();
+    try {
+      await rearmSlots();
+    } catch (e) {
+      debugPrint('SpendingGuard rearm failed: $e');
+    }
+    if (!force) return;
 
     final r = await assess();
-    if (r.level == GuardLevel.ok && !force) return;
-
-    final last = SettingsService.getInt('guard_last_nudge_ms', defaultValue: 0);
-    final interval = (r.level == GuardLevel.danger ? (nagMinutes ~/ 2).clamp(30, 600) : nagMinutes) * 60000;
-    if (!force && now.millisecondsSinceEpoch - last < interval) return;
-
+    if (!r.hasPending) {
+      await CashbookNotificationService.showGuardNudge(
+        title: '✅ খরচ-প্রহরী পরীক্ষা: কোনো আবশ্যিক খরচ বাকি নেই',
+        body: r.essentialsLine,
+        danger: false,
+      );
+      return;
+    }
+    final msg = _message(r.unpaid, DateTime.now(), 1, r.balance, r.level == GuardLevel.danger);
     await CashbookNotificationService.showGuardNudge(
-      title: r.level == GuardLevel.ok ? '✅ খরচ-প্রহরী পরীক্ষা: সব ঠিক আছে' : r.headline,
-      body: r.notificationBody,
+      title: msg.title,
+      body: msg.body,
       danger: r.level == GuardLevel.danger,
     );
-    await SettingsService.setInt('guard_last_nudge_ms', now.millisecondsSinceEpoch);
   }
 }
