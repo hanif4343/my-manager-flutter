@@ -5,6 +5,7 @@ import '../../services/settings_service.dart';
 import 'engine/bdgovtjob_source.dart';
 import 'engine/bn_util.dart';
 import 'engine/match_engine.dart';
+import 'engine/merge_items.dart';
 import 'engine/teletalk_radar.dart';
 import 'engine/teletalk_source.dart';
 import 'radar_models.dart';
@@ -66,17 +67,21 @@ class RadarRunner {
   static Future<RadarRunSummary?> runIfDue() async {
     await RadarService.reload();
     if (isDue()) return run(report: true);
-    // রিপোর্টের সময় আসার আগেই দিনের প্রথম খোঁজটা চুপচাপ সেরে রাখি — যাতে রাতের নোটিফিকেশনে
-    // আজকের তাজা তথ্য থাকে, আর অ্যান্ড্রয়েড ব্যাকগ্রাউন্ড কাজ দেরি করলেও নোটিফিকেশন আটকায় না।
-    if (RadarService.dailyOn && DateTime.now().hour >= 6 && _loadState()['lastRun'] != _today()) {
-      return run();
+    // দিনের বেলা প্রতি ~৪ ঘণ্টায় চুপচাপ একবার খুঁজি: (১) নতুন যোগ্য সার্কুলার/বাড়ানো শেষ তারিখ এলে সাথে সাথে
+    // জানাতে, (২) রাতের নোটিফিকেশনে যেন তাজা তথ্য থাকে। রাত ১১টা থেকে ভোর ৬টা পর্যন্ত খুঁজি না।
+    final h = DateTime.now().hour;
+    if ((RadarService.dailyOn || RadarService.instantOn) && h >= 6 && h < 23) {
+      final lastAt = (_loadState()['lastRunAt'] as num?)?.toInt() ?? 0;
+      if (DateTime.now().millisecondsSinceEpoch - lastAt >= 4 * 3600 * 1000) {
+        return run(alertNew: true);
+      }
     }
     await rearmDaily(); // নির্ধারিত সময়ের অ্যালার্ম ঠিকঠাক বসে আছে কি না — নিশ্চিত করি
     return null;
   }
 
   /// এখনই চালায়। [report] সত্য হলে রাতের নোটিফিকেশন দেয় ও "আজকের রিপোর্ট হয়ে গেছে" চিহ্নিত করে।
-  static Future<RadarRunSummary> run({bool report = false}) async {
+  static Future<RadarRunSummary> run({bool report = false, bool alertNew = false}) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final running = SettingsService.getInt(_kRunning);
     if (running != 0 && now - running < 10 * 60 * 1000) {
@@ -84,13 +89,13 @@ class RadarRunner {
     }
     await SettingsService.setInt(_kRunning, now);
     try {
-      return await _run(report);
+      return await _run(report, alertNew);
     } finally {
       await SettingsService.setInt(_kRunning, 0);
     }
   }
 
-  static Future<RadarRunSummary> _run(bool report) async {
+  static Future<RadarRunSummary> _run(bool report, bool alertNew) async {
     final profile = RadarService.profile();
     final state = _loadState();
     final items = Map<String, dynamic>.from((state['items'] as Map?) ?? {});
@@ -187,6 +192,11 @@ class RadarRunner {
       if (ri.daysLeft != null && ri.daysLeft! < 0) continue;
       feedItems.add(ri);
     }
+    // একই সার্কুলার দুই উৎসে থাকলে এক কার্ড
+    final merged = mergeDuplicates(feedItems);
+    feedItems
+      ..clear()
+      ..addAll(merged);
     feedItems.sort((a, b) => (a.daysLeft ?? 999).compareTo(b.daysLeft ?? 999));
 
     final reported = ((state['reported'] as List?) ?? const []).map((e) => e.toString()).toSet();
@@ -197,6 +207,8 @@ class RadarRunner {
 
     state['items'] = items;
     state['lastRun'] = _today();
+    state['lastRunAt'] = nowMs;
+    await _instantAlerts(state, feedItems, notify: alertNew && !report && RadarService.instantOn);
     if (report) {
       await _notify(feed);
       state['lastReport'] = _today();
@@ -276,6 +288,100 @@ class RadarRunner {
   static Future<void> _notify(RadarFeed feed) async {
     final m = _compose(feed.items, feed.newUrls.toSet(), DateTime.now());
     await NotificationService.showRadarReport(m.head, m.short, m.big);
+  }
+
+  // ── নতুন সার্কুলার / বাড়ানো শেষ তারিখ: সাথে সাথে জানানো ──
+
+  static Set<String> _keysOf(RadarItem i) => {i.url, ...i.altUrls};
+
+  /// state-এ "জানা আছে" তালিকা হালনাগাদ করে; [notify] সত্য হলে নতুন/সময়-বাড়ানোগুলো এখনই জানায়।
+  /// একেবারে প্রথমবার (তালিকা ছিল না) শুধু তালিকা বানায়, জানায় না — যাতে পুরনো সব একসাথে হুড়মুড় করে না আসে।
+  static Future<void> _instantAlerts(Map<String, dynamic> state, List<RadarItem> feed, {required bool notify}) async {
+    final seeded = state.containsKey('alerted');
+    final known = <String>{
+      ...((state['alerted'] as List?) ?? const []).map((e) => e.toString()),
+      ...((state['reported'] as List?) ?? const []).map((e) => e.toString()),
+    };
+    final dlMap = Map<String, dynamic>.from((state['dl'] as Map?) ?? {});
+    final hidden = RadarService.dismissed();
+
+    final fresh = <RadarItem>[];
+    final extended = <RadarItem>[];
+    for (final i in feed) {
+      if (hidden.contains(i.url)) continue;
+      final isKnown = _keysOf(i).any(known.contains);
+      if (!isKnown) {
+        fresh.add(i);
+      } else if (i.deadline != null) {
+        final old = _keysOf(i).map((k) => dlMap[k]).whereType<String>().fold<String?>(null, (p, e) => p ?? e);
+        if (old != null && Reminder.ymd(i.deadline!).compareTo(old) > 0) extended.add(i);
+      }
+    }
+
+    if (seeded && notify && (fresh.isNotEmpty || extended.isNotEmpty)) {
+      try {
+        final m = _composeInstant(fresh, extended);
+        await NotificationService.showRadarNew(m.title, m.short, m.big);
+      } catch (_) {}
+    }
+
+    // জানা-তালিকা ও তারিখ হালনাগাদ (ছোট রাখি)
+    for (final i in feed) {
+      known.addAll(_keysOf(i));
+      if (i.deadline != null) {
+        final ymd = Reminder.ymd(i.deadline!);
+        for (final k in _keysOf(i)) {
+          dlMap[k] = ymd;
+        }
+      }
+    }
+    final knownList = known.toList();
+    state['alerted'] = knownList.length > 400 ? knownList.sublist(knownList.length - 400) : knownList;
+    final liveKeys = feed.expand(_keysOf).toSet();
+    dlMap.removeWhere((k, _) => !liveKeys.contains(k));
+    state['dl'] = dlMap;
+  }
+
+  static ({String title, String short, String big}) _composeInstant(List<RadarItem> fresh, List<RadarItem> extended) {
+    String line(RadarItem i) {
+      final dl = i.daysLeft;
+      final vac = i.totalVacancy == null ? 'পদসংখ্যা জানা নেই' : '${toBnStr(i.totalVacancy)}টি পদ';
+      final when = i.deadline == null
+          ? ''
+          : ' · শেষ ${fmtDateBn(i.deadline!)}${dl == null ? '' : (dl == 0 ? ' (আজই!)' : ' (আর ${toBnStr(dl)} দিন)')}';
+      final posts = i.posts.take(2).map((p) => p.title).join(', ');
+      final name = i.org.isNotEmpty ? i.org : i.title;
+      final mark = i.verdict == 'ok' ? '🟢' : '🟡';
+      return '$mark $name\n    $vac$when${posts.isEmpty ? '' : '\n    পদ: $posts'}';
+    }
+
+    final lines = <String>[
+      ...fresh.take(5).map(line),
+      if (fresh.length > 5) '… আরও ${toBnStr(fresh.length - 5)}টি — অ্যাপে দেখো',
+      ...extended.take(4).map((i) => '⏳ সময় বেড়েছে: ${i.org.isNotEmpty ? i.org : i.title}\n    নতুন শেষ তারিখ ${fmtDateBn(i.deadline!)}'),
+    ];
+    String title;
+    String short;
+    if (fresh.isNotEmpty) {
+      final f = fresh.first;
+      final name = f.org.isNotEmpty ? f.org : f.title;
+      var total = 0;
+      for (final i in fresh) {
+        total += i.totalVacancy ?? 0;
+      }
+      title = fresh.length == 1 ? '🆕 নতুন সার্কুলার: $name' : '🆕 ${toBnStr(fresh.length)}টি নতুন সার্কুলার';
+      short = [
+        if (total > 0) 'মোট ${toBnStr(total)}টি পদ',
+        if (extended.isNotEmpty) '⏳ ${toBnStr(extended.length)}টির সময় বেড়েছে',
+        if (fresh.length == 1 && f.deadline != null) 'শেষ ${fmtDateBn(f.deadline!)}',
+      ].join(' · ');
+      if (short.isEmpty) short = 'বিস্তারিত অ্যাপে দেখো';
+    } else {
+      final e = extended.first;
+      title = '⏳ আবেদনের সময় বেড়েছে: ${e.org.isNotEmpty ? e.org : e.title}';
+      short = 'নতুন শেষ তারিখ ${fmtDateBn(e.deadline!)}';
+    }
+    return (title: title, short: short, big: lines.join('\n'));
   }
 
   /// আগামী ৩ রাতের রিপোর্ট নির্ধারিত সময়ে (exact alarm) বসায় — অ্যাপ বন্ধ থাকলেও, ব্যাকগ্রাউন্ড টাস্ক

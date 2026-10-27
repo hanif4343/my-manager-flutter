@@ -199,6 +199,21 @@ class NotificationService {
         payload: 'job_radar');
   }
 
+  /// নতুন সার্কুলার/বাড়ানো শেষ তারিখ — সাথে সাথে জানানো (একই আইডি: একাধিক হলে একটাই নোটিফিকেশনে জমে)।
+  static Future<void> showRadarNew(String title, String body, String bigText) async {
+    await init();
+    final d = AndroidNotificationDetails(
+      'radar_new_channel',
+      'Job Radar (নতুন সার্কুলার)',
+      channelDescription: 'যোগ্য নতুন সরকারি চাকরির সার্কুলার এলেই সাথে সাথে',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+      styleInformation: BigTextStyleInformation(bigText, contentTitle: title, summaryText: body),
+    );
+    await _plugin.show(9110, title, body, NotificationDetails(android: d), payload: 'job_radar');
+  }
+
   static Future<void> cancelRadarAlarms() async {
     await init();
     for (var i = 0; i < _radarAlarmCount; i++) {

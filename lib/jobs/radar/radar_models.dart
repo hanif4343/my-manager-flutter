@@ -53,7 +53,8 @@ class RadarItem {
   final List<RadarPost> posts;
   final DateTime? published; // আবেদন শুরুর তারিখ (জানা থাকলে — Teletalk)
   final String adNo; // বিজ্ঞপ্তি নং (জানা থাকলে)
-  final String source; // teletalk | web
+  final String source; // teletalk | web | merged (একাধিক উৎস মেলানো)
+  final List<String> altUrls; // একই সার্কুলারের অন্য উৎসের লিংক
 
   const RadarItem({
     required this.url,
@@ -67,6 +68,7 @@ class RadarItem {
     this.published,
     this.adNo = '',
     this.source = 'web',
+    this.altUrls = const [],
   });
 
   factory RadarItem.fromMap(Map<String, dynamic> m) {
@@ -87,6 +89,7 @@ class RadarItem {
           : null,
       adNo: (m['adNo'] as String?) ?? '',
       source: (m['source'] as String?) ?? 'web',
+      altUrls: ((m['alt'] as List?) ?? const []).map((e) => e.toString()).toList(),
     );
   }
 
@@ -102,6 +105,7 @@ class RadarItem {
         'published': published == null ? null : Reminder.ymd(published!),
         'adNo': adNo,
         'source': source,
+        'alt': altUrls,
       };
 
   /// সব পদ মিলিয়ে মোট পদসংখ্যা — কোনো পদেরই সংখ্যা জানা না থাকলে null।

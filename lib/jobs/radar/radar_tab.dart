@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../reminder/models/reminder.dart' show bn, Reminder;
 import '../../widgets/app_theme.dart';
@@ -386,6 +387,7 @@ class _RadarTabState extends State<RadarTab> {
                       _chip(ok ? '🟢 সম্ভাব্য যোগ্য' : '🟡 যাচাই বাকি', ok ? AppTheme.green : AppTheme.yellow),
                       if (isNew) _chip('🆕 নতুন', AppTheme.accent),
                       if (it.source == 'teletalk') _chip('Teletalk', AppTheme.textSecondary),
+                      if (it.source == 'merged') _chip('✅ ${bn(1 + it.altUrls.length)}টি সূত্রে মেলানো', AppTheme.green),
                       if (it.notStartedYet) _chip('⏰ শুরু ${_dateShort(it.published!)}', AppTheme.yellow),
                     ]),
                     const SizedBox(height: 8),
@@ -487,6 +489,14 @@ class _RadarTabState extends State<RadarTab> {
                         },
                         child: const Text('🔗 বিস্তারিত'),
                       ),
+                      if (it.altUrls.isNotEmpty)
+                        TextButton(
+                          onPressed: () async {
+                            final ok = await AppLauncher.openUrl(it.altUrls.first);
+                            if (!ok) _snack('লিংক খোলা যায়নি');
+                          },
+                          child: const Text('🔗 অন্য সূত্র'),
+                        ),
                       TextButton(
                         onPressed: () => setState(() => expanded ? _expanded.remove(it.url) : _expanded.add(it.url)),
                         child: Text(expanded ? 'কম দেখাও' : '🔍 যাচাই দেখো'),
@@ -531,7 +541,32 @@ class _RadarTabState extends State<RadarTab> {
     var edu = RadarService.eduLevel;
     if (!RadarService.eduLevels.containsKey(edu)) edu = 'degree_pass';
     var daily = RadarService.dailyOn;
+    var instant = RadarService.instantOn;
     var time = RadarService.reportTime;
+    final inc = List<String>.from(RadarService.includeTerms);
+    final exc = List<String>.from(RadarService.excludeTerms);
+    final incCtrl = TextEditingController();
+    final excCtrl = TextEditingController();
+
+    void addTerm(List<String> list, TextEditingController c, void Function(void Function()) setS) {
+      final t = c.text.trim();
+      if (t.isEmpty) return;
+      if (!list.any((e) => e.toLowerCase() == t.toLowerCase())) setS(() => list.add(t));
+      c.clear();
+    }
+
+    Widget termChips(List<String> list, void Function(void Function()) setS, {bool lockLast = false}) => Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            for (final t in list)
+              InputChip(
+                label: Text(t, style: const TextStyle(fontSize: 12.5)),
+                visualDensity: VisualDensity.compact,
+                onDeleted: (lockLast && list.length <= 1) ? null : () => setS(() => list.remove(t)),
+              ),
+          ],
+        );
 
     InputDecoration deco(String label, {String? hint}) => InputDecoration(
           labelText: label,
@@ -547,7 +582,10 @@ class _RadarTabState extends State<RadarTab> {
           RadarService.kTypBn: _num(typBn.text, 20).toString(),
           RadarService.kTypEn: _num(typEn.text, 20).toString(),
           RadarService.kDaily: daily ? '1' : '0',
+          RadarService.kInstant: instant ? '1' : '0',
           RadarService.kReportTime: time,
+          RadarService.kKwInclude: jsonEncode(inc),
+          RadarService.kKwExclude: jsonEncode(exc),
         });
 
     await showModalBottomSheet<void>(
@@ -601,7 +639,17 @@ class _RadarTabState extends State<RadarTab> {
                   if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('নোটিফিকেশন পাঠানো হয়েছে')));
                 },
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 10),
+              Text('নতুন সার্কুলার', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w700)),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('নতুন সার্কুলার এলেই সাথে সাথে জানাও', style: TextStyle(color: AppTheme.textPrimary)),
+                subtitle: Text('দিনে কয়েকবার চুপচাপ খুঁজে নতুন সার্কুলার বা বাড়ানো শেষ তারিখ পেলে আলাদা নোটিফিকেশন (রাত ১১টা–ভোর ৬টা বাদে)',
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                value: instant,
+                onChanged: (v) => setS(() => instant = v),
+              ),
+              const SizedBox(height: 14),
               Text('তোমার যোগ্যতা', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               OutlinedButton(
@@ -647,6 +695,59 @@ class _RadarTabState extends State<RadarTab> {
                 ),
               ]),
               const SizedBox(height: 18),
+              Text('কোন পদ খুঁজবে', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text('পদের নামে এই শব্দগুলোর কোনোটা থাকলে সার্কুলার ধরা হবে। নিজের পছন্দের পদ যোগ করো, অপ্রয়োজনীয়টা মুছে দাও।',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5, height: 1.4)),
+              const SizedBox(height: 8),
+              termChips(inc, setS, lockLast: true),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: incCtrl,
+                    decoration: deco('নতুন পদ যোগ করো', hint: 'যেমন: অফিস সহায়ক, ক্যাশিয়ার'),
+                    onSubmitted: (_) => addTerm(inc, incCtrl, setS),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.add_circle, color: AppTheme.accent),
+                  onPressed: () => addTerm(inc, incCtrl, setS),
+                ),
+              ]),
+              const SizedBox(height: 14),
+              Text('যে শব্দ থাকলে বাদ দেবে', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              termChips(exc, setS),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: excCtrl,
+                    decoration: deco('বাদ দেওয়ার শব্দ যোগ করো'),
+                    onSubmitted: (_) => addTerm(exc, excCtrl, setS),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.add_circle, color: AppTheme.accent),
+                  onPressed: () => addTerm(exc, excCtrl, setS),
+                ),
+              ]),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () => setS(() {
+                    inc
+                      ..clear()
+                      ..addAll(RadarService.defaultInclude);
+                    exc
+                      ..clear()
+                      ..addAll(RadarService.defaultExclude);
+                  }),
+                  child: const Text('পদের তালিকা ডিফল্টে ফেরাও'),
+                ),
+              ),
+              const SizedBox(height: 14),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
@@ -664,7 +765,7 @@ class _RadarTabState extends State<RadarTab> {
       }),
     );
 
-    for (final c in [subject, typBn, typEn]) {
+    for (final c in [subject, typBn, typEn, incCtrl, excCtrl]) {
       c.dispose();
     }
     if (mounted) setState(() {});

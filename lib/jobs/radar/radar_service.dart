@@ -17,11 +17,14 @@ class RadarService {
   static const kTypEn = 'radar_typ_en';
   static const kDaily = 'radar_daily_on'; // '1' / '0'
   static const kReportTime = 'radar_report_time'; // 'HH:mm'
+  static const kInstant = 'radar_instant_on'; // নতুন যোগ্য সার্কুলার এলেই জানানো '1' / '0'
+  static const kKwInclude = 'radar_kw_include'; // JSON তালিকা — যে পদগুলো খুঁজবে
+  static const kKwExclude = 'radar_kw_exclude'; // JSON তালিকা — যেগুলো বাদ
   static const _kCache = 'radar_cache';
   static const _kDismissed = 'radar_dismissed';
 
   /// ব্যাকআপে যাবে এমন কী।
-  static const backupKeys = [kDob, kEdu, kSubject, kTypBn, kTypEn, kDaily, kReportTime];
+  static const backupKeys = [kDob, kEdu, kSubject, kTypBn, kTypEn, kDaily, kReportTime, kInstant, kKwInclude, kKwExclude];
 
   static const eduLevels = <String, String>{
     'ssc': 'এসএসসি / সমমান',
@@ -45,20 +48,48 @@ class RadarService {
   static int get reportHour => int.tryParse(reportTime.split(':').first) ?? 21;
   static int get reportMinute => int.tryParse(reportTime.split(':').last) ?? 0;
 
-  static const _keywords = [
-    r'কম্পিউটার\s*অপারেটর',
-    r'কম্পিউটার\s*মুদ্রাক্ষরিক',
-    r'ডাটা\s*এন্ট্রি',
-    r'ডেটা\s*এন্ট্রি',
-    r'ডাটা\s*অপারেটর',
-    r'ডেটা\s*অপারেটর',
-    r'অফিস\s*সহায়ক\s*[-–]?\s*কাম',
-    r'computer\s*operator',
-    r'data\s*entry',
-    r'computer\s*typist',
+  // ── নতুন সার্কুলার এলেই জানানো ──
+  static bool get instantOn => SettingsService.getString(kInstant, defaultValue: '1') != '0';
+
+  // ── খোঁজার পদ (নিজে বদলানো যায়) ──
+  // সাধারণ শব্দ/বাক্যাংশ হিসেবে রাখা হয়; ইঞ্জিনের জন্য নিচে regex-এ রূপান্তর হয়।
+  static const defaultInclude = <String>[
+    'কম্পিউটার অপারেটর',
+    'কম্পিউটার মুদ্রাক্ষরিক',
+    'ডাটা এন্ট্রি',
+    'ডেটা এন্ট্রি',
+    'ডাটা অপারেটর',
+    'ডেটা অপারেটর',
+    'অফিস সহায়ক কাম',
+    'computer operator',
+    'data entry',
+    'computer typist',
   ];
-  static const _exclude = ['সাঁট', 'সীট', 'শর্টহ্যান্ড', 'stenograph', 'stenotyp', 'shorthand'];
-  static List<String> get keywords => _keywords;
+  static const defaultExclude = <String>['সাঁট', 'সীট', 'শর্টহ্যান্ড', 'stenograph', 'stenotyp', 'shorthand'];
+
+  static List<String> _terms(String key, List<String> fallback) {
+    final raw = SettingsService.getString(key);
+    if (raw.isEmpty) return fallback;
+    try {
+      final l = (jsonDecode(raw) as List).map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+      return l.isEmpty ? fallback : l;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  static List<String> get includeTerms => _terms(kKwInclude, defaultInclude);
+  static List<String> get excludeTerms => _terms(kKwExclude, defaultExclude);
+
+  /// "কম্পিউটার অপারেটর" → regex (শব্দের মাঝে ফাঁক/হাইফেন যাই থাকুক মেলে)।
+  static String termToPattern(String term) => term
+      .trim()
+      .split(RegExp(r'[\s\-–]+'))
+      .where((t) => t.isNotEmpty)
+      .map(RegExp.escape)
+      .join(r'[\s\-–]*');
+
+  static List<String> get keywords => includeTerms.map(termToPattern).toList();
 
   /// ইঞ্জিনের জন্য প্রোফাইল অবজেক্ট।
   static RadarProfile profile() {
@@ -71,8 +102,8 @@ class RadarService {
       subject: subject,
       typingBn: typingBn,
       typingEn: typingEn,
-      targetKeywords: _keywords,
-      excludeKeywords: _exclude,
+      targetKeywords: keywords,
+      excludeKeywords: excludeTerms.map(termToPattern).toList(),
     );
   }
 

@@ -52,7 +52,7 @@ class _TodayScreenState extends State<TodayScreen> {
   (String, int) _route(TodayTarget t) {
     switch (t) {
       case TodayTarget.reminders: return ('রিমাইন্ডার', 0);
-      case TodayTarget.jobs: return ('চাকরি হাব', 1);
+      case TodayTarget.jobs: return ('চাকরি হাব', 2); // ট্যাব: ০ রাডার · ১ ওভারভিউ · ২ সার্কুলার
       case TodayTarget.familyBills: return ('পরিবার', 3);
       case TodayTarget.familyDates: return ('পরিবার', 2);
       case TodayTarget.cashbook: return ('ক্যাশবুক', 0);

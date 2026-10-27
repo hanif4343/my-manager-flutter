@@ -131,22 +131,23 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
           indicatorColor: AppTheme.accent,
           labelColor: AppTheme.accent,
           unselectedLabelColor: AppTheme.textMuted,
-          tabs: const [Tab(text: 'ওভারভিউ'), Tab(text: 'সার্কুলার'), Tab(text: 'ডকুমেন্ট'), Tab(text: 'রাডার')],
+          tabs: const [Tab(text: 'রাডার'), Tab(text: 'ওভারভিউ'), Tab(text: 'সার্কুলার'), Tab(text: 'ডকুমেন্ট')],
         ),
       ),
-      floatingActionButton: (_tab.index == 0 || _tab.index == 3)
+      // ট্যাব: ০ রাডার · ১ ওভারভিউ · ২ সার্কুলার · ৩ ডকুমেন্ট (রাডার সবার আগে)
+      floatingActionButton: (_tab.index == 0 || _tab.index == 1)
           ? null
           : FloatingActionButton(
               backgroundColor: AppTheme.accent,
               foregroundColor: Colors.white,
-              onPressed: _tab.index == 1 ? () => _circularSheet() : _addDoc,
+              onPressed: _tab.index == 2 ? () => _circularSheet() : _addDoc,
               child: const Icon(Icons.add),
             ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
           : TabBarView(
               controller: _tab,
-              children: [_overview(), _circularTab(), _docTab(), RadarTab(onSaved: _load)],
+              children: [RadarTab(onSaved: _load), _overview(), _circularTab(), _docTab()],
             ),
     );
   }
@@ -188,7 +189,7 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
         for (final c in urgent) _urgentTile(c),
       ] else
         _card(
-          onTap: () { _tab.animateTo(1); },
+          onTap: () { _tab.animateTo(2); },
           child: Row(children: [
             Icon(Icons.campaign_outlined, color: AppTheme.textMuted),
             const SizedBox(width: 10),
@@ -198,7 +199,7 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
         ),
       _sectionTitle('ডকুমেন্ট প্রস্তুতি'),
       _card(
-        onTap: () { _tab.animateTo(2); },
+        onTap: () { _tab.animateTo(3); },
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Text('${bn(docsDone)}/${bn(_docs.length)} টা প্রস্তুত',
@@ -458,7 +459,7 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
   Widget _urgentTile(Circular c) {
     final d = c.daysLeft ?? 0;
     return _card(
-      onTap: () { _tab.animateTo(1); },
+      onTap: () { _tab.animateTo(2); },
       child: Row(children: [
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
