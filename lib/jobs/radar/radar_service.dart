@@ -167,6 +167,7 @@ class RadarService {
         if (c.s != 'ok') note.write('\n${c.icon} ${p.title}: ${c.msg}');
       }
     }
+    if (it.totalVacancy != null) note.write('\nমোট পদ: ${it.totalVacancy}টি');
     if (it.method.isNotEmpty) note.write('\nআবেদন: ${it.method}');
     note.write('\n(স্বয়ংক্রিয় যাচাই — মূল বিজ্ঞপ্তি দেখে নিশ্চিত হও)');
     return Circular(

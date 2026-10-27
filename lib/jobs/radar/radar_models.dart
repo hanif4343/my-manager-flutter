@@ -51,6 +51,9 @@ class RadarItem {
   final String method;
   final String fee;
   final List<RadarPost> posts;
+  final DateTime? published; // আবেদন শুরুর তারিখ (জানা থাকলে — Teletalk)
+  final String adNo; // বিজ্ঞপ্তি নং (জানা থাকলে)
+  final String source; // teletalk | web
 
   const RadarItem({
     required this.url,
@@ -61,6 +64,9 @@ class RadarItem {
     this.method = '',
     this.fee = '',
     this.posts = const [],
+    this.published,
+    this.adNo = '',
+    this.source = 'web',
   });
 
   factory RadarItem.fromMap(Map<String, dynamic> m) {
@@ -76,6 +82,11 @@ class RadarItem {
       posts: ((m['posts'] as List?) ?? const [])
           .map((e) => RadarPost.fromMap(Map<String, dynamic>.from(e as Map)))
           .toList(),
+      published: (m['published'] is String && (m['published'] as String).length >= 10)
+          ? Reminder.parseYmd((m['published'] as String).substring(0, 10))
+          : null,
+      adNo: (m['adNo'] as String?) ?? '',
+      source: (m['source'] as String?) ?? 'web',
     );
   }
 
@@ -88,7 +99,43 @@ class RadarItem {
         'method': method,
         'fee': fee,
         'posts': posts.map((p) => p.toMap()).toList(),
+        'published': published == null ? null : Reminder.ymd(published!),
+        'adNo': adNo,
+        'source': source,
       };
+
+  /// সব পদ মিলিয়ে মোট পদসংখ্যা — কোনো পদেরই সংখ্যা জানা না থাকলে null।
+  int? get totalVacancy {
+    var sum = 0;
+    var any = false;
+    for (final p in posts) {
+      if (p.count != null) {
+        sum += p.count!;
+        any = true;
+      }
+    }
+    return any ? sum : null;
+  }
+
+  /// কতগুলো পদের সংখ্যা জানা নেই (কার্ডে অজানা দেখাতে)।
+  int get unknownCountPosts => posts.where((p) => p.count == null).length;
+
+  /// ধরা পড়া বয়সের যাচাই বার্তা (থাকলে) — কার্ডের সারাংশে দেখানোর জন্য।
+  RadarCheck? get ageCheck {
+    for (final p in posts) {
+      for (final c in p.checks) {
+        if (c.key == 'age') return c;
+      }
+    }
+    return null;
+  }
+
+  /// [ref] দিনের হিসাবে বাকি দিন (নোটিফিকেশন আগামী দিনের জন্য বানাতে)।
+  int? daysLeftAt(DateTime ref) =>
+      deadline == null ? null : dateOnly(deadline!).difference(dateOnly(ref)).inDays;
+
+  /// আবেদন এখনো শুরু হয়নি?
+  bool get notStartedYet => published != null && dateOnly(published!).isAfter(dateOnly(DateTime.now()));
 
   /// আজকের হিসাবে বাকি দিন (সংরক্ষিত সংখ্যা পুরনো হয়ে যায়, তাই প্রতিবার নিজে হিসাব)।
   int? get daysLeft =>

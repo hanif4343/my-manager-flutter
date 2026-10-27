@@ -65,8 +65,14 @@ class RadarRunner {
   /// সময় হলে চালিয়ে নোটিফিকেশন দেয়। ব্যাকগ্রাউন্ড টাস্ক ও অ্যাপ চালু — দুই জায়গা থেকেই ডাকা হয়।
   static Future<RadarRunSummary?> runIfDue() async {
     await RadarService.reload();
-    if (!isDue()) return null;
-    return run(report: true);
+    if (isDue()) return run(report: true);
+    // রিপোর্টের সময় আসার আগেই দিনের প্রথম খোঁজটা চুপচাপ সেরে রাখি — যাতে রাতের নোটিফিকেশনে
+    // আজকের তাজা তথ্য থাকে, আর অ্যান্ড্রয়েড ব্যাকগ্রাউন্ড কাজ দেরি করলেও নোটিফিকেশন আটকায় না।
+    if (RadarService.dailyOn && DateTime.now().hour >= 6 && _loadState()['lastRun'] != _today()) {
+      return run();
+    }
+    await rearmDaily(); // নির্ধারিত সময়ের অ্যালার্ম ঠিকঠাক বসে আছে কি না — নিশ্চিত করি
+    return null;
   }
 
   /// এখনই চালায়। [report] সত্য হলে রাতের নোটিফিকেশন দেয় ও "আজকের রিপোর্ট হয়ে গেছে" চিহ্নিত করে।
@@ -190,41 +196,118 @@ class RadarRunner {
     await RadarService.saveFeed(feed);
 
     state['items'] = items;
+    state['lastRun'] = _today();
     if (report) {
       await _notify(feed);
       state['lastReport'] = _today();
-      state['reported'] = feedItems.map((i) => i.url).toList(); // এখনকার সবই "জানানো" হলো
+      state['reported'] = feedItems.map((i) => i.url).toList(); // এখনকার সবই \"জানানো\" হলো
     }
     await SettingsService.setString(_kState, jsonEncode(state));
+    // এই ফলাফল নিয়ে আগামী কয়েক রাতের নোটিফিকেশন নির্ধারিত সময়ে বসিয়ে রাখি।
+    try {
+      await rearmDaily();
+    } catch (_) {}
 
     final ok = feedItems.where((i) => i.verdict == 'ok').length;
     return RadarRunSummary(total: feedItems.length, ok: ok, warn: feedItems.length - ok, fresh: fresh.length);
   }
 
-  // ── রাতের নোটিফিকেশন: একটাই, পুরো তালিকাসহ ──
-  static Future<void> _notify(RadarFeed feed) async {
-    final its = feed.items;
+  // ── রাতের নোটিফিকেশন ──
+
+  /// [ref] দিনের হিসাবে বার্তা: শিরোনাম, এক লাইনের সারাংশ, আর পুরো তালিকা।
+  /// মোট পদসংখ্যা, নতুন, দ্রুত-শেষ হওয়া — সব এখানেই।
+  static ({String head, String short, String big}) _compose(
+      List<RadarItem> all, Set<String> fresh, DateTime ref) {
+    // ref দিনে যেগুলো চলমান (মেয়াদ শেষ হয়নি), শেষ তারিখ অনুযায়ী সাজানো
+    final its = all.where((i) => (i.daysLeftAt(ref) ?? 999) >= 0).toList()
+      ..sort((a, b) => (a.daysLeftAt(ref) ?? 999).compareTo(b.daysLeftAt(ref) ?? 999));
     if (its.isEmpty) {
-      await NotificationService.showRadarReport(
-        '📡 আজকের রাডার',
-        'আজ তোমার যোগ্যতার সাথে মেলে এমন চলমান সার্কুলার নেই।',
-        'আজ তোমার যোগ্যতার সাথে মেলে এমন চলমান সার্কুলার নেই। কাল আবার দেখব।',
+      return (
+        head: '📡 আজকের রাডার',
+        short: 'আজ তোমার যোগ্যতার সাথে মেলে এমন চলমান সার্কুলার নেই।',
+        big: 'আজ তোমার যোগ্যতার সাথে মেলে এমন চলমান সার্কুলার নেই। কাল আবার দেখব।',
       );
-      return;
     }
     final ok = its.where((i) => i.verdict == 'ok').length;
     final warn = its.length - ok;
-    final fresh = feed.newUrls.toSet();
-    final head = '📡 আজকের রাডার: ${toBnStr(its.length)}টি সার্কুলার'
-        '${fresh.isNotEmpty ? ' (🆕 ${toBnStr(fresh.length)}টি নতুন)' : ''}';
-    final short = '🟢 ${toBnStr(ok)}টি সম্ভাব্য যোগ্য · 🟡 ${toBnStr(warn)}টি যাচাই বাকি';
-    final lines = <String>[];
-    for (final i in its.take(10)) {
-      final dl = i.daysLeft;
-      final when = dl == null ? '' : (dl == 0 ? ' — আজই শেষ' : ' — আর ${toBnStr(dl)} দিন');
-      lines.add('${fresh.contains(i.url) ? '🆕' : (i.verdict == 'ok' ? '🟢' : '🟡')} ${i.title}$when');
+    var totalPosts = 0;
+    for (final i in its) {
+      totalPosts += i.totalVacancy ?? 0;
     }
-    if (its.length > 10) lines.add('… আরও ${toBnStr(its.length - 10)}টি — অ্যাপে দেখো');
-    await NotificationService.showRadarReport(head, short, '$short\n\n${lines.join('\n')}');
+    final urgent = its.where((i) => (i.daysLeftAt(ref) ?? 999) <= 3).length;
+    final freshN = its.where((i) => fresh.contains(i.url)).length;
+
+    final head = '📡 ${toBnStr(its.length)}টি সার্কুলার'
+        '${totalPosts > 0 ? ' · মোট ${toBnStr(totalPosts)}টি পদ' : ''}'
+        '${freshN > 0 ? ' · 🆕 ${toBnStr(freshN)}টি নতুন' : ''}';
+    final short = [
+      if (urgent > 0) '🔥 ${toBnStr(urgent)}টির শেষ ৩ দিনের মধ্যে',
+      '🟢 ${toBnStr(ok)}টি সম্ভাব্য যোগ্য',
+      if (warn > 0) '🟡 ${toBnStr(warn)}টি যাচাই বাকি',
+    ].join(' · ');
+
+    final lines = <String>[];
+    for (final i in its.take(8)) {
+      final dl = i.daysLeftAt(ref);
+      final when = dl == null ? '' : (dl == 0 ? 'আজই শেষ!' : 'আর ${toBnStr(dl)} দিন');
+      final vac = i.totalVacancy == null ? '' : '${toBnStr(i.totalVacancy)} পদ';
+      final meta = [vac, when].where((e) => e.isNotEmpty).join(' · ');
+      final mark = fresh.contains(i.url) ? '🆕' : (dl != null && dl <= 3 ? '🔥' : (i.verdict == 'ok' ? '🟢' : '🟡'));
+      final name = i.org.isNotEmpty ? i.org : i.title;
+      lines.add('$mark $name${meta.isEmpty ? '' : '\n    $meta'}');
+    }
+    if (its.length > 8) lines.add('… আরও ${toBnStr(its.length - 8)}টি — অ্যাপে দেখো');
+    return (head: head, short: short, big: '$short\n\n${lines.join('\n')}');
+  }
+
+  /// সেটিংসের "পরীক্ষা" বাটন: সর্বশেষ ফলাফল থেকে এখনই একটা নোটিফিকেশন দেখায় (আজকের রিপোর্ট "হয়ে গেছে" ধরে না)।
+  static Future<void> sendTestReport() async {
+    await RadarService.reload();
+    final feed = RadarService.cached();
+    if (feed == null) {
+      await NotificationService.showRadarReport(
+          '📡 রাডার পরীক্ষা', 'এখনো কোনো খোঁজার ফলাফল নেই', 'আগে রিফ্রেশ চেপে একবার খুঁজে নাও।');
+      return;
+    }
+    final m = _compose(feed.items, feed.newUrls.toSet(), DateTime.now());
+    await NotificationService.showRadarReport(m.head, m.short, m.big);
+  }
+
+  static Future<void> _notify(RadarFeed feed) async {
+    final m = _compose(feed.items, feed.newUrls.toSet(), DateTime.now());
+    await NotificationService.showRadarReport(m.head, m.short, m.big);
+  }
+
+  /// আগামী ৩ রাতের রিপোর্ট নির্ধারিত সময়ে (exact alarm) বসায় — অ্যাপ বন্ধ থাকলেও, ব্যাকগ্রাউন্ড টাস্ক
+  /// দেরি করলেও প্রতিদিন নির্দিষ্ট সময়ে নোটিফিকেশন আসবে। বিষয়বস্তু সর্বশেষ খোঁজা ফলাফল থেকে;
+  /// প্রতিটা দিনের \"আর কত দিন\" ওই দিনের হিসাবে। নতুন করে খোঁজা হলে/অ্যাপ খুললে আবার বসে।
+  static Future<void> rearmDaily() async {
+    if (!RadarService.dailyOn) {
+      await NotificationService.cancelRadarAlarms();
+      return;
+    }
+    final now = DateTime.now();
+    final feed = RadarService.cached();
+    final reported = ((_loadState()['reported'] as List?) ?? const []).map((e) => e.toString()).toSet();
+    final msgs = <({DateTime when, String title, String body, String big})>[];
+    for (var d = 0; d < 3; d++) {
+      final day = DateTime(now.year, now.month, now.day + d);
+      final when = DateTime(day.year, day.month, day.day, RadarService.reportHour, RadarService.reportMinute);
+      if (!when.isAfter(now)) continue;
+      if (feed == null) {
+        msgs.add((
+          when: when,
+          title: '📡 আজকের রাডার',
+          body: 'নতুন সরকারি চাকরির সার্কুলার দেখো',
+          big: 'আজকের রাডার প্রস্তুত — অ্যাপ খুলে যোগ্য সার্কুলার ও পদসংখ্যা দেখো।',
+        ));
+        continue;
+      }
+      // আজকের জন্য: এখনো \"জানানো\" হয়নি এমনগুলো = নতুন; পরের দিনগুলোতে নতুন ধরি না
+      final fresh = d == 0 ? feed.items.where((i) => !reported.contains(i.url)).map((i) => i.url).toSet() : <String>{};
+      final m = _compose(feed.items, fresh, day);
+      msgs.add((when: when, title: m.head, body: m.short, big: m.big));
+    }
+    await NotificationService.scheduleRadarAlarms(msgs);
   }
 }

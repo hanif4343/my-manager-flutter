@@ -3,6 +3,7 @@ import '../../reminder/models/reminder.dart' show bn, Reminder;
 import '../../widgets/app_theme.dart';
 import '../services/app_launcher.dart';
 import '../services/job_service.dart';
+import 'engine/bn_util.dart' show monthNamesBn;
 import 'phone_alerts_sheet.dart';
 import 'phone_notif_service.dart';
 import 'radar_models.dart';
@@ -25,13 +26,18 @@ class _RadarTabState extends State<RadarTab> {
   bool _loading = false;
   bool _showHidden = false;
   int _mode = 0; // 0 = আমার জন্য, 1 = সব সরকারি চাকরি (Teletalk)
+  int _filter = 0; // 0 সব · 1 সম্ভাব্য যোগ্য · 2 ৭ দিনে শেষ · 3 নতুন
+  int _sort = 0; // 0 শেষ তারিখ আগে · 1 বেশি পদ আগে
   String? _error;
   Set<String> _saved = {};
+  Set<String> _hidden = {}; // একবারই পড়ি — কার্ড বানানোর সময় প্রতিবার JSON ডিকোড করলে ধীর হতো
+  final Set<String> _expanded = {}; // যাচাইয়ের বিস্তারিত খোলা কার্ড
 
   @override
   void initState() {
     super.initState();
     _feed = RadarService.cached();
+    _hidden = RadarService.dismissed();
     _init();
   }
 
@@ -94,30 +100,58 @@ class _RadarTabState extends State<RadarTab> {
 
   // ───────────────────────── বিল্ড ─────────────────────────
 
+  String _dateShort(DateTime d) {
+    final y = d.year != DateTime.now().year ? ' ${bn(d.year)}' : '';
+    return '${bn(d.day)} ${monthNamesBn[d.month]}$y';
+  }
+
+  List<RadarItem> _visible(List<RadarItem> all) {
+    var list = _showHidden ? all : all.where((i) => !_hidden.contains(i.url)).toList();
+    final fresh = _feed?.newUrls.toSet() ?? <String>{};
+    switch (_filter) {
+      case 1:
+        list = list.where((i) => i.verdict == 'ok').toList();
+        break;
+      case 2:
+        list = list.where((i) => i.daysLeft != null && i.daysLeft! <= 7).toList();
+        break;
+      case 3:
+        list = list.where((i) => fresh.contains(i.url)).toList();
+        break;
+    }
+    list = List.of(list);
+    if (_sort == 1) {
+      list.sort((a, b) => (b.totalVacancy ?? -1).compareTo(a.totalVacancy ?? -1));
+    } else {
+      list.sort((a, b) => (a.daysLeft ?? 999).compareTo(b.daysLeft ?? 999));
+    }
+    return list;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hidden = RadarService.dismissed();
     final all = (_feed?.items ?? const <RadarItem>[])
         .where((i) => i.daysLeft == null || i.daysLeft! >= 0)
         .toList();
-    final items = _showHidden ? all : all.where((i) => !hidden.contains(i.url)).toList();
+    final items = _visible(all);
 
     return Column(children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
+        padding: const EdgeInsets.fromLTRB(16, 6, 4, 0),
         child: Row(children: [
           Expanded(
             child: Text(
               _feed?.generatedAt != null
-                  ? 'শেষ খোঁজা: ${_stamp(_feed!.generatedAt!)} · প্রতি রাত ${bn(RadarService.reportHour)}:${bn(RadarService.reportMinute.toString().padLeft(2, '0'))}-এ রিপোর্ট'
+                  ? 'শেষ খোঁজা ${_stamp(_feed!.generatedAt!)}'
+                    '${RadarService.dailyOn ? ' · 🔔 প্রতিদিন ${_timeBn(RadarService.reportHour, RadarService.reportMinute)}' : ' · 🔕 রিপোর্ট বন্ধ'}'
                   : 'রাডার',
               style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
             ),
           ),
-          if (hidden.isNotEmpty)
+          if (_hidden.isNotEmpty)
             TextButton(
               onPressed: () => setState(() => _showHidden = !_showHidden),
-              child: Text(_showHidden ? 'লুকানো বাদ দাও' : 'লুকানো ${bn(hidden.length)}টি'),
+              child: Text(_showHidden ? 'লুকানো বাদ দাও' : 'লুকানো ${bn(_hidden.length)}টি'),
             ),
           IconButton(
             tooltip: 'রিফ্রেশ',
@@ -145,7 +179,7 @@ class _RadarTabState extends State<RadarTab> {
         ]),
       ),
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
         child: Wrap(spacing: 8, children: [
           ChoiceChip(
             label: const Text('🎯 আমার জন্য'),
@@ -168,100 +202,311 @@ class _RadarTabState extends State<RadarTab> {
         Expanded(child: TeletalkBrowse(onSaved: widget.onSaved))
       else
         Expanded(
-        child: _feed == null
-            ? Center(child: Text(_loading ? 'সার্কুলার খোঁজা হচ্ছে…' : 'রিফ্রেশ চাপো', style: TextStyle(color: AppTheme.textMuted)))
-            : RefreshIndicator(
-                onRefresh: _refresh,
-                child: items.isEmpty
-                    ? ListView(children: [
-                        const SizedBox(height: 80),
-                        Icon(Icons.radar, size: 44, color: AppTheme.textMuted),
-                        const SizedBox(height: 12),
-                        Center(
-                          child: Text('এখন তোমার মতো কোনো চলমান সার্কুলার নেই',
-                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
-                        ),
-                      ])
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
-                        children: items.map(_itemCard).toList(),
-                      ),
-              ),
-      ),
+          child: _feed == null
+              ? Center(child: Text(_loading ? 'সার্কুলার খোঁজা হচ্ছে…' : 'রিফ্রেশ চাপো', style: TextStyle(color: AppTheme.textMuted)))
+              : RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
+                    itemCount: items.length + 2, // [০] সারাংশ+ফিল্টার, শেষে ফাঁকা/খালি বার্তা
+                    itemBuilder: (ctx, i) {
+                      if (i == 0) return _header(all);
+                      if (i == items.length + 1) {
+                        return items.isEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.only(top: 40),
+                                child: Column(children: [
+                                  Icon(Icons.radar, size: 44, color: AppTheme.textMuted),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    all.isEmpty
+                                        ? 'এখন তোমার মতো কোনো চলমান সার্কুলার নেই'
+                                        : 'এই ফিল্টারে কিছু নেই — "সব" চাপো',
+                                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+                                  ),
+                                ]),
+                              )
+                            : const SizedBox.shrink();
+                      }
+                      return _itemCard(items[i - 1]);
+                    },
+                  ),
+                ),
+        ),
     ]);
   }
 
+  String _timeBn(int h, int m) {
+    final h12 = h % 12 == 0 ? 12 : h % 12;
+    final part = h < 12 ? 'সকাল' : (h < 16 ? 'দুপুর' : (h < 18 ? 'বিকাল' : 'রাত'));
+    return '$part ${bn(h12)}:${bn(m.toString().padLeft(2, '0'))}';
+  }
+
+  // ── সারাংশ কার্ড + ফিল্টার ──
+  Widget _header(List<RadarItem> all) {
+    final live = all.where((i) => !_hidden.contains(i.url)).toList();
+    var posts = 0;
+    var ok = 0;
+    var soon = 0;
+    for (final i in live) {
+      posts += i.totalVacancy ?? 0;
+      if (i.verdict == 'ok') ok++;
+      if (i.daysLeft != null && i.daysLeft! <= 7) soon++;
+    }
+    final fresh = _feed?.newUrls.toSet() ?? <String>{};
+    final freshN = live.where((i) => fresh.contains(i.url)).length;
+
+    Widget stat(String emoji, String value, String label, Color c) => Expanded(
+          child: Column(children: [
+            Text(emoji, style: const TextStyle(fontSize: 18)),
+            const SizedBox(height: 2),
+            Text(value, style: TextStyle(color: c, fontSize: 20, fontWeight: FontWeight.w800, height: 1.1)),
+            const SizedBox(height: 2),
+            Text(label,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppTheme.textMuted, fontSize: 11, height: 1.2)),
+          ]),
+        );
+
+    Widget fchip(int idx, String label) => ChoiceChip(
+          label: Text(label, style: const TextStyle(fontSize: 12.5)),
+          selected: _filter == idx,
+          visualDensity: VisualDensity.compact,
+          onSelected: (_) => setState(() => _filter = idx),
+        );
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(
+        margin: const EdgeInsets.only(top: 6, bottom: 10),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [AppTheme.accent.withOpacity(0.22), AppTheme.bg2],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppTheme.accent.withOpacity(0.35)),
+        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          stat('📡', bn(live.length), 'সার্কুলার', AppTheme.textPrimary),
+          stat('👥', posts > 0 ? bn(posts) : '—', 'মোট পদ', AppTheme.accent),
+          stat('🟢', bn(ok), 'সম্ভাব্য\nযোগ্য', AppTheme.green),
+          stat('⏳', bn(soon), '৭ দিনে\nশেষ', soon > 0 ? AppTheme.red : AppTheme.textSecondary),
+        ]),
+      ),
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          fchip(0, 'সব'),
+          const SizedBox(width: 6),
+          fchip(1, '🟢 যোগ্য'),
+          const SizedBox(width: 6),
+          fchip(2, '⏳ ৭ দিনে শেষ'),
+          const SizedBox(width: 6),
+          fchip(3, '🆕 নতুন${freshN > 0 ? ' (${bn(freshN)})' : ''}'),
+          const SizedBox(width: 12),
+          ActionChip(
+            avatar: Icon(_sort == 0 ? Icons.event : Icons.groups, size: 16),
+            label: Text(_sort == 0 ? 'শেষ তারিখ আগে' : 'বেশি পদ আগে', style: const TextStyle(fontSize: 12.5)),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => setState(() => _sort = _sort == 0 ? 1 : 0),
+          ),
+        ]),
+      ),
+      const SizedBox(height: 10),
+    ]);
+  }
+
+  // ── একটা সার্কুলারের কার্ড ──
   Widget _itemCard(RadarItem it) {
     final ok = it.verdict == 'ok';
     final dl = it.daysLeft;
     final saved = _saved.contains(it.url);
-    final hidden = RadarService.dismissed().contains(it.url);
-    final accent = ok ? AppTheme.green : AppTheme.yellow;
+    final hidden = _hidden.contains(it.url);
+    final isNew = _feed?.newUrls.contains(it.url) ?? false;
+    final urgency = dl == null ? AppTheme.textMuted : _urgency(dl);
+    final accent = dl != null && dl <= 3 ? AppTheme.red : (ok ? AppTheme.green : AppTheme.yellow);
+    final total = it.totalVacancy;
+    final expanded = _expanded.contains(it.url);
+    final age = it.ageCheck;
+
+    Widget tile(String emoji, String label, String value, String sub, Color vc) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.bg.withOpacity(0.55),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('$emoji $label', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+              const SizedBox(height: 3),
+              Text(value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: vc, fontSize: 15.5, fontWeight: FontWeight.w800)),
+              if (sub.isNotEmpty)
+                Text(sub,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+            ]),
+          ),
+        );
+
+    // সময় কতটা পেরিয়েছে (শুরুর তারিখ জানা থাকলে)
+    double? elapsed;
+    if (it.published != null && it.deadline != null) {
+      final span = it.deadline!.difference(it.published!).inDays;
+      if (span > 0) {
+        elapsed = (DateTime.now().difference(it.published!).inDays / span).clamp(0.0, 1.0);
+      }
+    }
+
     return Opacity(
       opacity: hidden ? 0.5 : 1,
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.only(bottom: 12),
         child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: AppTheme.bg2,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(color: AppTheme.border),
           ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Wrap(spacing: 8, runSpacing: 6, children: [
-              _chip(ok ? '🟢 সম্ভাব্য যোগ্য' : '🟡 যাচাই বাকি', accent),
-              if (_feed?.newUrls.contains(it.url) ?? false) _chip('🆕 নতুন', AppTheme.accent),
-              if (dl != null) _chip(dl == 0 ? 'আজই শেষ' : 'আর ${bn(dl)} দিন', _urgency(dl)),
-            ]),
-            const SizedBox(height: 8),
-            Text(it.title,
-                style: TextStyle(color: AppTheme.textPrimary, fontSize: 15, fontWeight: FontWeight.w700)),
-            if (it.org.isNotEmpty)
-              Text(it.org, style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5)),
-            for (final p in it.posts.take(4)) ...[
-              const SizedBox(height: 10),
-              Text('📌 ${p.title}${p.count != null ? ' (${bn(p.count!)}টি)' : ''}',
-                  style: TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-              for (final c in p.checks)
-                Padding(
-                  padding: const EdgeInsets.only(top: 3),
-                  child: Text('${c.icon} ${c.msg}',
-                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5, height: 1.35)),
+          clipBehavior: Clip.antiAlias,
+          child: IntrinsicHeight(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Container(width: 5, color: accent), // জরুরি/যোগ্যতার রঙের পাশের ফিতা
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Wrap(spacing: 6, runSpacing: 6, children: [
+                      _chip(ok ? '🟢 সম্ভাব্য যোগ্য' : '🟡 যাচাই বাকি', ok ? AppTheme.green : AppTheme.yellow),
+                      if (isNew) _chip('🆕 নতুন', AppTheme.accent),
+                      if (it.source == 'teletalk') _chip('Teletalk', AppTheme.textSecondary),
+                      if (it.notStartedYet) _chip('⏰ শুরু ${_dateShort(it.published!)}', AppTheme.yellow),
+                    ]),
+                    const SizedBox(height: 8),
+                    Text(it.org.isNotEmpty ? it.org : it.title,
+                        style: TextStyle(color: AppTheme.textPrimary, fontSize: 15.5, fontWeight: FontWeight.w800, height: 1.25)),
+                    if (it.org.isNotEmpty && it.title != it.org && !it.title.startsWith(it.org))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(it.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.3)),
+                      ),
+                    const SizedBox(height: 10),
+                    // ── মূল তথ্য: পদসংখ্যা · শেষ তারিখ · ফি ──
+                    Row(children: [
+                      tile('👥', 'পদসংখ্যা', total != null ? '${bn(total)}টি' : 'জানা নেই',
+                          it.posts.length > 1 ? '${bn(it.posts.length)}টি পদে' : (it.unknownCountPosts > 0 && total != null ? '+ অজানা' : ''),
+                          total != null ? AppTheme.accent : AppTheme.textSecondary),
+                      const SizedBox(width: 8),
+                      tile('📅', 'শেষ তারিখ', it.deadline == null ? 'অজানা' : _dateShort(it.deadline!),
+                          dl == null ? '' : (dl == 0 ? 'আজই শেষ!' : 'আর ${bn(dl)} দিন'), urgency),
+                      const SizedBox(width: 8),
+                      tile('💰', 'ফি', it.fee.isEmpty ? '—' : it.fee, it.fee.isEmpty ? 'বিজ্ঞপ্তিতে দেখো' : '', AppTheme.textPrimary),
+                    ]),
+                    if (elapsed != null) ...[
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: elapsed,
+                          minHeight: 5,
+                          backgroundColor: AppTheme.border,
+                          valueColor: AlwaysStoppedAnimation(urgency),
+                        ),
+                      ),
+                    ],
+                    // ── পদগুলো ──
+                    for (final p in it.posts.take(expanded ? 12 : 3)) ...[
+                      const SizedBox(height: 10),
+                      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Expanded(
+                          child: Text('📌 ${p.title}',
+                              style: TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w700, height: 1.3)),
+                        ),
+                        if (p.count != null)
+                          Container(
+                            margin: const EdgeInsets.only(left: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accent.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text('${bn(p.count!)} জন',
+                                style: TextStyle(color: AppTheme.accent, fontSize: 11.5, fontWeight: FontWeight.w800)),
+                          ),
+                      ]),
+                      if (expanded)
+                        ...p.checks.map((c) => Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Text('${c.icon} ${c.msg}',
+                                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 12.5, height: 1.35)),
+                            ))
+                      else
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: Text(p.checks.map((c) => c.icon).join(' '), style: const TextStyle(fontSize: 12.5)),
+                        ),
+                    ],
+                    if (it.posts.length > 3 && !expanded)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text('+ আরও ${bn(it.posts.length - 3)}টি পদ',
+                            style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                      ),
+                    // ── আরও তথ্য ──
+                    if (age != null || it.adNo.isNotEmpty || it.method.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      if (age != null)
+                        Text('${age.icon} ${age.msg}',
+                            style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, height: 1.35)),
+                      if (it.adNo.isNotEmpty)
+                        Text('🗂 বিজ্ঞপ্তি নং: ${it.adNo}', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                      if (it.method.isNotEmpty)
+                        Text('📝 ${it.method}', style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.35)),
+                    ],
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 6, runSpacing: 2, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                      saved
+                          ? _chip('✔ নজরে আছে', AppTheme.textSecondary)
+                          : FilledButton.tonal(
+                              style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+                              onPressed: () => _watch(it),
+                              child: const Text('নজরে নাও')),
+                      TextButton(
+                        onPressed: () async {
+                          final ok = await AppLauncher.openUrl(it.url);
+                          if (!ok) _snack('লিংক খোলা যায়নি');
+                        },
+                        child: const Text('🔗 বিস্তারিত'),
+                      ),
+                      TextButton(
+                        onPressed: () => setState(() => expanded ? _expanded.remove(it.url) : _expanded.add(it.url)),
+                        child: Text(expanded ? 'কম দেখাও' : '🔍 যাচাই দেখো'),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          hidden ? await RadarService.restore(it.url) : await RadarService.dismiss(it.url);
+                          _hidden = RadarService.dismissed();
+                          if (mounted) setState(() {});
+                        },
+                        child: Text(hidden ? 'ফিরিয়ে আনো' : 'লুকাও'),
+                      ),
+                    ]),
+                    Text('স্বয়ংক্রিয় যাচাই — মূল বিজ্ঞপ্তিই চূড়ান্ত।',
+                        style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                  ]),
                 ),
-            ],
-            if (it.method.isNotEmpty || it.fee.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                [if (it.method.isNotEmpty) '📝 ${it.method}', if (it.fee.isNotEmpty) '💰 ${it.fee}'].join('   '),
-                style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
-              ),
-            ],
-            const SizedBox(height: 10),
-            Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
-              saved
-                  ? _chip('✔ নজরে আছে', AppTheme.textSecondary)
-                  : FilledButton.tonal(onPressed: () => _watch(it), child: const Text('নজরে নাও')),
-              TextButton(
-                onPressed: () async {
-                  final ok = await AppLauncher.openUrl(it.url);
-                  if (!ok) _snack('লিংক খোলা যায়নি');
-                },
-                child: const Text('🔗 বিস্তারিত'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  hidden ? await RadarService.restore(it.url) : await RadarService.dismiss(it.url);
-                  if (mounted) setState(() {});
-                },
-                child: Text(hidden ? 'ফিরিয়ে আনো' : 'লুকাও'),
               ),
             ]),
-            const SizedBox(height: 2),
-            Text('স্বয়ংক্রিয় যাচাই — মূল বিজ্ঞপ্তিই চূড়ান্ত।',
-                style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
-          ]),
+          ),
         ),
       ),
     );
@@ -321,8 +566,8 @@ class _RadarTabState extends State<RadarTab> {
               Text('রাতের রিপোর্ট', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w700)),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text('প্রতি রাতে একবার জানাও', style: TextStyle(color: AppTheme.textPrimary)),
-                subtitle: Text('সারাদিনের সব উপযুক্ত সার্কুলারের তালিকা — একটাই নোটিফিকেশনে',
+                title: Text('প্রতিদিন নোটিফিকেশন দাও', style: TextStyle(color: AppTheme.textPrimary)),
+                subtitle: Text('উপযুক্ত সার্কুলার, মোট পদসংখ্যা ও শেষ তারিখ — প্রতিদিন নির্দিষ্ট সময়ে একটাই নোটিফিকেশনে',
                     style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
                 value: daily,
                 onChanged: (v) => setS(() => daily = v),
@@ -344,8 +589,18 @@ class _RadarTabState extends State<RadarTab> {
                 child: Text('রিপোর্টের সময়: ${bn(time.split(':').first)}:${bn(time.split(':').last)}'),
               ),
               const SizedBox(height: 4),
-              Text('অ্যান্ড্রয়েড ব্যাকগ্রাউন্ড কাজ ঠিক মিনিটে না-ও চালাতে পারে; কিছুক্ষণ দেরি হওয়া স্বাভাবিক।',
+              Text('নোটিফিকেশন ঠিক সময়ে আসার জন্য ফোনের অ্যালার্ম ব্যবহার হয় — অ্যাপ বন্ধ থাকলেও আসবে। '
+                  'শেষ খোঁজার তথ্যই দেখানো হয়; অ্যাপ/ব্যাকগ্রাউন্ড টাস্ক চললে তাজা তথ্যে হালনাগাদ হয়।',
                   style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5, height: 1.4)),
+              const SizedBox(height: 4),
+              TextButton.icon(
+                icon: const Icon(Icons.notifications_active_outlined, size: 18),
+                label: const Text('এখনই একটা পরীক্ষা নোটিফিকেশন দেখো'),
+                onPressed: () async {
+                  await RadarRunner.sendTestReport();
+                  if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('নোটিফিকেশন পাঠানো হয়েছে')));
+                },
+              ),
               const SizedBox(height: 18),
               Text('তোমার যোগ্যতা', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
@@ -414,6 +669,9 @@ class _RadarTabState extends State<RadarTab> {
     }
     if (mounted) setState(() {});
     await RadarRunner.markStale();
+    try {
+      await RadarRunner.rearmDaily(); // সময় বা চালু/বন্ধ বদলালে নির্ধারিত নোটিফিকেশন নতুন করে বসে
+    } catch (_) {}
     await _refresh(); // প্রোফাইল বদলালে নতুন করে যাচাই
   }
 

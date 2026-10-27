@@ -156,19 +156,78 @@ class NotificationService {
     debugPrint('Morning digest scheduled for $fireAt → ${summary.notificationShort}');
   }
 
-  /// Job Radar-এর রাতের রিপোর্ট — দিনে একটাই (একই ID, তাই আগেরটা প্রতিস্থাপিত হয়)।
+  // ───────────── Job Radar-এর রাতের রিপোর্ট ─────────────
+  // আইডি: ৯১০০ = সরাসরি দেখানো রিপোর্ট; ৯১০১–৯১০৩ = নির্ধারিত সময়ের (অ্যালার্ম) রিপোর্ট।
+  static const _radarShowId = 9100;
+  static const _radarAlarmBase = 9101;
+  static const _radarAlarmCount = 3;
+
+  static AndroidNotificationDetails _radarDetails(String title, String body, String big,
+          {bool onlyAlertOnce = false}) =>
+      AndroidNotificationDetails(
+        'radar_daily_channel_v2',
+        'Job Radar (প্রতিদিন)',
+        channelDescription: 'প্রতিদিন নির্দিষ্ট সময়ে উপযুক্ত সরকারি চাকরির সার্কুলার, পদসংখ্যা ও শেষ তারিখ',
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+        onlyAlertOnce: onlyAlertOnce,
+        styleInformation: BigTextStyleInformation(big, contentTitle: title, summaryText: body),
+      );
+
+  /// রাতের রিপোর্ট দেখায়। সময়মতো অ্যালার্মের নোটিফিকেশন আগেই এসে থাকলে সেটাই (একই আইডিতে, নিঃশব্দে)
+  /// তাজা তথ্য দিয়ে হালনাগাদ করে — যাতে একই রাতে দুটো আলাদা নোটিফিকেশন না আসে।
   static Future<void> showRadarReport(String title, String body, String bigText) async {
     await init();
-    final androidDetails = AndroidNotificationDetails(
-      'radar_daily_channel',
-      'Job Radar',
-      channelDescription: 'প্রতি রাতে উপযুক্ত সার্কুলারের তালিকা',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
-      icon: '@mipmap/ic_launcher',
-      styleInformation: BigTextStyleInformation(bigText, contentTitle: title, summaryText: body),
-    );
-    await _plugin.show(9100, title, body, NotificationDetails(android: androidDetails), payload: 'job_radar');
+    var id = _radarShowId;
+    var quiet = false;
+    try {
+      final active = await _plugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          ?.getActiveNotifications();
+      for (final n in active ?? const <ActiveNotification>[]) {
+        final nid = n.id ?? -1;
+        if (nid >= _radarAlarmBase && nid < _radarAlarmBase + _radarAlarmCount) {
+          id = nid;
+          quiet = true;
+          break;
+        }
+      }
+    } catch (_) {}
+    await _plugin.show(id, title, body,
+        NotificationDetails(android: _radarDetails(title, body, bigText, onlyAlertOnce: quiet)),
+        payload: 'job_radar');
+  }
+
+  static Future<void> cancelRadarAlarms() async {
+    await init();
+    for (var i = 0; i < _radarAlarmCount; i++) {
+      await _plugin.cancel(_radarAlarmBase + i);
+    }
+  }
+
+  /// আগের নির্ধারিত রিপোর্ট বাতিল করে [msgs]-এর প্রতিটা সঠিক সময়ে বসায়। যতবার খুশি ডাকা যায়।
+  static Future<void> scheduleRadarAlarms(
+      List<({DateTime when, String title, String body, String big})> msgs) async {
+    await cancelRadarAlarms();
+    var id = _radarAlarmBase;
+    for (final m in msgs.take(_radarAlarmCount)) {
+      final details = NotificationDetails(android: _radarDetails(m.title, m.body, m.big));
+      final at = tz.TZDateTime.from(m.when, tz.local);
+      try {
+        await _plugin.zonedSchedule(id, m.title, m.body, at, details,
+            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+            payload: 'job_radar');
+      } catch (_) {
+        // সঠিক-সময়ের অনুমতি না থাকলে কাছাকাছি সময়ে (inexact) — তবুও আসবে
+        await _plugin.zonedSchedule(id, m.title, m.body, at, details,
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+            payload: 'job_radar');
+      }
+      id++;
+    }
   }
 
   static Future<void> cancelDailyDigest() async {
