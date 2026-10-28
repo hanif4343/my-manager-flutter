@@ -9,7 +9,7 @@ import '../../reminder/models/reminder.dart' show bn;
 import '../../widgets/app_theme.dart';
 import '../services/app_launcher.dart';
 import 'engine/bdgovtjob_source.dart' show httpGet;
-import 'engine/teletalk_source.dart' show resolveAdvertisementUrl;
+import 'engine/teletalk_source.dart' show fetchTeletalkDetail, teletalkAdvertisementCandidates, teletalkJobIdFromUrl;
 
 /// এক ট্যাপে সার্কুলারের বিজ্ঞপ্তি PDF অ্যাপের ভেতরেই খোলে — ব্রাউজারে লম্বা পেজ স্ক্রল করে
 /// "Open" খোঁজা আর আলাদা ডাউনলোডের ঝামেলা নেই। একবার নামানো PDF ফোনে জমা থাকে, পরেরবার সাথে সাথে খোলে।
@@ -64,21 +64,46 @@ class _RadarPdfScreenState extends State<RadarPdfScreen> {
     if (mounted) setState(() { _step = s; _progress = p; });
   }
 
-  Future<String?> _findPdfUrl() async {
-    if ((widget.directUrl ?? '').isNotEmpty) return widget.directUrl;
-    if (widget.adFile.isNotEmpty) {
-      final u = await resolveAdvertisementUrl(widget.adFile);
-      if (u != null) return u;
+  final List<String> _dbg = []; // কোন ঠিকানায় কী হলো — ব্যর্থ হলে পর্দায় দেখাই (সমস্যা ধরতে)
+
+  /// সম্ভাব্য PDF ঠিকানার তালিকা। Teletalk হলে আগে বিস্তারিত API থেকে ফাইলের পাথ আনে (পুরনো ক্যাশে
+  /// পাথ না থাকলেও চলে), তারপর একাধিক সম্ভাব্য ঠিকানা বানায়। অন্য সাইটের পেজে থাকা .pdf লিংকও যোগ হয়।
+  Future<List<String>> _candidates() async {
+    final out = <String>[];
+    void add(String u) {
+      if (u.isNotEmpty && !out.contains(u)) out.add(u);
     }
-    final page = widget.pageUrl;
-    if (page != null && page.isNotEmpty && !page.contains('#teletalk')) {
+
+    if ((widget.directUrl ?? '').isNotEmpty) add(widget.directUrl!);
+    final page = widget.pageUrl ?? '';
+    var ad = widget.adFile;
+    if (ad.isEmpty) {
+      final id = teletalkJobIdFromUrl(page);
+      if (id != null) {
+        try {
+          ad = (await fetchTeletalkDetail(id)).adFile;
+          _dbg.add(ad.isEmpty ? 'বিস্তারিত API: বিজ্ঞপ্তির ফাইলের পাথ খালি' : 'ফাইলের পাথ: $ad');
+        } catch (e) {
+          _dbg.add('বিস্তারিত API ব্যর্থ: ${e.toString().replaceFirst('Exception: ', '')}');
+        }
+      }
+    }
+    for (final u in teletalkAdvertisementCandidates(ad)) {
+      add(u);
+    }
+    if (page.isNotEmpty && teletalkJobIdFromUrl(page) == null && !page.contains('#teletalk')) {
       try {
         final html = await httpGet(page);
-        final m = RegExp(r'''https?://[^\s"'<>\\]+?\.pdf''', caseSensitive: false).firstMatch(html);
-        if (m != null) return m.group(0);
-      } catch (_) {}
+        final re = RegExp(r'''https?://[^\s"'<>\\]+?\.pdf''', caseSensitive: false);
+        for (final m in re.allMatches(html).take(3)) {
+          add(m.group(0)!);
+        }
+        if (re.allMatches(html).isEmpty) _dbg.add('পেজে কোনো .pdf লিংক নেই');
+      } catch (e) {
+        _dbg.add('পেজ পড়া যায়নি: ${e.toString().replaceFirst('Exception: ', '')}');
+      }
     }
-    return null;
+    return out;
   }
 
   String _cacheName(String url) {
@@ -89,45 +114,75 @@ class _RadarPdfScreenState extends State<RadarPdfScreen> {
     return 'radar_$h.pdf';
   }
 
+  /// একটা ঠিকানা থেকে নামায়; আসল PDF (%PDF- দিয়ে শুরু) হলে ফাইলে লিখে পথ ফেরত দেয়, নইলে null।
+  Future<String?> _download(String url, File file) async {
+    final client = http.Client();
+    try {
+      final req = http.Request('GET', Uri.parse(url))
+        ..headers['user-agent'] = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'
+        ..headers['accept'] = 'application/pdf,*/*;q=0.8';
+      if (url.contains('teletalk.com.bd')) req.headers['referer'] = 'https://alljobs.teletalk.com.bd/';
+      final res = await client.send(req).timeout(const Duration(seconds: 25));
+      if (res.statusCode != 200) {
+        _dbg.add('HTTP ${res.statusCode} ← $url');
+        return null;
+      }
+      final total = res.contentLength ?? 0;
+      final bytes = <int>[];
+      await for (final chunk in res.stream.timeout(const Duration(seconds: 30))) {
+        bytes.addAll(chunk);
+        if (total > 0) _setStep('PDF নামানো হচ্ছে…', p: bytes.length / total);
+        if (bytes.length >= 5 && String.fromCharCodes(bytes.take(5)) != '%PDF-') {
+          _dbg.add('PDF নয় (অন্য কিছু ফেরত) ← $url');
+          return null; // বড় HTML পেজ পুরোটা নামানোর দরকার নেই
+        }
+      }
+      if (bytes.length < 100 || String.fromCharCodes(bytes.take(5)) != '%PDF-') {
+        _dbg.add('PDF নয় ← $url');
+        return null;
+      }
+      await file.writeAsBytes(bytes, flush: true);
+      return file.path;
+    } catch (e) {
+      _dbg.add('ত্রুটি (${e.toString().split('\n').first}) ← $url');
+      return null;
+    } finally {
+      client.close();
+    }
+  }
+
   Future<void> _load() async {
+    _dbg.clear();
     setState(() { _error = null; _path = null; _progress = null; _step = 'বিজ্ঞপ্তি খোঁজা হচ্ছে…'; });
     try {
-      final url = await _findPdfUrl();
-      if (url == null) {
-        throw 'এই সার্কুলারের PDF-এর সরাসরি লিংক পাওয়া যায়নি';
+      final cands = await _candidates();
+      if (cands.isEmpty) {
+        throw 'এই সার্কুলারের PDF-এর ঠিকানা পাওয়া যায়নি';
       }
-      _url = url;
       final dir = Directory('${(await getTemporaryDirectory()).path}/radar_pdf');
       if (!await dir.exists()) await dir.create(recursive: true);
-      final file = File('${dir.path}/${_cacheName(url)}');
 
       // আগে নামানো থাকলে সাথে সাথে খুলি
-      if (await file.exists() && await file.length() > 1024) {
-        if (mounted) setState(() => _path = file.path);
-        return;
+      for (final u in cands) {
+        final f = File('${dir.path}/${_cacheName(u)}');
+        if (await f.exists() && await f.length() > 1024) {
+          _url = u;
+          if (mounted) setState(() => _path = f.path);
+          return;
+        }
       }
 
       _setStep('PDF নামানো হচ্ছে…', p: 0);
-      final client = http.Client();
-      try {
-        final req = http.Request('GET', Uri.parse(url))
-          ..headers['user-agent'] = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36';
-        final res = await client.send(req).timeout(const Duration(seconds: 30));
-        if (res.statusCode != 200) throw 'সার্ভার সাড়া দিয়েছে (HTTP ${res.statusCode})';
-        final total = res.contentLength ?? 0;
-        final bytes = <int>[];
-        await for (final chunk in res.stream.timeout(const Duration(seconds: 30))) {
-          bytes.addAll(chunk);
-          if (total > 0) _setStep('PDF নামানো হচ্ছে…', p: bytes.length / total);
+      for (final u in cands) {
+        final saved = await _download(u, File('${dir.path}/${_cacheName(u)}'));
+        if (saved != null) {
+          _url = u;
+          if (mounted) setState(() => _path = saved);
+          return;
         }
-        if (bytes.length < 100 || String.fromCharCodes(bytes.take(5)) != '%PDF-') {
-          throw 'ফাইলটা PDF নয় (সাইট অন্য কিছু পাঠিয়েছে)';
-        }
-        await file.writeAsBytes(bytes, flush: true);
-      } finally {
-        client.close();
+        _setStep('অন্য ঠিকানায় চেষ্টা হচ্ছে…', p: 0);
       }
-      if (mounted) setState(() => _path = file.path);
+      throw 'PDF নামানো যায়নি — সাইট থেকে ফাইল পাওয়া গেল না';
     } catch (e) {
       if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     }
@@ -195,6 +250,22 @@ class _RadarPdfScreenState extends State<RadarPdfScreen> {
               label: const Text('আবার চেষ্টা করো'),
             ),
             TextButton(onPressed: _openInBrowser, child: const Text('🔗 পেজটা ব্রাউজারে খোলো')),
+            if (_dbg.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppTheme.bg2,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: SelectableText(
+                  'কী কী চেষ্টা হলো:\n${_dbg.join('\n')}',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 10.5, height: 1.4),
+                ),
+              ),
+            ],
           ]),
         ),
       );

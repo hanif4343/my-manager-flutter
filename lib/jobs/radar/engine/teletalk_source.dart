@@ -137,6 +137,31 @@ Future<TeletalkDetail> fetchTeletalkDetail(int primaryId) async {
   return TeletalkDetail.fromMap(Map<String, dynamic>.from((m['details'] as Map?) ?? {}));
 }
 
+/// "public/uploads/…/advertisement-….pdf" পাথ থেকে সম্ভাব্য ডাউনলোড ঠিকানার তালিকা (সম্ভাবনা অনুযায়ী সাজানো)।
+/// সাইট কোন পাথে ফাইল দেয় তা নিশ্চিত না — তাই একাধিক ঠিকানা; ভিউয়ার একটা একটা করে চেষ্টা করে PDF চিনে নেয়।
+List<String> teletalkAdvertisementCandidates(String path) {
+  final p0 = path.trim();
+  if (p0.isEmpty) return const [];
+  if (p0.startsWith('http://') || p0.startsWith('https://')) return [p0];
+  final p = p0.replaceFirst(RegExp(r'^/+'), '');
+  final noPublic = p.replaceFirst(RegExp(r'^public/'), '');
+  return <String>{
+    '$_site/$p',
+    '$_site/$noPublic',
+    '$_site/api/v1/$p',
+    '$_site/api/v1/$noPublic',
+    '$_site/api/$noPublic',
+    '$_site/public/$noPublic',
+  }.toList();
+}
+
+/// Teletalk সার্কুলারের লিংক (…/jobs/government/১?jobId=৯৯) থেকে jobId; অন্য লিংক হলে null।
+int? teletalkJobIdFromUrl(String url) {
+  final u = Uri.tryParse(url);
+  if (u == null || !u.host.contains('teletalk.com.bd')) return null;
+  return int.tryParse(u.queryParameters['jobId'] ?? '');
+}
+
 /// বিজ্ঞপ্তির PDF-এর আসল লিংক খুঁজে বের করে (পাথ থেকে সম্ভাব্য ঠিকানা পরীক্ষা করে; পাওয়া না গেলে null)।
 Future<String?> resolveAdvertisementUrl(String path) async {
   if (path.isEmpty) return null;

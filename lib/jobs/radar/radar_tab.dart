@@ -495,7 +495,7 @@ class _RadarTabState extends State<RadarTab> {
                           context,
                           title: it.org.isNotEmpty ? it.org : it.title,
                           adFile: it.adFile,
-                          pageUrl: it.source == 'teletalk' ? null : it.url,
+                          pageUrl: it.url, // Teletalk হলে ভিউয়ার jobId থেকে ফাইলের পাথ নিজেই এনে নেয়
                         ),
                         icon: const Icon(Icons.picture_as_pdf_rounded, size: 17),
                         label: const Text('বিজ্ঞপ্তি PDF'),

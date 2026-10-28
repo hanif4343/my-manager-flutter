@@ -3,6 +3,7 @@ import '../../reminder/models/reminder.dart' show bn, dateOnly, formatDateBn;
 import '../../widgets/app_theme.dart';
 import '../models/job_models.dart';
 import '../../services/drive_service.dart' show DriveBackupResult;
+import '../radar/radar_pdf_viewer.dart';
 import '../services/admit_watcher.dart';
 import '../services/app_launcher.dart';
 import '../services/job_backup_service.dart';
@@ -632,10 +633,12 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
                 }
                 if (v == 'delete') _deleteCircular(c);
                 if (v == 'admit_check') _admitCheck(c);
+                if (v == 'pdf') openRadarPdf(context, title: c.org.isNotEmpty ? c.org : c.title, pageUrl: c.url);
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'edit', child: Text('✏️ এডিট')),
                 if (c.url.isNotEmpty) const PopupMenuItem(value: 'open', child: Text('🔗 লিংক খোলো')),
+                if (c.url.isNotEmpty) const PopupMenuItem(value: 'pdf', child: Text('📄 বিজ্ঞপ্তি PDF')),
                 if (c.status == 'applied' && AdmitWatcher.on)
                   const PopupMenuItem(value: 'admit_check', child: Text('🔎 প্রবেশপত্র এখনই চেক করো')),
                 const PopupMenuItem(value: 'delete', child: Text('🗑️ মুছে ফেলো')),
