@@ -18,13 +18,15 @@ class RadarService {
   static const kDaily = 'radar_daily_on'; // '1' / '0'
   static const kReportTime = 'radar_report_time'; // 'HH:mm'
   static const kInstant = 'radar_instant_on'; // নতুন যোগ্য সার্কুলার এলেই জানানো '1' / '0'
+  static const kDeadline = 'radar_deadline_on'; // শেষ তারিখ ঘনিয়ে এলে জানানো '1' / '0'
+  static const _kBgLog = 'radar_bg_log'; // ব্যাকগ্রাউন্ড চেকের শেষ কয়েকটা ফলাফল (সমস্যা ধরতে)
   static const kKwInclude = 'radar_kw_include'; // JSON তালিকা — যে পদগুলো খুঁজবে
   static const kKwExclude = 'radar_kw_exclude'; // JSON তালিকা — যেগুলো বাদ
   static const _kCache = 'radar_cache';
   static const _kDismissed = 'radar_dismissed';
 
   /// ব্যাকআপে যাবে এমন কী।
-  static const backupKeys = [kDob, kEdu, kSubject, kTypBn, kTypEn, kDaily, kReportTime, kInstant, kKwInclude, kKwExclude];
+  static const backupKeys = [kDob, kEdu, kSubject, kTypBn, kTypEn, kDaily, kReportTime, kInstant, kDeadline, kKwInclude, kKwExclude, 'admit_watch_on'];
 
   static const eduLevels = <String, String>{
     'ssc': 'এসএসসি / সমমান',
@@ -47,6 +49,28 @@ class RadarService {
   static String get reportTime => SettingsService.getString(kReportTime, defaultValue: '21:00');
   static int get reportHour => int.tryParse(reportTime.split(':').first) ?? 21;
   static int get reportMinute => int.tryParse(reportTime.split(':').last) ?? 0;
+
+  // ── শেষ তারিখ ঘনিয়ে এলে জানানো ──
+  static bool get deadlineOn => SettingsService.getString(kDeadline, defaultValue: '1') != '0';
+
+  // ── ব্যাকগ্রাউন্ড চেকের লগ: ফোন ব্যাকগ্রাউন্ডে অ্যাপ চালাতে দিচ্ছে কি না বোঝার জন্য ──
+  static List<String> bgLog() {
+    final raw = SettingsService.getString(_kBgLog);
+    if (raw.isEmpty) return const [];
+    try {
+      return (jsonDecode(raw) as List).map((e) => e.toString()).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static Future<void> addBgLog(String msg) async {
+    final n = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    final line = '${n.day}/${n.month} ${two(n.hour)}:${two(n.minute)} — $msg';
+    final list = [line, ...bgLog()].take(6).toList();
+    await SettingsService.setString(_kBgLog, jsonEncode(list));
+  }
 
   // ── নতুন সার্কুলার এলেই জানানো ──
   static bool get instantOn => SettingsService.getString(kInstant, defaultValue: '1') != '0';

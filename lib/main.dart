@@ -184,7 +184,7 @@ void callbackDispatcher() {
       if (task == radarDailyTaskName) {
         try {
           await SettingsService.init();
-          await RadarRunner.runIfDue();
+          await RadarRunner.runFromBackground();
         } catch (_) {}
         return true;
       }

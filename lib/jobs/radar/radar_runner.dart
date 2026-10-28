@@ -8,6 +8,8 @@ import 'engine/match_engine.dart';
 import 'engine/merge_items.dart';
 import 'engine/teletalk_radar.dart';
 import 'engine/teletalk_source.dart';
+import '../services/admit_watcher.dart';
+import '../services/job_service.dart';
 import 'radar_models.dart';
 import 'radar_service.dart';
 
@@ -63,16 +65,45 @@ class RadarRunner {
     await SettingsService.setString(_kState, jsonEncode(s));
   }
 
+  /// WorkManager-এর ব্যাকগ্রাউন্ড টাস্ক থেকে: runIfDue চালায় আর ফলাফল/ত্রুটি লগে রাখে — যাতে সেটিংসে
+  /// দেখা যায় ফোন আসলেই ব্যাকগ্রাউন্ডে চলতে দিচ্ছে কি না (চলে থাকলে লগে তারিখ-সময় থাকবে)।
+  static Future<void> runFromBackground() async {
+    // আবেদন-করা সার্কুলারের প্রবেশপত্র নজরদারি (নিজের ৩ ঘণ্টার শর্ত আছে)
+    try {
+      final a = await AdmitWatcher.checkAllIfDue();
+      if (a.checked > 0) {
+        await RadarService.addBgLog('প্রবেশপত্র চেক — ${a.checked}টি সার্কুলার${a.found > 0 ? ', নতুন ${a.found}টিতে পাওয়া গেছে' : ''}');
+      }
+    } catch (_) {}
+    try {
+      final r = await runIfDue();
+      if (r == null) {
+        await RadarService.addBgLog('চেক হয়েছে — এখন নতুন করে খোঁজার দরকার ছিল না');
+      } else if (r.error != null) {
+        await RadarService.addBgLog('ত্রুটি: ${r.error}');
+      } else {
+        await RadarService.addBgLog('খোঁজা হয়েছে — ${r.total}টি সার্কুলার, নতুন ${r.fresh}টি');
+      }
+    } catch (e) {
+      try {
+        await RadarService.addBgLog('ত্রুটি: $e');
+      } catch (_) {}
+    }
+  }
+
   /// সময় হলে চালিয়ে নোটিফিকেশন দেয়। ব্যাকগ্রাউন্ড টাস্ক ও অ্যাপ চালু — দুই জায়গা থেকেই ডাকা হয়।
   static Future<RadarRunSummary?> runIfDue() async {
     await RadarService.reload();
+    try {
+      await AdmitWatcher.checkAllIfDue(); // অ্যাপ খোলা/resume-এও প্রবেশপত্র চেক (৩ ঘণ্টায় একবার)
+    } catch (_) {}
     if (isDue()) return run(report: true);
-    // দিনের বেলা প্রতি ~৪ ঘণ্টায় চুপচাপ একবার খুঁজি: (১) নতুন যোগ্য সার্কুলার/বাড়ানো শেষ তারিখ এলে সাথে সাথে
+    // দিনের বেলা প্রতি ~৩ ঘণ্টায় চুপচাপ একবার খুঁজি: (১) নতুন যোগ্য সার্কুলার/বাড়ানো শেষ তারিখ এলে সাথে সাথে
     // জানাতে, (২) রাতের নোটিফিকেশনে যেন তাজা তথ্য থাকে। রাত ১১টা থেকে ভোর ৬টা পর্যন্ত খুঁজি না।
     final h = DateTime.now().hour;
     if ((RadarService.dailyOn || RadarService.instantOn) && h >= 6 && h < 23) {
       final lastAt = (_loadState()['lastRunAt'] as num?)?.toInt() ?? 0;
-      if (DateTime.now().millisecondsSinceEpoch - lastAt >= 4 * 3600 * 1000) {
+      if (DateTime.now().millisecondsSinceEpoch - lastAt >= 3 * 3600 * 1000) {
         return run(alertNew: true);
       }
     }
@@ -388,6 +419,65 @@ class RadarRunner {
   /// দেরি করলেও প্রতিদিন নির্দিষ্ট সময়ে নোটিফিকেশন আসবে। বিষয়বস্তু সর্বশেষ খোঁজা ফলাফল থেকে;
   /// প্রতিটা দিনের \"আর কত দিন\" ওই দিনের হিসাবে। নতুন করে খোঁজা হলে/অ্যাপ খুললে আবার বসে।
   static Future<void> rearmDaily() async {
+    try {
+      await _rearmReportAlarms();
+    } catch (_) {}
+    try {
+      await rearmDeadlineAlarms();
+    } catch (_) {}
+  }
+
+  /// চলমান সার্কুলারের আবেদন শেষ হওয়ার আগে: ৩ দিন আগে সকাল ৯টা, ১ দিন আগে সকাল ৯টা, শেষ দিনে সকাল ৮টা
+  /// ও বিকাল ৪টা — ফোনের অ্যালার্মে আগেই বসানো, তাই ব্যাকগ্রাউন্ড টাস্ক না চললেও আসে।
+  /// "নজরে নেওয়া" সার্কুলারের জন্য চাকরি-হাব নিজেই রিমাইন্ডার বানায়, তাই সেগুলো এখানে বাদ (দুবার জানানো ঠেকাতে)।
+  static Future<void> rearmDeadlineAlarms() async {
+    if (!RadarService.deadlineOn) {
+      await NotificationService.cancelRadarDeadlineAlarms();
+      return;
+    }
+    final feed = RadarService.cached();
+    if (feed == null) return;
+    final now = DateTime.now();
+    final hidden = RadarService.dismissed();
+    var saved = <String>{};
+    try {
+      saved = (await JobService.circulars()).map((c) => c.url).where((u) => u.isNotEmpty).toSet();
+    } catch (_) {}
+
+    final items = feed.items
+        .where((i) =>
+            i.deadline != null &&
+            !hidden.contains(i.url) &&
+            !_keysOf(i).any(saved.contains) &&
+            (i.daysLeftAt(now) ?? -1) >= 0)
+        .toList()
+      ..sort((a, b) => a.deadline!.compareTo(b.deadline!));
+
+    final msgs = <({DateTime when, String title, String body, String big})>[];
+    for (final i in items.take(30)) {
+      final dl = DateTime(i.deadline!.year, i.deadline!.month, i.deadline!.day);
+      final name = i.org.isNotEmpty ? i.org : i.title;
+      final vac = i.totalVacancy == null ? '' : '${toBnStr(i.totalVacancy)}টি পদ';
+      for (final slot in const [(3, 9, 0), (1, 9, 0), (0, 8, 0), (0, 16, 0)]) {
+        final off = slot.$1;
+        final when = DateTime(dl.year, dl.month, dl.day - off, slot.$2, slot.$3);
+        if (!when.isAfter(now)) continue;
+        final title = off == 0 ? '🚨 আজই আবেদনের শেষ দিন: $name' : '⏳ আবেদনের আর ${toBnStr(off)} দিন বাকি: $name';
+        final body = [if (vac.isNotEmpty) vac, 'শেষ ${fmtDateBn(dl)}', if (i.fee.isNotEmpty) 'ফি ${i.fee}'].join(' · ');
+        final lines = <String>[
+          body,
+          ...i.posts.take(4).map((p) => '📌 ${p.title}${p.count == null ? '' : ' — ${toBnStr(p.count)} জন'}'),
+          if (i.posts.length > 4) '… আরও ${toBnStr(i.posts.length - 4)}টি পদ',
+          if (i.method.isNotEmpty) '📝 ${i.method}',
+          'রাডারে "📄 বিজ্ঞপ্তি PDF" চেপে এক ট্যাপে বিজ্ঞপ্তি দেখো।',
+        ];
+        msgs.add((when: when, title: title, body: body, big: lines.join('\n')));
+      }
+    }
+    await NotificationService.scheduleRadarDeadlineAlarms(msgs);
+  }
+
+  static Future<void> _rearmReportAlarms() async {
     if (!RadarService.dailyOn) {
       await NotificationService.cancelRadarAlarms();
       return;

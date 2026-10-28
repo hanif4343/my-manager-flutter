@@ -225,7 +225,11 @@ class ReminderService {
     final now = DateTime.now();
     final today = dateOnly(now);
     final times = r.times.take(maxTimesPerReminder).toList();
-    for (var d = 0; d < _horizonDays; d++) {
+    // এক-বারের রিমাইন্ডার (যেমন সার্কুলারের "শেষ ৭ দিন বাকি") ৬০ দিন আগেই ফোনের অ্যালার্মে বসে যায় —
+    // নইলে অ্যাপ না খুললে/ব্যাকগ্রাউন্ড টাস্ক না চললে ৭ দিনের বেশি দূরের তারিখের রিমাইন্ডার কখনো বাজতই না।
+    // (প্রতিটার আইডির জায়গা ১০০০ — d*10+i সর্বোচ্চ ~৬০৭, সংঘর্ষ নেই।) পুনরাবৃত্ত রিমাইন্ডার আগের মতো ৭ দিন।
+    final horizon = r.repeats ? _horizonDays : 60;
+    for (var d = 0; d < horizon; d++) {
       final base = today.add(Duration(days: d));
       final day = DateTime(base.year, base.month, base.day);
       if (!r.occursOn(day)) continue;

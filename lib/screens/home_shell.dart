@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../jobs/radar/radar_runner.dart';
 import 'package:flutter/services.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
@@ -142,6 +143,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       DataSync.start();
       DataSync.check();
       SpendingGuard.nudgeIfNeeded().catchError((_) {});
+      // জব রাডার: ফোন ব্যাকগ্রাউন্ড টাস্ক চালাতে না দিলেও অ্যাপ খুললেই নতুন সার্কুলার/শেষ তারিখের অ্যালার্ম ঠিক করে নেয়
+      RadarRunner.runIfDue().then((_) {}, onError: (_) {});
       setState(() => _dashboardGen++);
       CashbookNotificationService.refresh();
       ReminderService.rearmAll().catchError((_) {});

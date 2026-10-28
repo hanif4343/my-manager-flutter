@@ -214,6 +214,75 @@ class NotificationService {
     await _plugin.show(9110, title, body, NotificationDetails(android: d), payload: 'job_radar');
   }
 
+  /// প্রবেশপত্র নজরদারি: সাইটে নতুন প্রবেশপত্রের লিংক/নোটিশ পাওয়া গেলে (আইডি ৯৪০০–৯৪৮৯, সার্কুলার ধরে)।
+  static Future<void> showAdmitFound(int circularId, String title, String body, String bigText) async {
+    await init();
+    final d = AndroidNotificationDetails(
+      'admit_card_channel',
+      'প্রবেশপত্র নজরদারি',
+      channelDescription: 'আবেদন করা সার্কুলারের প্রবেশপত্র প্রকাশ হলে',
+      importance: Importance.max,
+      priority: Priority.max,
+      icon: '@mipmap/ic_launcher',
+      category: AndroidNotificationCategory.reminder,
+      styleInformation: BigTextStyleInformation(bigText, contentTitle: title, summaryText: body),
+    );
+    await _plugin.show(9400 + (circularId % 90), title, body, NotificationDetails(android: d), payload: 'job_admit');
+  }
+
+  // ── শেষ তারিখ ঘনিয়ে এলে (আইডি ৯২০০–৯৩১৯) ──
+  static const _radarDeadlineBase = 9200;
+  static const _radarDeadlineMax = 120;
+
+  static Future<void> cancelRadarDeadlineAlarms() async {
+    await init();
+    try {
+      final pending = await _plugin.pendingNotificationRequests();
+      for (final p in pending) {
+        if (p.id >= _radarDeadlineBase && p.id < _radarDeadlineBase + _radarDeadlineMax) {
+          await _plugin.cancel(p.id);
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// সার্কুলারের আবেদনের শেষ তারিখের আগের সতর্কতা ফোনের অ্যালার্মে আগেই বসায় — ইন্টারনেট বা
+  /// ব্যাকগ্রাউন্ড টাস্ক না চললেও ঠিক সময়ে আসে। যতবার খুশি ডাকা যায় (আগেরগুলো বাতিল করে নতুন বসায়)।
+  static Future<void> scheduleRadarDeadlineAlarms(
+      List<({DateTime when, String title, String body, String big})> msgs) async {
+    await cancelRadarDeadlineAlarms();
+    var id = _radarDeadlineBase;
+    for (final m in msgs.take(_radarDeadlineMax)) {
+      final details = NotificationDetails(
+        android: AndroidNotificationDetails(
+          'radar_deadline_channel',
+          'Job Radar (শেষ তারিখ)',
+          channelDescription: 'সরকারি চাকরির আবেদনের শেষ তারিখ ঘনিয়ে এলে সতর্কতা',
+          importance: Importance.max,
+          priority: Priority.max,
+          icon: '@mipmap/ic_launcher',
+          category: AndroidNotificationCategory.reminder,
+          styleInformation: BigTextStyleInformation(m.big, contentTitle: m.title, summaryText: m.body),
+        ),
+      );
+      final at = tz.TZDateTime.from(m.when, tz.local);
+      try {
+        await _plugin.zonedSchedule(id, m.title, m.body, at, details,
+            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+            payload: 'job_radar');
+      } catch (_) {
+        try {
+          await _plugin.zonedSchedule(id, m.title, m.body, at, details,
+              androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+              uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+              payload: 'job_radar');
+        } catch (_) {}
+      }
+      id++;
+    }
+  }
+
   static Future<void> cancelRadarAlarms() async {
     await init();
     for (var i = 0; i < _radarAlarmCount; i++) {

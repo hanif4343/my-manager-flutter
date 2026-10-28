@@ -3,6 +3,7 @@ import '../../reminder/models/reminder.dart' show bn, dateOnly, formatDateBn;
 import '../../widgets/app_theme.dart';
 import '../models/job_models.dart';
 import '../../services/drive_service.dart' show DriveBackupResult;
+import '../services/admit_watcher.dart';
 import '../services/app_launcher.dart';
 import '../services/job_backup_service.dart';
 import '../services/job_service.dart';
@@ -45,6 +46,7 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
   }
 
   Future<void> _load() async {
+    await AdmitWatcher.reload(); // ব্যাকগ্রাউন্ডে লেখা প্রবেশপত্র-নজরদারির তথ্য তাজা পড়ি
     final c = await JobService.circulars();
     final d = await JobService.docs();
     if (mounted) setState(() { _circulars = c; _docs = d; _loading = false; });
@@ -629,10 +631,13 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
                   if (!ok) _snack('লিংক খোলা যায়নি');
                 }
                 if (v == 'delete') _deleteCircular(c);
+                if (v == 'admit_check') _admitCheck(c);
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'edit', child: Text('✏️ এডিট')),
                 if (c.url.isNotEmpty) const PopupMenuItem(value: 'open', child: Text('🔗 লিংক খোলো')),
+                if (c.status == 'applied' && AdmitWatcher.on)
+                  const PopupMenuItem(value: 'admit_check', child: Text('🔎 প্রবেশপত্র এখনই চেক করো')),
                 const PopupMenuItem(value: 'delete', child: Text('🗑️ মুছে ফেলো')),
               ],
             ),
@@ -648,7 +653,20 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
             if (ex != null && ex >= 0 && !closed)
               _chip('পরীক্ষা: ${ex == 0 ? 'আজ' : 'আর ${bn(ex)} দিন'}', _urgencyColor(ex)),
             if (c.fee > 0) _chip('ফি ${bn(c.fee)} টাকা', AppTheme.textSecondary),
+            if (c.status == 'applied' && AdmitWatcher.on)
+              (AdmitWatcher.info(c.id)?['found'] == true)
+                  ? _chip('🎫 প্রবেশপত্র এসেছে — দেখো', AppTheme.green, onTap: () => _openAdmit(c))
+                  : _chip('🔎 প্রবেশপত্র নজরে আছে', AppTheme.textSecondary, onTap: () => _admitCheck(c)),
           ]),
+          if (c.status == 'applied' && AdmitWatcher.on && AdmitWatcher.info(c.id)?['found'] != true) ...[
+            const SizedBox(height: 6),
+            Text(
+              AdmitWatcher.info(c.id)?['err'] is String && (AdmitWatcher.info(c.id)!['err'] as String).isNotEmpty
+                  ? '⚠️ ${AdmitWatcher.info(c.id)!['err']}'
+                  : 'প্রবেশপত্র এলে জানাব · ${AdmitWatcher.lastCheckText(c.id)}',
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
+            ),
+          ],
           if (c.note.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(c.note, maxLines: 2, overflow: TextOverflow.ellipsis,
@@ -657,6 +675,34 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
         ]),
       ),
     );
+  }
+
+  /// প্রবেশপত্রের লিংক (পাওয়া গেলে সেটা, নইলে সার্কুলারের লিংক) খোলে।
+  Future<void> _openAdmit(Circular c) async {
+    final link = (AdmitWatcher.info(c.id)?['link'] as String?) ?? '';
+    final ok = await AppLauncher.openUrl(link.isNotEmpty ? link : c.url);
+    if (!ok) _snack('লিংক খোলা যায়নি');
+  }
+
+  /// হাতে প্রবেশপত্র চেক। প্রথমবার হলে "নজরদারি শুরু" — এই মুহূর্তে সাইটে যা আছে সেটা পুরনো ধরা হয়।
+  Future<void> _admitCheck(Circular c) async {
+    _snack('প্রবেশপত্র চেক চলছে…');
+    final r = await AdmitWatcher.check(c, notify: false);
+    await _load();
+    if (!mounted) return;
+    switch (r.status) {
+      case 'found':
+        _snack('🎫 নতুন পাওয়া গেছে: ${r.label}');
+        break;
+      case 'baseline':
+        _snack('নজরদারি শুরু হলো ✓ — সাইটে নতুন প্রবেশপত্র এলেই জানাব');
+        break;
+      case 'error':
+        _snack('⚠️ ${AdmitWatcher.info(c.id)?['err'] ?? 'সাইট খোলা যায়নি'}');
+        break;
+      default:
+        _snack('এখনো নতুন প্রবেশপত্র আসেনি');
+    }
   }
 
   Future<void> _changeStatus(Circular c) async {
@@ -682,7 +728,14 @@ class _JobHubScreenState extends State<JobHubScreen> with SingleTickerProviderSt
       ),
     );
     if (picked == null || picked == c.status) return;
+    final prevStatus = c.status;
     final msg = await JobService.setStatus(c, picked);
+    if (picked == 'applied') {
+      // নজরদারির ভিত্তি (baseline) এখনই নিয়ে রাখি — এরপর নতুন কিছু এলেই জানাবে
+      AdmitWatcher.check(c, notify: false).then((_) {}, onError: (_) {});
+    } else if (prevStatus == 'applied') {
+      AdmitWatcher.forget(c.id);
+    }
     await _load();
     if (!mounted) return;
     if (msg != null) {

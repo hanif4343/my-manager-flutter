@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../reminder/models/reminder.dart' show bn, Reminder;
 import '../../widgets/app_theme.dart';
+import '../../cashbook/services/cashbook_notification_service.dart';
+import '../services/admit_watcher.dart';
 import '../services/app_launcher.dart';
 import '../services/job_service.dart';
 import 'engine/bn_util.dart' show monthNamesBn;
@@ -550,6 +552,7 @@ class _RadarTabState extends State<RadarTab> {
   // ───────────────────────── সেটিংস ও প্রোফাইল ─────────────────────────
 
   Future<void> _settingsSheet() async {
+    await RadarService.reload(); // ব্যাকগ্রাউন্ড চেকের লগ অন্য isolate লেখে — তাজা পড়ি
     final subject = TextEditingController(text: RadarService.subject);
     final typBn = TextEditingController(text: RadarService.typingBn.toString());
     final typEn = TextEditingController(text: RadarService.typingEn.toString());
@@ -558,6 +561,9 @@ class _RadarTabState extends State<RadarTab> {
     if (!RadarService.eduLevels.containsKey(edu)) edu = 'degree_pass';
     var daily = RadarService.dailyOn;
     var instant = RadarService.instantOn;
+    var deadlineAlert = RadarService.deadlineOn;
+    var admitWatch = AdmitWatcher.on;
+    var checking = false;
     var time = RadarService.reportTime;
     final inc = List<String>.from(RadarService.includeTerms);
     final exc = List<String>.from(RadarService.excludeTerms);
@@ -599,6 +605,8 @@ class _RadarTabState extends State<RadarTab> {
           RadarService.kTypEn: _num(typEn.text, 20).toString(),
           RadarService.kDaily: daily ? '1' : '0',
           RadarService.kInstant: instant ? '1' : '0',
+          RadarService.kDeadline: deadlineAlert ? '1' : '0',
+          AdmitWatcher.kOn: admitWatch ? '1' : '0',
           RadarService.kReportTime: time,
           RadarService.kKwInclude: jsonEncode(inc),
           RadarService.kKwExclude: jsonEncode(exc),
@@ -664,6 +672,69 @@ class _RadarTabState extends State<RadarTab> {
                     style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
                 value: instant,
                 onChanged: (v) => setS(() => instant = v),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('শেষ তারিখ ঘনিয়ে এলে জানাও', style: TextStyle(color: AppTheme.textPrimary)),
+                subtitle: Text('চলমান সার্কুলারের আবেদন শেষ হওয়ার ৩ দিন ও ১ দিন আগে, আর শেষ দিনে সকাল-বিকাল। ফোনের অ্যালার্মে আগেই বসানো থাকে — ইন্টারনেট বা ব্যাকগ্রাউন্ড ছাড়াই আসে। (নজরে-নেওয়া সার্কুলারের রিমাইন্ডার চাকরি-হাব আলাদাভাবে দেয়।)',
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.4)),
+                value: deadlineAlert,
+                onChanged: (v) => setS(() => deadlineAlert = v),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('প্রবেশপত্র নজরদারি', style: TextStyle(color: AppTheme.textPrimary)),
+                subtitle: Text('যে সার্কুলারের অবস্থা "আবেদন করেছি", তার সাইটে নতুন "প্রবেশপত্র" লিংক বা নোটিশ এলে জানাবে (প্রায় প্রতি ৩ ঘণ্টায় চেক)। ফলাফল এর বাইরে — সেটা আলাদা সাইটে আসে।',
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.4)),
+                value: admitWatch,
+                onChanged: (v) => setS(() => admitWatch = v),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.bg.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('ব্যাকগ্রাউন্ড চেকের অবস্থা', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  if (RadarService.bgLog().isEmpty)
+                    Text('এখনো ব্যাকগ্রাউন্ডে একবারও চেক হয়নি। নতুন সার্কুলারের নোটিফিকেশন আসতে হলে ফোনকে অ্যাপটা ব্যাকগ্রাউন্ডে চলতে দিতে হবে — নিচের "ব্যাটারি সীমা তুলে দাও" বাটন চাপো।',
+                        style: TextStyle(color: AppTheme.yellow, fontSize: 12, height: 1.4))
+                  else
+                    for (final l in RadarService.bgLog())
+                      Text(l, style: TextStyle(color: AppTheme.textSecondary, fontSize: 11.5, height: 1.45)),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 4, children: [
+                    FilledButton.tonalIcon(
+                      onPressed: checking
+                          ? null
+                          : () async {
+                              setS(() => checking = true);
+                              final r = await RadarRunner.run(alertNew: true);
+                              await RadarService.reload();
+                              if (ctx.mounted) {
+                                setS(() => checking = false);
+                                ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                                  content: Text(r.error != null
+                                      ? '⚠️ ${r.error}'
+                                      : 'চেক শেষ — ${bn(r.total)}টি সার্কুলার, নতুন ${bn(r.fresh)}টি'),
+                                ));
+                              }
+                            },
+                      icon: const Icon(Icons.sync, size: 18),
+                      label: Text(checking ? 'চেক চলছে…' : 'এখনই নতুন সার্কুলার চেক করো'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => CashbookNotificationService.requestBatteryExemptionIfNeeded(),
+                      icon: const Icon(Icons.battery_saver, size: 18),
+                      label: const Text('ব্যাটারি সীমা তুলে দাও'),
+                    ),
+                  ]),
+                ]),
               ),
               const SizedBox(height: 14),
               Text('তোমার যোগ্যতা', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w700)),
