@@ -1,15 +1,18 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import '../../reminder/models/reminder.dart' show bn;
 import '../../widgets/app_theme.dart';
+import '../../services/settings_service.dart';
 import '../services/app_launcher.dart';
 import 'engine/bdgovtjob_source.dart' show httpGet;
-import 'engine/teletalk_source.dart' show fetchTeletalkDetail, teletalkAdvertisementCandidates, teletalkJobIdFromUrl;
+import 'engine/teletalk_source.dart' show fetchTeletalkDetailRaw, teletalkAdvertisementCandidates, teletalkJobIdFromUrl;
 
 /// এক ট্যাপে সার্কুলারের বিজ্ঞপ্তি PDF অ্যাপের ভেতরেই খোলে — ব্রাউজারে লম্বা পেজ স্ক্রল করে
 /// "Open" খোঁজা আর আলাদা ডাউনলোডের ঝামেলা নেই। একবার নামানো PDF ফোনে জমা থাকে, পরেরবার সাথে সাথে খোলে।
@@ -65,6 +68,16 @@ class _RadarPdfScreenState extends State<RadarPdfScreen> {
   }
 
   final List<String> _dbg = []; // কোন ঠিকানায় কী হলো — ব্যর্থ হলে পর্দায় দেখাই (সমস্যা ধরতে)
+  static const _kBase = 'radar_pdf_base'; // সাইট থেকে শেখা ফাইল-ঠিকানার সাধারণ অংশ (সব সার্কুলারে কাজে লাগে)
+  WebViewController? _wv; // লুকানো পেজ-লোডার (ব্যবহারকারীর চোখে পড়ে না)
+  Timer? _wvTimer;
+  String _expectedName = ''; // advertisement-….pdf
+
+  @override
+  void dispose() {
+    _wvTimer?.cancel();
+    super.dispose();
+  }
 
   /// সম্ভাব্য PDF ঠিকানার তালিকা। Teletalk হলে আগে বিস্তারিত API থেকে ফাইলের পাথ আনে (পুরনো ক্যাশে
   /// পাথ না থাকলেও চলে), তারপর একাধিক সম্ভাব্য ঠিকানা বানায়। অন্য সাইটের পেজে থাকা .pdf লিংকও যোগ হয়।
@@ -77,16 +90,34 @@ class _RadarPdfScreenState extends State<RadarPdfScreen> {
     if ((widget.directUrl ?? '').isNotEmpty) add(widget.directUrl!);
     final page = widget.pageUrl ?? '';
     var ad = widget.adFile;
-    if (ad.isEmpty) {
-      final id = teletalkJobIdFromUrl(page);
-      if (id != null) {
-        try {
-          ad = (await fetchTeletalkDetail(id)).adFile;
-          _dbg.add(ad.isEmpty ? 'বিস্তারিত API: বিজ্ঞপ্তির ফাইলের পাথ খালি' : 'ফাইলের পাথ: $ad');
-        } catch (e) {
-          _dbg.add('বিস্তারিত API ব্যর্থ: ${e.toString().replaceFirst('Exception: ', '')}');
+    final jobId = teletalkJobIdFromUrl(page);
+    if (jobId != null) {
+      try {
+        final raw = await fetchTeletalkDetailRaw(jobId);
+        final details = Map<String, dynamic>.from((raw['details'] as Map?) ?? {});
+        if (ad.isEmpty) ad = (details['advertisement_file'] ?? '').toString().trim();
+        // API-র যেকোনো ফিল্ডে সম্পূর্ণ PDF লিংক থাকলে সেটাই সবচেয়ে ভালো
+        void walk(Object? v) {
+          if (v is Map) {
+            v.values.forEach(walk);
+          } else if (v is List) {
+            v.forEach(walk);
+          } else if (v is String && v.startsWith('http') && v.toLowerCase().contains('.pdf')) {
+            add(v);
+          }
         }
+        walk(raw);
+        _dbg.add('API ফিল্ড: ${raw.keys.join(', ')} | details: ${details.keys.join(', ')}');
+      } catch (e) {
+        _dbg.add('বিস্তারিত API ব্যর্থ: ${e.toString().replaceFirst('Exception: ', '')}');
       }
+    }
+    if (ad.isNotEmpty) {
+      _expectedName = ad.split('/').last;
+      _dbg.add('ফাইলের পাথ: $ad');
+      // আগে সাইট থেকে শেখা ঠিকানার ছাঁচ থাকলে সেটাই প্রথমে
+      final base = SettingsService.getString(_kBase);
+      if (base.isNotEmpty) add('$base$_expectedName');
     }
     for (final u in teletalkAdvertisementCandidates(ad)) {
       add(u);
@@ -151,6 +182,94 @@ class _RadarPdfScreenState extends State<RadarPdfScreen> {
     }
   }
 
+  static const _extractJs = r"""(function(){
+  try{window.scrollTo(0,document.body.scrollHeight);}catch(e){}
+  var r=[];
+  try{var q=document.querySelectorAll('iframe,embed,object,a,source,link');
+    for(var i=0;i<q.length;i++){var e=q[i];var u=e.src||e.data||e.href||'';if(u)r.push(String(u));}}catch(e){}
+  try{performance.getEntriesByType('resource').forEach(function(x){r.push(x.name);});}catch(e){}
+  return JSON.stringify(r);
+})()""";
+
+  /// Teletalk-এর পেজ লুকানো WebView-তে খুলে (স্ক্রল করে) PDF-এর আসল ঠিকানা বের করে — পেজের iframe/লিংক
+  /// অথবা পেজ যে নেটওয়ার্ক রিকোয়েস্ট করেছে সেখান থেকে। পাওয়া না গেলে null।
+  Future<String?> _discoverViaWebView(String pageUrl) async {
+    final done = Completer<String?>();
+    final seen = <String>{};
+    bool isPdf(String u) => u.startsWith('http') && RegExp(r'\.pdf(\?|#|$)', caseSensitive: false).hasMatch(u);
+    String unwrap(String u) {
+      // docs.google.com/viewer?url=<pdf> ধরনের মোড়ক খুলি
+      try {
+        final q = Uri.parse(u).queryParameters;
+        for (final k in ['url', 'file', 'src']) {
+          final v = q[k];
+          if (v != null && isPdf(v)) return v;
+        }
+      } catch (_) {}
+      return u;
+    }
+
+    final c = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(NavigationDelegate(
+        onNavigationRequest: (r) {
+          if (isPdf(r.url)) {
+            if (!done.isCompleted) done.complete(unwrap(r.url));
+            return NavigationDecision.prevent;
+          }
+          return NavigationDecision.navigate;
+        },
+      ));
+    if (mounted) setState(() => _wv = c);
+    try {
+      await c.loadRequest(Uri.parse(pageUrl));
+    } catch (e) {
+      _dbg.add('পেজ লোড হয়নি: $e');
+    }
+
+    var tries = 0;
+    _wvTimer?.cancel();
+    _wvTimer = Timer.periodic(const Duration(milliseconds: 900), (t) async {
+      if (done.isCompleted) {
+        t.cancel();
+        return;
+      }
+      if (++tries > 28) {
+        t.cancel();
+        if (!done.isCompleted) done.complete(null);
+        return;
+      }
+      try {
+        final r = await c.runJavaScriptReturningResult(_extractJs);
+        var s = r.toString();
+        if (s.startsWith('"')) {
+          try {
+            s = jsonDecode(s) as String;
+          } catch (_) {}
+        }
+        final list = (jsonDecode(s) as List).map((e) => unwrap(e.toString())).toList();
+        seen.addAll(list.where((u) => u.toLowerCase().contains('advertis') || isPdf(u)));
+        final pdfs = list.where(isPdf).toList();
+        if (pdfs.isNotEmpty) {
+          // প্রত্যাশিত ফাইলের নামে মিললে সেটা, নইলে প্রথমটা
+          final best = pdfs.firstWhere((u) => _expectedName.isNotEmpty && u.contains(_expectedName), orElse: () => pdfs.first);
+          if (!done.isCompleted) done.complete(best);
+          t.cancel();
+        }
+      } catch (_) {}
+    });
+
+    final res = await done.future.timeout(const Duration(seconds: 30), onTimeout: () => null);
+    _wvTimer?.cancel();
+    if (res == null) {
+      _dbg.add(seen.isEmpty
+          ? 'সাইটের পেজে PDF-সংক্রান্ত কোনো লিংক/রিকোয়েস্ট পাওয়া যায়নি'
+          : 'সাইটের পেজে পাওয়া (PDF নয়): ${seen.take(4).join(' | ')}');
+    }
+    if (mounted) setState(() => _wv = null);
+    return res;
+  }
+
   Future<void> _load() async {
     _dbg.clear();
     setState(() { _error = null; _path = null; _progress = null; _step = 'বিজ্ঞপ্তি খোঁজা হচ্ছে…'; });
@@ -181,6 +300,29 @@ class _RadarPdfScreenState extends State<RadarPdfScreen> {
           return;
         }
         _setStep('অন্য ঠিকানায় চেষ্টা হচ্ছে…', p: 0);
+      }
+
+      // সব আন্দাজি ঠিকানা ব্যর্থ — এবার Teletalk-এর পেজটাই (লুকিয়ে) খুলে দেখি PDF-এর আসল ঠিকানা কী
+      final page = widget.pageUrl ?? '';
+      final jobId = teletalkJobIdFromUrl(page);
+      if (jobId != null) {
+        _setStep('সাইট থেকে আসল ঠিকানা জানা হচ্ছে…', p: null);
+        final found = await _discoverViaWebView(page.replaceFirst(RegExp(r'#.*$'), ''));
+        if (found != null) {
+          _dbg.add('সাইট থেকে পাওয়া: $found');
+          final saved = await _download(found, File('${dir.path}/${_cacheName(found)}'));
+          if (saved != null) {
+            // ঠিকানার সাধারণ অংশ মনে রাখি — পরের সব সার্কুলারে সরাসরি কাজে লাগবে
+            final name = found.split('?').first.split('/').last;
+            final cut = found.indexOf(name);
+            if (cut > 0 && name.toLowerCase().endsWith('.pdf')) {
+              await SettingsService.setString(_kBase, found.substring(0, cut));
+            }
+            _url = found;
+            if (mounted) setState(() => _path = saved);
+            return;
+          }
+        }
       }
       throw 'PDF নামানো যায়নি — সাইট থেকে ফাইল পাওয়া গেল না';
     } catch (e) {
@@ -271,7 +413,7 @@ class _RadarPdfScreenState extends State<RadarPdfScreen> {
       );
     }
     if (_path == null) {
-      return Center(
+      final loading = Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 48),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -288,6 +430,12 @@ class _RadarPdfScreenState extends State<RadarPdfScreen> {
           ]),
         ),
       );
+      if (_wv == null) return loading;
+      // লুকানো পেজ-লোডার: পুরো আকারে চলে (যাতে সাইট স্বাভাবিক লোড হয়), ওপরে লোডিং পর্দা ঢেকে রাখে
+      return Stack(children: [
+        Positioned.fill(child: WebViewWidget(controller: _wv!)),
+        Positioned.fill(child: ColoredBox(color: AppTheme.bg, child: loading)),
+      ]);
     }
     return PDFView(
       filePath: _path!,

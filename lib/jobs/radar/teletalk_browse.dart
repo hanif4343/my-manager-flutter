@@ -314,6 +314,7 @@ class _DetailSheetState extends State<_DetailSheet> {
       context,
       title: widget.job.orgNameBn.isNotEmpty ? widget.job.orgNameBn : widget.job.orgName,
       adFile: d?.adFile ?? '',
+      pageUrl: widget.job.detailsUrl, // আন্দাজি ঠিকানা ব্যর্থ হলে ভিউয়ার সাইট থেকে আসল ঠিকানা জেনে নেয়
     );
   }
 

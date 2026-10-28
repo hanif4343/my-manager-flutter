@@ -148,11 +148,21 @@ List<String> teletalkAdvertisementCandidates(String path) {
   return <String>{
     '$_site/$p',
     '$_site/$noPublic',
+    '$_site/api/$p',
     '$_site/api/v1/$p',
     '$_site/api/v1/$noPublic',
     '$_site/api/$noPublic',
-    '$_site/public/$noPublic',
+    '$_site/api/v1/files/$noPublic',
+    '$_site/files/$noPublic',
+    '$_site/static/$noPublic',
+    '$_site/storage/$noPublic',
   }.toList();
+}
+
+/// বিস্তারিত API-র পুরো উত্তর (কোন কোন ফিল্ড আছে দেখতে/লিংক খুঁজতে)।
+Future<Map<String, dynamic>> fetchTeletalkDetailRaw(int primaryId) async {
+  final body = await httpGet('$_site/api/v1/govt-jobs/public-details?id=$primaryId', json: true);
+  return Map<String, dynamic>.from(jsonDecode(body) as Map);
 }
 
 /// Teletalk সার্কুলারের লিংক (…/jobs/government/১?jobId=৯৯) থেকে jobId; অন্য লিংক হলে null।
