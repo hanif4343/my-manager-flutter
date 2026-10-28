@@ -6,6 +6,7 @@ import '../services/app_launcher.dart';
 import '../services/job_service.dart';
 import 'engine/bn_util.dart' show monthNamesBn;
 import 'phone_alerts_sheet.dart';
+import 'radar_pdf_viewer.dart';
 import 'phone_notif_service.dart';
 import 'radar_models.dart';
 import 'radar_runner.dart';
@@ -482,9 +483,24 @@ class _RadarTabState extends State<RadarTab> {
                               style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
                               onPressed: () => _watch(it),
                               child: const Text('নজরে নাও')),
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: AppTheme.accent,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () => openRadarPdf(
+                          context,
+                          title: it.org.isNotEmpty ? it.org : it.title,
+                          adFile: it.adFile,
+                          pageUrl: it.source == 'teletalk' ? null : it.url,
+                        ),
+                        icon: const Icon(Icons.picture_as_pdf_rounded, size: 17),
+                        label: const Text('বিজ্ঞপ্তি PDF'),
+                      ),
                       TextButton(
                         onPressed: () async {
-                          final ok = await AppLauncher.openUrl(it.url);
+                          final ok = await AppLauncher.openUrl(it.url.replaceFirst('#teletalk', ''));
                           if (!ok) _snack('লিংক খোলা যায়নি');
                         },
                         child: const Text('🔗 বিস্তারিত'),

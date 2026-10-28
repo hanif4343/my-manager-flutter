@@ -89,6 +89,9 @@ List<RadarItem> teletalkItems(
     final adNo = usable
         .map((j) => details[j.primaryId]?.adNo ?? '')
         .firstWhere((a) => a.isNotEmpty, orElse: () => '');
+    final adFile = usable
+        .map((j) => details[j.primaryId]?.adFile ?? '')
+        .firstWhere((a) => a.isNotEmpty, orElse: () => '');
     items.add(RadarItem(
       // Teletalk-এ এই প্রতিষ্ঠানের বিস্তারিত পেজ; #teletalk যোগ করে bdgovtjob-এর লিংকের সাথে মিশে যাওয়া ঠেকানো
       url: '${first.detailsUrl}#teletalk',
@@ -101,6 +104,7 @@ List<RadarItem> teletalkItems(
       published: st == null ? null : DateTime(st.year, st.month, st.day),
       adNo: adNo,
       source: 'teletalk',
+      adFile: adFile,
     ));
   });
   return items;

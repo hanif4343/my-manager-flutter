@@ -97,6 +97,7 @@ RadarItem _mergeGroup(List<RadarItem> g) {
     adNo: ordered.map((e) => e.adNo).firstWhere((a) => a.isNotEmpty, orElse: () => ''),
     source: 'merged',
     altUrls: others,
+    adFile: ordered.map((e) => e.adFile).firstWhere((a) => a.isNotEmpty, orElse: () => ''),
   );
 }
 

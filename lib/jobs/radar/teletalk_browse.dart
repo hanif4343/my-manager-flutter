@@ -8,6 +8,7 @@ import 'engine/bn_util.dart' show fmtDateBn, todayDhaka, daysBetween;
 import 'engine/match_engine.dart' show postRelevance;
 import 'engine/teletalk_radar.dart' show teletalkAgeCheck;
 import 'engine/teletalk_source.dart';
+import 'radar_pdf_viewer.dart';
 import 'radar_service.dart';
 
 /// Teletalk AllJobs-এর মতো তালিকা: সব চলমান সরকারি চাকরি, সার্চ ও ফিল্টারসহ।
@@ -307,22 +308,13 @@ class _DetailSheetState extends State<_DetailSheet> {
   void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
   Future<void> _openPdf() async {
+    // এক ট্যাপে অ্যাপের ভেতরেই PDF — নামানো, ব্রাউজার বা স্ক্রল ছাড়া
     final d = _d;
-    if (d == null || d.adFile.isEmpty) {
-      _snack('এই চাকরির PDF পাওয়া যায়নি — Teletalk পেজ খুলছি');
-      await AppLauncher.openUrl(widget.job.detailsUrl);
-      return;
-    }
-    setState(() => _opening = true);
-    final u = await resolveAdvertisementUrl(d.adFile);
-    if (!mounted) return;
-    setState(() => _opening = false);
-    if (u != null) {
-      await AppLauncher.openUrl(u);
-    } else {
-      _snack('PDF-এর সরাসরি লিংক পাওয়া যায়নি — Teletalk পেজে বিজ্ঞপ্তি আছে, সেটা খুলছি');
-      await AppLauncher.openUrl(widget.job.detailsUrl);
-    }
+    await openRadarPdf(
+      context,
+      title: widget.job.orgNameBn.isNotEmpty ? widget.job.orgNameBn : widget.job.orgName,
+      adFile: d?.adFile ?? '',
+    );
   }
 
   @override
