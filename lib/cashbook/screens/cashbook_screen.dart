@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../db/cashbook_db.dart';
 import '../models/cashbook_account.dart';
@@ -276,14 +277,137 @@ class _CashbookScreenState extends State<CashbookScreen> {
     if (changed == true) await _afterMutation();
   }
 
-  Future<void> _exportPdf() async {
-    await CashbookExportService.exportPdf(
-        title: 'ক্যাশবুক রিপোর্ট', entries: _entries, accounts: _accounts);
+  CashbookAccount? get _activeAccount {
+    for (final a in _accounts) {
+      if (a.id == _activeAccountId) return a;
+    }
+    return null;
   }
 
-  Future<void> _exportExcel() async {
-    await CashbookExportService.exportExcel(
-        title: 'ক্যাশবুক রিপোর্ট', entries: _entries, accounts: _accounts);
+  /// প্রগ্রেস ডায়ালগসহ কাজ চালায়; ব্যর্থ হলে কারণসহ বার্তা দেখিয়ে null ফেরত দেয়।
+  Future<T?> _runWithProgress<T>(String failPrefix, Future<T> Function(void Function(String) report) job) async {
+    final progress = ValueNotifier<String>('শুরু হচ্ছে…');
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: AppTheme.bg2,
+          content: Row(children: [
+            const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 3)),
+            const SizedBox(width: 16),
+            Expanded(
+              child: ValueListenableBuilder<String>(
+                valueListenable: progress,
+                builder: (_, v, __) => Text(v, style: TextStyle(color: AppTheme.textPrimary)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+    T? result;
+    String? error;
+    try {
+      result = await job((m) => progress.value = m).timeout(const Duration(minutes: 3));
+    } catch (e) {
+      error = e.toString().replaceFirst('Exception: ', '');
+    }
+    if (mounted) Navigator.of(context, rootNavigator: true).pop(); // প্রগ্রেস ডায়ালগ বন্ধ
+    progress.dispose();
+    if (error != null) {
+      _toast('$failPrefix: $error');
+      return null;
+    }
+    return result;
+  }
+
+  /// শুধু এখন যে হিসাব/মাসে আছো সেটারই PDF — সব মাসের সব এন্ট্রি একসাথে নয় (সেটাই ফোন আটকাত)।
+  Future<void> _exportPdf() async {
+    final acc = _activeAccount;
+    if (acc == null) {
+      _toast('আগে যে হিসাব/মাসের PDF চাও সেটা খোলো');
+      return;
+    }
+    final list = _entries.where((e) => e.accountId == acc.id).toList();
+    if (list.isEmpty) {
+      _toast('"${acc.name}"-এ কোনো এন্ট্রি নেই — PDF বানানোর কিছু নেই');
+      return;
+    }
+    final title = 'ক্যাশবুক — ${acc.name}';
+    final pdf = await _runWithProgress<File>(
+      'PDF বানানো যায়নি',
+      (report) => CashbookExportService.exportPdf(
+        title: title,
+        subtitle: acc.name,
+        entries: list,
+        accounts: _accounts,
+        onProgress: report,
+      ),
+    );
+    if (pdf == null) return;
+    try {
+      await CashbookExportService.sharePdf(pdf, title);
+    } catch (e) {
+      _toast('PDF তৈরি হয়েছে কিন্তু শেয়ার খোলা যায়নি: $e');
+    }
+  }
+
+  /// শুধু এই মাসের/হিসাবের Excel — ফাইল ও শিটের নামে মাসের নাম থাকে।
+  Future<void> _exportExcelMonth() async {
+    final acc = _activeAccount;
+    if (acc == null) {
+      _toast('আগে যে হিসাব/মাসের Excel চাও সেটা খোলো');
+      return;
+    }
+    final list = _entries.where((e) => e.accountId == acc.id).toList();
+    if (list.isEmpty) {
+      _toast('"${acc.name}"-এ কোনো এন্ট্রি নেই');
+      return;
+    }
+    final file = await _runWithProgress<File>(
+      'Excel বানানো যায়নি',
+      (report) => CashbookExportService.exportExcelMonth(
+        accountName: acc.name,
+        entries: list,
+        accounts: _accounts,
+        onProgress: report,
+      ),
+    );
+    if (file == null) return;
+    try {
+      await CashbookExportService.shareExcel(file, acc.name);
+    } catch (e) {
+      _toast('Excel তৈরি হয়েছে কিন্তু শেয়ার খোলা যায়নি: $e');
+    }
+  }
+
+  /// Export All: সব হিসাব/মাস — আলাদা আলাদা শিটে + শুরুতে সারাংশ শিট।
+  Future<void> _exportExcelAll() async {
+    if (_entries.isEmpty) {
+      _toast('কোনো এন্ট্রি নেই');
+      return;
+    }
+    final file = await _runWithProgress<File>(
+      'Excel বানানো যায়নি',
+      (report) => CashbookExportService.exportExcelAll(
+        entries: _entries,
+        accounts: _accounts,
+        onProgress: report,
+      ),
+    );
+    if (file == null) return;
+    try {
+      await CashbookExportService.shareExcel(file, 'সব হিসাব');
+    } catch (e) {
+      _toast('Excel তৈরি হয়েছে কিন্তু শেয়ার খোলা যায়নি: $e');
+    }
+  }
+
+  void _toast(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
   void _openVoucherGallery() {
@@ -442,7 +566,8 @@ class _CashbookScreenState extends State<CashbookScreen> {
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'pdf') _exportPdf();
-              if (v == 'excel') _exportExcel();
+              if (v == 'excel_month') _exportExcelMonth();
+              if (v == 'excel_all') _exportExcelAll();
               if (v == 'account') _addAccount();
               if (v == 'import') _importLegacy();
               if (v == 'restore') _restoreFromBackup();
@@ -450,8 +575,9 @@ class _CashbookScreenState extends State<CashbookScreen> {
               if (v == 'reminder_time') _openReminderTimeDialog();
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'pdf', child: Text('📄 PDF এক্সপোর্ট')),
-              const PopupMenuItem(value: 'excel', child: Text('📊 Excel এক্সপোর্ট')),
+              PopupMenuItem(value: 'pdf', child: Text('📄 এই মাসের PDF${_activeAccount == null ? '' : ' — ${_activeAccount!.name}'}')),
+              PopupMenuItem(value: 'excel_month', child: Text('📊 এই মাসের Excel${_activeAccount == null ? '' : ' — ${_activeAccount!.name}'}')),
+              const PopupMenuItem(value: 'excel_all', child: Text('📦 Export All — সব হিসাবের Excel')),
               const PopupMenuItem(value: 'account', child: Text('➕ নতুন হিসাব যোগ')),
               const PopupMenuItem(value: 'vouchers', child: Text('🖼️ সব ভাউচার দেখো')),
               const PopupMenuItem(value: 'reminder_time', child: Text('⏰ এন্ট্রি রিমাইন্ডার সময়')),
