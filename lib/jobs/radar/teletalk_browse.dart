@@ -256,8 +256,8 @@ class _TeletalkBrowseState extends State<TeletalkBrowse> {
           const SizedBox(height: 6),
           Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
             saved
-                ? _chip('✔ নজরে আছে', AppTheme.textSecondary)
-                : FilledButton.tonal(onPressed: () => _watch(j), child: const Text('নজরে নাও')),
+                ? _chip('✔ সেভ করা আছে', AppTheme.textSecondary)
+                : FilledButton.tonal(onPressed: () => _watch(j), child: const Text('🔔 সেভ ও রিমাইন্ডার')),
             TextButton(
               onPressed: () async {
                 final ok = await AppLauncher.openUrl(j.applyUrl);

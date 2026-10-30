@@ -179,6 +179,11 @@ void callbackDispatcher() {
           await SettingsService.init();
           await NotificationService.scheduleDailyDigest();
         } catch (_) {}
+        // জব রাডারের রিপোর্ট ও শেষ তারিখের অ্যালার্মও (নেটওয়ার্ক লাগে না) — রাডারের নিজের টাস্ক না চললেও বসে থাকে
+        try {
+          await SettingsService.init();
+          await RadarRunner.rearmDaily();
+        } catch (_) {}
         return true;
       }
       if (task == radarDailyTaskName) {

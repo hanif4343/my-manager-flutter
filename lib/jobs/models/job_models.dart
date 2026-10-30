@@ -2,7 +2,7 @@ import '../../reminder/models/reminder.dart';
 
 /// সার্কুলারের অবস্থা — ক্রম অনুযায়ী এগোয়।
 const circularStatuses = <String, String>{
-  'watching': 'নজরে (আবেদন বাকি)',
+  'watching': 'সেভ করা (আবেদন বাকি)',
   'applied': 'আবেদন করেছি',
   'admit': 'প্রবেশপত্র পেয়েছি',
   'exam_done': 'পরীক্ষা দিয়েছি',

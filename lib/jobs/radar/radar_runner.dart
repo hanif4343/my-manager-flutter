@@ -68,6 +68,9 @@ class RadarRunner {
   /// WorkManager-এর ব্যাকগ্রাউন্ড টাস্ক থেকে: runIfDue চালায় আর ফলাফল/ত্রুটি লগে রাখে — যাতে সেটিংসে
   /// দেখা যায় ফোন আসলেই ব্যাকগ্রাউন্ডে চলতে দিচ্ছে কি না (চলে থাকলে লগে তারিখ-সময় থাকবে)।
   static Future<void> runFromBackground() async {
+    try {
+      await rearmDaily();
+    } catch (_) {}
     // আবেদন-করা সার্কুলারের প্রবেশপত্র নজরদারি (নিজের ৩ ঘণ্টার শর্ত আছে)
     try {
       final a = await AdmitWatcher.checkAllIfDue();
@@ -94,6 +97,11 @@ class RadarRunner {
   /// সময় হলে চালিয়ে নোটিফিকেশন দেয়। ব্যাকগ্রাউন্ড টাস্ক ও অ্যাপ চালু — দুই জায়গা থেকেই ডাকা হয়।
   static Future<RadarRunSummary?> runIfDue() async {
     await RadarService.reload();
+    // সবার আগে সর্বশেষ জানা তথ্য দিয়ে অ্যালার্মগুলো বসিয়ে ফেলি (নেটওয়ার্ক ছাড়াই, তাৎক্ষণিক)। আগে এটা খোঁজা শেষ
+    // হওয়ার পরে হতো — খোঁজার মাঝে নেট চলে গেলে বা অ্যাপ বন্ধ হয়ে গেলে অ্যালার্ম কখনো বসতই না।
+    try {
+      await rearmDaily();
+    } catch (_) {}
     try {
       await AdmitWatcher.checkAllIfDue(); // অ্যাপ খোলা/resume-এও প্রবেশপত্র চেক (৩ ঘণ্টায় একবার)
     } catch (_) {}
@@ -121,6 +129,11 @@ class RadarRunner {
     await SettingsService.setInt(_kRunning, now);
     try {
       return await _run(report, alertNew);
+    } catch (e) {
+      try {
+        await rearmDaily();
+      } catch (_) {}
+      rethrow;
     } finally {
       await SettingsService.setInt(_kRunning, 0);
     }
@@ -429,7 +442,7 @@ class RadarRunner {
 
   /// চলমান সার্কুলারের আবেদন শেষ হওয়ার আগে: ৩ দিন আগে সকাল ৯টা, ১ দিন আগে সকাল ৯টা, শেষ দিনে সকাল ৮টা
   /// ও বিকাল ৪টা — ফোনের অ্যালার্মে আগেই বসানো, তাই ব্যাকগ্রাউন্ড টাস্ক না চললেও আসে।
-  /// "নজরে নেওয়া" সার্কুলারের জন্য চাকরি-হাব নিজেই রিমাইন্ডার বানায়, তাই সেগুলো এখানে বাদ (দুবার জানানো ঠেকাতে)।
+  /// "সেভ করা" সার্কুলারের জন্য চাকরি-হাব নিজেই রিমাইন্ডার বানায়, তাই সেগুলো এখানে বাদ (দুবার জানানো ঠেকাতে)।
   static Future<void> rearmDeadlineAlarms() async {
     if (!RadarService.deadlineOn) {
       await NotificationService.cancelRadarDeadlineAlarms();

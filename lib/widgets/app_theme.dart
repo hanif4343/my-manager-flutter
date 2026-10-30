@@ -64,8 +64,10 @@ class AppTheme {
   /// Project identity is now a neutral monogram, not a color swatch.
   static const projectColors = [neutralAvatar];
 
+  // বাংলা ফন্ট: Noto Sans Bengali — সংখ্যা (বিশেষ করে ১) ও যুক্তাক্ষর স্পষ্ট। আগে Hind Siliguri ছিল,
+  // যাতে ১ দেখতে অদ্ভুত লাগত। বদলাতে চাইলে নিচের চারটা জায়গার নাম একসাথে বদলাও (যেমন anekBangla, mukta)।
   static TextTheme _textTheme(Brightness b) =>
-      GoogleFonts.hindSiliguriTextTheme(
+      GoogleFonts.notoSansBengaliTextTheme(
         b == Brightness.dark ? ThemeData.dark().textTheme : ThemeData.light().textTheme,
       );
 
@@ -87,7 +89,7 @@ class AppTheme {
           .copyWith(primary: accent, surface: surface, error: danger),
       appBarTheme: AppBarTheme(
         backgroundColor: bgColor, elevation: 0, scrolledUnderElevation: 0,
-        titleTextStyle: GoogleFonts.hindSiliguri(
+        titleTextStyle: GoogleFonts.notoSansBengali(
             color: ink, fontSize: 18, fontWeight: FontWeight.w700),
         iconTheme: IconThemeData(color: ink2),
       ),
@@ -103,19 +105,19 @@ class AppTheme {
       ),
       dividerColor: borderColor,
       textTheme: _textTheme(brightness),
-      fontFamily: GoogleFonts.hindSiliguri().fontFamily,
+      fontFamily: GoogleFonts.notoSansBengali().fontFamily,
     );
   }
 
   // ── Typography scale — 4 levels, use consistently ────────────────
   static TextStyle display({double size = 22, FontWeight weight = FontWeight.w800, Color? color}) =>
-      GoogleFonts.hindSiliguri(fontSize: size, fontWeight: weight, color: color ?? textPrimary);
+      GoogleFonts.notoSansBengali(fontSize: size, fontWeight: weight, color: color ?? textPrimary);
   static TextStyle title({double size = 16, FontWeight weight = FontWeight.w700, Color? color}) =>
-      GoogleFonts.hindSiliguri(fontSize: size, fontWeight: weight, color: color ?? textPrimary);
+      GoogleFonts.notoSansBengali(fontSize: size, fontWeight: weight, color: color ?? textPrimary);
   static TextStyle body({double size = 14, FontWeight weight = FontWeight.w400, Color? color}) =>
-      GoogleFonts.hindSiliguri(fontSize: size, fontWeight: weight, color: color ?? textSecondary);
+      GoogleFonts.notoSansBengali(fontSize: size, fontWeight: weight, color: color ?? textSecondary);
   static TextStyle caption({double size = 12, FontWeight weight = FontWeight.w500, Color? color}) =>
-      GoogleFonts.hindSiliguri(fontSize: size, fontWeight: weight, color: color ?? textMuted);
+      GoogleFonts.notoSansBengali(fontSize: size, fontWeight: weight, color: color ?? textMuted);
 }
 
 /// Status conveyed by icon *shape*, not color — every state uses the same

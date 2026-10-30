@@ -199,6 +199,67 @@ class NotificationService {
         payload: 'job_radar');
   }
 
+  // ───────────── নোটিফিকেশন/অ্যালার্ম ডায়াগনস্টিক (রাডার সেটিংসে "অবস্থা দেখো") ─────────────
+
+  /// ফোন আসলেই অ্যাপকে নোটিফিকেশন/সঠিক-সময়ের অ্যালার্ম দিচ্ছে কি না এবং কী কী অ্যালার্ম বসে আছে — পাঠযোগ্য লাইনে।
+  static Future<List<String>> diagnostics() async {
+    await init();
+    final a = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final out = <String>[];
+    try {
+      final on = await a?.areNotificationsEnabled();
+      out.add(on == true ? '✅ নোটিফিকেশন চালু আছে' : '❌ নোটিফিকেশন বন্ধ — ফোনের সেটিংসে অ্যাপের নোটিফিকেশন চালু করো');
+    } catch (_) {}
+    try {
+      final ex = await a?.canScheduleExactNotifications();
+      out.add(ex == true
+          ? '✅ সঠিক-সময়ের অ্যালার্মের অনুমতি আছে'
+          : '❌ সঠিক-সময়ের অ্যালার্মের অনুমতি নেই — নোটিফিকেশন অনেক দেরিতে আসবে বা আসবে না');
+    } catch (_) {}
+    try {
+      final pend = await _plugin.pendingNotificationRequests();
+      int inRange(int lo, int hi) => pend.where((p) => p.id >= lo && p.id < hi).length;
+      out.add('🕒 বসে থাকা অ্যালার্ম: রাডার রিপোর্ট ${inRange(_radarAlarmBase, _radarAlarmBase + _radarAlarmCount)}টি · '
+          'শেষ তারিখ ${inRange(_radarDeadlineBase, _radarDeadlineBase + _radarDeadlineMax)}টি · '
+          'রিমাইন্ডার ${pend.where((p) => p.id >= 100000000).length}টি · মোট ${pend.length}টি');
+    } catch (_) {}
+    return out;
+  }
+
+  /// সঠিক-সময়ের অ্যালার্মের অনুমতি চায় (দরকার হলে ফোনের সেটিংস খোলে)।
+  static Future<void> requestExactAlarmPermission() async {
+    await init();
+    await _plugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestExactAlarmsPermission();
+  }
+
+  /// [seconds] সেকেন্ড পরে একটা পরীক্ষা নোটিফিকেশন (অ্যালার্ম দিয়ে) — অ্যাপ বন্ধ করে অপেক্ষা করলে বোঝা যায়
+  /// ফোন ব্যাকগ্রাউন্ডে অ্যালার্ম ঠিকমতো পৌঁছে দিচ্ছে কি না।
+  static Future<void> scheduleTestAlarm({int seconds = 60}) async {
+    await init();
+    final at = tz.TZDateTime.from(DateTime.now().add(Duration(seconds: seconds)), tz.local);
+    const d = AndroidNotificationDetails(
+      'radar_new_channel',
+      'Job Radar (নতুন সার্কুলার)',
+      channelDescription: 'যোগ্য নতুন সরকারি চাকরির সার্কুলার এলেই সাথে সাথে',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+    );
+    const title = '🔔 পরীক্ষা অ্যালার্ম সফল';
+    const body = 'অ্যাপ বন্ধ থাকা অবস্থায়ও অ্যালার্ম ঠিকমতো এসেছে — শেষ তারিখ ও রিপোর্টের নোটিফিকেশনও আসবে।';
+    try {
+      await _plugin.zonedSchedule(9199, title, body, at, const NotificationDetails(android: d),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime);
+    } catch (_) {
+      await _plugin.zonedSchedule(9199, title, body, at, const NotificationDetails(android: d),
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime);
+    }
+  }
+
   /// নতুন সার্কুলার/বাড়ানো শেষ তারিখ — সাথে সাথে জানানো (একই আইডি: একাধিক হলে একটাই নোটিফিকেশনে জমে)।
   static Future<void> showRadarNew(String title, String body, String bigText) async {
     await init();

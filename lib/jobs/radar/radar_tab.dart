@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../reminder/models/reminder.dart' show bn, Reminder;
 import '../../widgets/app_theme.dart';
 import '../../cashbook/services/cashbook_notification_service.dart';
+import '../../services/notification_service.dart';
 import '../services/admit_watcher.dart';
 import '../services/app_launcher.dart';
 import '../services/job_service.dart';
@@ -16,7 +17,7 @@ import 'radar_service.dart';
 import 'teletalk_browse.dart';
 
 /// চাকরি হাবের "রাডার" ট্যাব — Job Radar যে সার্কুলারগুলো তোমার যোগ্যতার সাথে মিলিয়ে
-/// বেছেছে সেগুলো এখানে দেখায়। "নজরে নাও" চাপলে সার্কুলার ট্যাবে চলে যায় (রিমাইন্ডারসহ)।
+/// বেছেছে সেগুলো এখানে দেখায়। "সেভ ও রিমাইন্ডার" চাপলে সার্কুলার ট্যাবে চলে যায় (রিমাইন্ডারসহ)।
 class RadarTab extends StatefulWidget {
   /// সার্কুলার যোগ হলে হাব রিফ্রেশ করার কলব্যাক।
   final VoidCallback onSaved;
@@ -93,7 +94,7 @@ class _RadarTabState extends State<RadarTab> {
     widget.onSaved();
     if (mounted) {
       setState(() {});
-      _snack('সার্কুলার ট্যাবে যোগ হয়েছে — শেষ তারিখের রিমাইন্ডারও সেট হয়েছে');
+      _snack('সেভ হয়েছে — সার্কুলার ট্যাবে যোগ হয়েছে, শেষ তারিখের রিমাইন্ডারও সেট হয়েছে');
     }
   }
 
@@ -480,11 +481,11 @@ class _RadarTabState extends State<RadarTab> {
                     const SizedBox(height: 8),
                     Wrap(spacing: 6, runSpacing: 2, crossAxisAlignment: WrapCrossAlignment.center, children: [
                       saved
-                          ? _chip('✔ নজরে আছে', AppTheme.textSecondary)
+                          ? _chip('✔ সেভ করা আছে', AppTheme.textSecondary)
                           : FilledButton.tonal(
                               style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
                               onPressed: () => _watch(it),
-                              child: const Text('নজরে নাও')),
+                              child: const Text('🔔 সেভ ও রিমাইন্ডার')),
                       FilledButton.icon(
                         style: FilledButton.styleFrom(
                           visualDensity: VisualDensity.compact,
@@ -564,6 +565,8 @@ class _RadarTabState extends State<RadarTab> {
     var deadlineAlert = RadarService.deadlineOn;
     var admitWatch = AdmitWatcher.on;
     var checking = false;
+    List<String> diagLines = const [];
+    var diagLoading = false;
     var time = RadarService.reportTime;
     final inc = List<String>.from(RadarService.includeTerms);
     final exc = List<String>.from(RadarService.excludeTerms);
@@ -676,7 +679,7 @@ class _RadarTabState extends State<RadarTab> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text('শেষ তারিখ ঘনিয়ে এলে জানাও', style: TextStyle(color: AppTheme.textPrimary)),
-                subtitle: Text('চলমান সার্কুলারের আবেদন শেষ হওয়ার ৩ দিন ও ১ দিন আগে, আর শেষ দিনে সকাল-বিকাল। ফোনের অ্যালার্মে আগেই বসানো থাকে — ইন্টারনেট বা ব্যাকগ্রাউন্ড ছাড়াই আসে। (নজরে-নেওয়া সার্কুলারের রিমাইন্ডার চাকরি-হাব আলাদাভাবে দেয়।)',
+                subtitle: Text('চলমান সার্কুলারের আবেদন শেষ হওয়ার ৩ দিন ও ১ দিন আগে, আর শেষ দিনে সকাল-বিকাল। ফোনের অ্যালার্মে আগেই বসানো থাকে — ইন্টারনেট বা ব্যাকগ্রাউন্ড ছাড়াই আসে। (সেভ-করা সার্কুলারের রিমাইন্ডার চাকরি-হাব আলাদাভাবে দেয়।)',
                     style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.4)),
                 value: deadlineAlert,
                 onChanged: (v) => setS(() => deadlineAlert = v),
@@ -732,6 +735,46 @@ class _RadarTabState extends State<RadarTab> {
                       onPressed: () => CashbookNotificationService.requestBatteryExemptionIfNeeded(),
                       icon: const Icon(Icons.battery_saver, size: 18),
                       label: const Text('ব্যাটারি সীমা তুলে দাও'),
+                    ),
+                  ]),
+                  const Divider(height: 22),
+                  Text('নোটিফিকেশন কেন আসছে না — পরীক্ষা', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
+                  const SizedBox(height: 6),
+                  for (final l in diagLines)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Text(l, style: TextStyle(color: AppTheme.textSecondary, fontSize: 11.5, height: 1.4)),
+                    ),
+                  Wrap(spacing: 8, runSpacing: 4, children: [
+                    OutlinedButton.icon(
+                      onPressed: diagLoading
+                          ? null
+                          : () async {
+                              setS(() => diagLoading = true);
+                              await RadarRunner.rearmDaily();
+                              final lines = await NotificationService.diagnostics();
+                              if (ctx.mounted) setS(() { diagLines = lines; diagLoading = false; });
+                            },
+                      icon: const Icon(Icons.fact_check_outlined, size: 18),
+                      label: Text(diagLoading ? 'দেখা হচ্ছে…' : 'অবস্থা দেখো'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        await NotificationService.scheduleTestAlarm(seconds: 60);
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                            duration: Duration(seconds: 6),
+                            content: Text('১ মিনিট পরের পরীক্ষা বসেছে — অ্যাপ বন্ধ করে (রিসেন্ট থেকে সরিয়ে) অপেক্ষা করো। নোটিফিকেশন এলে অ্যালার্ম ঠিক আছে।'),
+                          ));
+                        }
+                      },
+                      icon: const Icon(Icons.alarm, size: 18),
+                      label: const Text('১ মিনিট পরের পরীক্ষা'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => NotificationService.requestExactAlarmPermission(),
+                      icon: const Icon(Icons.verified_user_outlined, size: 18),
+                      label: const Text('অ্যালার্ম অনুমতি দাও'),
                     ),
                   ]),
                 ]),
