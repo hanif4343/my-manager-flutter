@@ -66,9 +66,9 @@ class JobBackupService {
   }
 
   /// রিস্টোর: (নতুন সার্কুলার, নতুন/আপডেট ডকুমেন্ট) সংখ্যা; null → ব্যাকআপ নেই/ব্যর্থ।
-  static Future<({int circulars, int docs})?> restoreFromDrive() async {
+  static Future<({int circulars, int docs})?> restoreFromDrive({BackupVersion? version}) async {
     if (!await _ensureDrive()) return null;
-    final text = await DriveService.instance.restoreJson(fileName);
+    final text = await DriveService.instance.restoreJson(fileName, version: version);
     if (text == null || text.isEmpty) return null;
     final Map<String, dynamic> data;
     try {

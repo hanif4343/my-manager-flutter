@@ -38,9 +38,9 @@ class ReminderBackupService {
   }
 
   /// নতুন যোগ হওয়া সংখ্যা; null → ব্যাকআপ নেই/সাইন-ইন নেই।
-  static Future<int?> restoreFromDrive() async {
+  static Future<int?> restoreFromDrive({BackupVersion? version}) async {
     final drive = DriveService.instance;
-    final text = await drive.restoreJson(fileName);
+    final text = await drive.restoreJson(fileName, version: version);
     if (text == null || text.isEmpty) return null;
     final Map<String, dynamic> data;
     try {

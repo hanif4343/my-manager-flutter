@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import '../../services/drive_service.dart';
+import '../../services/safety_net.dart';
 import '../db/cashbook_db.dart';
 
 /// Cashbook data gets backed up to Drive after every change, regardless of
@@ -58,12 +59,25 @@ class CashbookBackupService {
     return r;
   }
 
-  static Future<bool> restoreFromDrive() async {
+  /// [version] দিলে Drive-এর সেই পুরনো সংস্করণ থেকে ফেরায়। সুরক্ষা: ব্যাকআপে এন্ট্রি ০টি আর এখন এন্ট্রি আছে —
+  /// এমন হলে ফেরায় না; আর বদলানোর আগে বর্তমান ডেটার কপি ফোনে রাখে।
+  static Future<bool> restoreFromDrive({BackupVersion? version}) async {
     final drive = DriveService.instance;
-    final json = await drive.restoreJson(_fileName); // সাইন-ইনও এখানেই সামলায়
+    final json = await drive.restoreJson(_fileName, version: version); // সাইন-ইনও এখানেই সামলায়
     if (json == null || json.isEmpty) return false;
     try {
       final data = jsonDecode(json) as Map<String, dynamic>;
+      final backupEntries = (data['entries'] as List?)?.length ?? 0;
+      final localJson = await _json();
+      final local = jsonDecode(localJson) as Map<String, dynamic>;
+      final localEntries = (local['entries'] as List?)?.length ?? 0;
+      if (backupEntries == 0 && localEntries > 0) {
+        drive.lastError = 'এই ব্যাকআপে কোনো এন্ট্রি নেই, কিন্তু অ্যাপে এখন ${localEntries}টি এন্ট্রি আছে — ডেটা বাঁচাতে ফেরানো হয়নি';
+        return false;
+      }
+      if (localEntries > 0 || (local['accounts'] as List?)?.isNotEmpty == true) {
+        await SafetyNet.snapshot('cashbook', localJson);
+      }
       await CashbookDB.importAll(data);
       return true;
     } catch (e) {

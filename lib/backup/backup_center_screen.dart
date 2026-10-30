@@ -9,6 +9,7 @@ import '../reminder/models/reminder.dart' show bn;
 import '../reminder/services/reminder_backup_service.dart';
 import '../screens/vault_backup_sheet.dart';
 import '../services/drive_service.dart';
+import '../services/safety_net.dart';
 import '../services/settings_service.dart';
 import '../services/vault_backup_service.dart';
 import '../widgets/app_theme.dart';
@@ -249,37 +250,41 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
       ),
     );
     if (ok != true) return;
+    await _runRestore(m, null);
+  }
 
+  /// [version] null হলে সর্বশেষ ব্যাকআপ; নইলে Drive-এর বাছাই করা পুরনো সংস্করণ।
+  Future<void> _runRestore(_Mod m, BackupVersion? version) async {
     setState(() { _busyId = m.id; _msg.remove(m.id); });
     try {
       switch (m.id) {
         case 'main':
-          final r = await DriveService.instance.restoreFromDrive();
+          final r = await DriveService.instance.restoreFromDrive(version: version);
           r == DriveBackupResult.success
               ? _setMsg(m.id, '✅ ফিরে এসেছে — অ্যাপ বন্ধ করে আবার খোলো')
               : _setMsg(m.id, _driveErr(r), error: true);
           break;
         case 'cashbook':
-          final r = await CashbookBackupService.restoreFromDrive();
+          final r = await CashbookBackupService.restoreFromDrive(version: version);
           r
               ? _setMsg(m.id, '✅ ক্যাশবুক ফিরে এসেছে')
               : _setMsg(m.id, CashbookBackupService.failReason ?? 'Drive-এ ক্যাশবুকের ব্যাকআপ পাওয়া যায়নি বা সাইন-ইন নেই', error: true);
           break;
         case 'jobs':
-          final r = await JobBackupService.restoreFromDrive();
+          final r = await JobBackupService.restoreFromDrive(version: version);
           r == null
               ? _setMsg(m.id, 'ব্যাকআপ পাওয়া যায়নি বা সাইন-ইন নেই', error: true)
               : _setMsg(m.id, '✅ ${bn(r.circulars)}টা সার্কুলার, ${bn(r.docs)}টা ডকুমেন্ট আপডেট');
           break;
         case 'family':
-          final r = await FamilyBackupService.restoreFromDrive();
+          final r = await FamilyBackupService.restoreFromDrive(version: version);
           r == null
               ? _setMsg(m.id, 'ব্যাকআপ পাওয়া যায়নি বা সাইন-ইন নেই', error: true)
               : _setMsg(m.id,
                   '✅ ${bn(r.members)} সদস্য, ${bn(r.dates)} তারিখ, ${bn(r.bills)} বিল, ${bn(r.contacts)} জরুরি');
           break;
         case 'reminders':
-          final r = await ReminderBackupService.restoreFromDrive();
+          final r = await ReminderBackupService.restoreFromDrive(version: version);
           r == null
               ? _setMsg(m.id, 'ব্যাকআপ পাওয়া যায়নি বা সাইন-ইন নেই', error: true)
               : _setMsg(m.id, '✅ ${bn(r)}টা নতুন রিমাইন্ডার ফিরে এসেছে');
@@ -289,6 +294,102 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
       _setMsg(m.id, 'রিস্টোর ব্যর্থ: $e', error: true);
     }
     if (mounted) setState(() => _busyId = null);
+  }
+
+  // ───────────────── পুরনো ভার্সন থেকে ফেরানো ─────────────────
+
+  String _fmtTime(DateTime t) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${bn(t.day)}/${bn(t.month)}/${bn(t.year)} ${bn(two(t.hour))}:${bn(two(t.minute))}';
+  }
+
+  String _fmtSize(int b) {
+    if (b <= 0) return '—';
+    if (b < 1024) return '${bn(b)} বাইট';
+    if (b < 1024 * 1024) return '${bn((b / 1024).round())} KB';
+    return '${bn((b / 1024 / 1024).toStringAsFixed(1))} MB';
+  }
+
+  /// Drive-এ ফাইলের সব সংস্করণ দেখিয়ে একটা বাছতে দেয়; ভেতরে কী আছে দেখিয়ে নিশ্চিত করে তবে ফেরায়।
+  /// ভুল করে ফাঁকা ডেটা ব্যাকআপ হয়ে গেলেও আগের সংস্করণ থেকে ডেটা ফিরে পাওয়া যায় (Drive প্রায় ৩০ দিন রাখে)।
+  Future<void> _versionsTap(_Mod m) async {
+    setState(() { _busyId = m.id; _msg.remove(m.id); });
+    final list = await DriveService.instance.listVersions(m.file);
+    if (mounted) setState(() => _busyId = null);
+    if (!mounted) return;
+    if (list.isEmpty) {
+      _setMsg(m.id, DriveService.instance.lastError ?? 'Drive-এ কোনো সংস্করণ পাওয়া যায়নি', error: true);
+      return;
+    }
+    final picked = await showModalBottomSheet<BackupVersion>(
+      context: context,
+      backgroundColor: AppTheme.bg2,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 4),
+              child: Text('${m.title} — কোন সংস্করণ ফেরাবে?',
+                  style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w800, fontSize: 16)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+              child: Text('সাধারণত বড় সাইজের পুরনো সংস্করণেই বেশি ডেটা থাকে। বাছলে ভেতরে কী আছে দেখিয়ে নিশ্চিত করতে বলব।',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.4)),
+            ),
+            Flexible(
+              child: ListView(shrinkWrap: true, children: [
+                for (final v in list)
+                  ListTile(
+                    leading: Icon(v.revisionId != null || v.label.contains('সংরক্ষিত') ? Icons.history_rounded : Icons.cloud_done_outlined,
+                        color: AppTheme.accent),
+                    title: Text(_fmtTime(v.time), style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700)),
+                    subtitle: Text('${v.label} · ${_fmtSize(v.size)}', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                    onTap: () => Navigator.pop(ctx, v),
+                  ),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _busyId = m.id);
+    final text = await DriveService.instance.previewVersion(m.file, picked);
+    if (mounted) setState(() => _busyId = null);
+    if (!mounted) return;
+    if (text == null) {
+      _setMsg(m.id, DriveService.instance.lastError ?? 'এই সংস্করণ নামানো যায়নি', error: true);
+      return;
+    }
+    final counts = SafetyNet.listCounts(text).entries.where((e) => e.value > 0).toList();
+    final summary = counts.isEmpty
+        ? 'এই সংস্করণ ফাঁকা — কোনো ডেটা নেই।'
+        : counts.map((e) => '${SafetyNet.label(e.key)} ${bn(e.value)}').join(' · ');
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.bg2,
+        title: Text('${_fmtTime(picked.time)}-এর সংস্করণ'),
+        content: Text(
+          'এই সংস্করণে আছে:\n$summary\n\n'
+          '${m.replacesOnRestore ? 'ফেরালে এই মডিউলের বর্তমান ডেটা এর দ্বারা বদলে যাবে (বদলানোর আগে বর্তমান ডেটার একটা কপি ফোনে রাখা হবে)।' : 'এটা বর্তমান ডেটার সাথে মার্জ হবে — বর্তমান কিছু মুছবে না।'}',
+          style: const TextStyle(height: 1.45),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('বাতিল')),
+          TextButton(
+            onPressed: counts.isEmpty ? null : () => Navigator.pop(ctx, true),
+            child: const Text('এটাই ফেরাও'),
+          ),
+        ],
+      ),
+    );
+    if (go != true) return;
+    await _runRestore(m, picked);
   }
 
   // ───────────────── UI ─────────────────
@@ -471,6 +572,15 @@ class _BackupCenterScreenState extends State<BackupCenterScreen> {
                       ),
                     ],
                   ]),
+                  if (!m.special && signedIn)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: busy || _busyId != null ? null : () => _versionsTap(m),
+                        icon: const Icon(Icons.history_rounded, size: 18),
+                        label: const Text('পুরনো ভার্সন থেকে ফেরাও'),
+                      ),
+                    ),
                   if (msg != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),

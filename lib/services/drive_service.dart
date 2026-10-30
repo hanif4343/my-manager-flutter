@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import '../db/db_helper.dart';
+import 'safety_net.dart';
 
 class GoogleAuthClient extends http.BaseClient {
   final Map<String, String> _headers;
@@ -18,6 +19,17 @@ class GoogleAuthClient extends http.BaseClient {
     request.headers.addAll(_headers);
     return _client.send(request);
   }
+}
+
+/// Drive-এ রাখা ব্যাকআপের একটা সংস্করণ: মূল ফাইলের পুরনো revision, অথবা অ্যাপের রাখা "সংরক্ষিত কপি"।
+class BackupVersion {
+  final String? fileId;
+  final String? revisionId;
+  final DateTime time;
+  final int size;
+  final String label;
+  const BackupVersion({this.fileId, this.revisionId, required this.time, required this.size, required this.label});
+  String get key => '${fileId ?? ''}|${revisionId ?? ''}';
 }
 
 class DriveService {
@@ -135,32 +147,8 @@ class DriveService {
 
       // Export all data as JSON
       final jsonData = await _exportAllDataAsJson();
-      final jsonBytes = utf8.encode(jsonData);
-      final jsonFile = drive.File()
-        ..name = 'mymanager_backup.json'
-        ..parents = [_backupFolderId!];
-
-      // Check if exists
-      final q = "name='mymanager_backup.json' and '${_backupFolderId!}' in parents and trashed=false";
-      final existing = await _driveApi!.files.list(q: q, $fields: 'files(id)');
-
-      if (existing.files != null && existing.files!.isNotEmpty) {
-        // Update
-        await _driveApi!.files.update(
-          drive.File(),
-          existing.files!.first.id!,
-          uploadMedia: drive.Media(Stream.value(jsonBytes), jsonBytes.length),
-          $fields: 'id',
-        );
-      } else {
-        // Create
-        await _driveApi!.files.create(
-          jsonFile,
-          uploadMedia: drive.Media(Stream.value(jsonBytes), jsonBytes.length),
-          $fields: 'id',
-        );
-      }
-      return DriveBackupResult.success;
+      // ফাঁকা/অনেক ছোট ডেটা দিয়ে Drive-এর ভালো ব্যাকআপ ঢেকে ফেলা ঠেকানো — _uploadGuarded দেখো
+      return await _uploadGuarded('mymanager_backup.json', jsonData);
     } catch (e) {
       lastError = e.toString();
       debugPrint('DriveService backup error: $e');
@@ -169,32 +157,47 @@ class DriveService {
   }
 
   // ── RESTORE ───────────────────────────────────────────
-  Future<DriveBackupResult> restoreFromDrive() async {
-    if (!isSignedIn) return DriveBackupResult.notSignedIn;
+  Future<DriveBackupResult> restoreFromDrive({BackupVersion? version}) async {
     try {
       lastError = null;
-      await _initApi();
-      _backupFolderId ??= await _ensureFolder();
-      if (_backupFolderId == null) return DriveBackupResult.failed;
-
-      final q = "name='mymanager_backup.json' and '${_backupFolderId!}' in parents and trashed=false";
-      final list = await _driveApi!.files.list(q: q, $fields: 'files(id,name,modifiedTime)');
-
-      if (list.files == null || list.files!.isEmpty) return DriveBackupResult.noBackup;
-
-      final fileId = list.files!.first.id!;
-      final media = await _driveApi!.files.get(fileId, downloadOptions: drive.DownloadOptions.fullMedia) as drive.Media;
-
-      final bytes = <int>[];
-      await for (final chunk in media.stream) { bytes.addAll(chunk); }
-      final jsonData = utf8.decode(bytes);
-
-      await _importFromJson(jsonData);
-      return DriveBackupResult.success;
+      final jsonData = await restoreJson('mymanager_backup.json', version: version);
+      if (jsonData == null) {
+        return lastError == null ? DriveBackupResult.noBackup : DriveBackupResult.failed;
+      }
+      return await restoreFromText(jsonData);
     } catch (e) {
       lastError = e.toString();
       debugPrint('DriveService restore error: $e');
       return DriveBackupResult.failed;
+    }
+  }
+
+  /// প্রজেক্ট/আইডিয়ার ডেটা [jsonData] দিয়ে বদলায়। সুরক্ষা: (১) ব্যাকআপ ফাঁকা আর অ্যাপে ডেটা থাকলে বদলায় না;
+  /// (২) বদলানোর আগে বর্তমান ডেটার কপি ফোনে রাখে।
+  Future<DriveBackupResult> restoreFromText(String jsonData) async {
+    final backupN = SafetyNet.itemCount(jsonData) ?? 0;
+    final localN = await _localItemCount();
+    if (backupN == 0 && localN > 0) {
+      lastError = 'এই ব্যাকআপ ফাঁকা (প্রজেক্ট/আইডিয়া ০টি), কিন্তু অ্যাপে এখন ${localN}টি আইটেম আছে — ডেটা বাঁচাতে ফেরানো হয়নি';
+      return DriveBackupResult.failed;
+    }
+    try {
+      if (localN > 0) await SafetyNet.snapshot('main', await _exportAllDataAsJson());
+    } catch (_) {}
+    await _importFromJson(jsonData);
+    return DriveBackupResult.success;
+  }
+
+  Future<int> _localItemCount() async {
+    try {
+      final d = await DBHelper.db;
+      var n = 0;
+      for (final t in ['projects', 'ideas', 'idea_files', 'project_versions']) {
+        n += Sqflite.firstIntValue(await d.rawQuery('SELECT COUNT(*) FROM $t')) ?? 0;
+      }
+      return n;
+    } catch (_) {
+      return 0;
     }
   }
 
@@ -285,19 +288,7 @@ class DriveService {
         lastError ??= 'Backup ফোল্ডার তৈরি/খুঁজে পাওয়া যায়নি';
         return DriveBackupResult.failed;
       }
-      final bytes = utf8.encode(jsonData);
-      final existingId = await _findNewestFileId(fileName);
-      if (existingId != null) {
-        await _driveApi!.files.update(
-          drive.File(), existingId,
-          uploadMedia: drive.Media(Stream.value(bytes), bytes.length), $fields: 'id',
-        );
-      } else {
-        final f = drive.File()..name = fileName..parents = [_backupFolderId!];
-        await _driveApi!.files.create(f,
-            uploadMedia: drive.Media(Stream.value(bytes), bytes.length), $fields: 'id');
-      }
-      return DriveBackupResult.success;
+      return await _uploadGuarded(fileName, jsonData);
     } catch (e) {
       lastError = e.toString();
       debugPrint('DriveService backupJson error: $e');
@@ -306,7 +297,7 @@ class DriveService {
   }
 
   /// null → সাইন-ইন নেই / ফাইল নেই / ত্রুটি; কারণটা [lastError]-এ থাকে।
-  Future<String?> restoreJson(String fileName) async {
+  Future<String?> restoreJson(String fileName, {BackupVersion? version}) async {
     // সাইন-ইন না থাকলে আগে চুপচাপ, না হলে অ্যাকাউন্ট বাছাইয়ের পর্দা — রিস্টোর হাতে চালানো কাজ।
     if (!await ensureSignedIn(interactive: true)) {
       lastError ??= 'Google Drive-এ সাইন-ইন করা নেই';
@@ -320,13 +311,21 @@ class DriveService {
         lastError ??= 'Backup ফোল্ডার খুঁজে পাওয়া যায়নি';
         return null;
       }
-      final id = await _findNewestFileId(fileName);
+      // প্রিভিউয়ে নামানো একই ভার্সন হলে আবার নামাই না
+      if (version != null && _previewKey == '$fileName|${version.key}' && _previewText != null) {
+        final t = _previewText;
+        _previewKey = null;
+        _previewText = null;
+        return t;
+      }
+      final id = version?.fileId ?? await _findNewestFileId(fileName);
       if (id == null) {
         lastError = 'Drive-এর MyManager_Backup ফোল্ডারে $fileName নেই';
         return null;
       }
-      final media = await _driveApi!.files.get(id,
-          downloadOptions: drive.DownloadOptions.fullMedia) as drive.Media;
+      final media = (version?.revisionId != null
+          ? await _driveApi!.revisions.get(id, version!.revisionId!, downloadOptions: drive.DownloadOptions.fullMedia)
+          : await _driveApi!.files.get(id, downloadOptions: drive.DownloadOptions.fullMedia)) as drive.Media;
       final bytes = <int>[];
       await for (final chunk in media.stream) { bytes.addAll(chunk); }
       return utf8.decode(bytes);
@@ -340,6 +339,145 @@ class DriveService {
   // ── সব ব্যাকআপ ফাইলের শেষ পরিবর্তনের সময় (ব্যাকআপ কেন্দ্রের জন্য) ───────
   /// MyManager_Backup ফোল্ডারের প্রতিটা ফাইলের নাম → Drive-এ শেষ আপডেটের সময়।
   /// একটাই অনুরোধ। সাইন-ইন না থাকলে বা ব্যর্থ হলে ফাঁকা ম্যাপ।
+  // ── সুরক্ষা: ভালো ব্যাকআপ ফাঁকা/ছোট ডেটা দিয়ে ঢাকা পড়া ঠেকানো ────────────────
+
+  String? _previewKey;
+  String? _previewText;
+
+  /// আপলোড: Drive-এ আগের ব্যাকআপ থাকলে —
+  ///  • নতুন ডেটা পুরোপুরি ফাঁকা (সব তালিকা ০) আর আগেরটায় ডেটা আছে → আপলোড বন্ধ, আগেরটা অক্ষত (failed + কারণ)
+  ///  • নতুন ডেটা আগের অর্ধেকেরও কম → আগেরটার "সংরক্ষিত কপি" (শেষ ৫টা) রেখে তবে ঢাকে
+  /// যাচাই-ব্যবস্থা নিজে ব্যর্থ হলে আপলোড আটকায় না।
+  // একই ডেটা বারবার আপলোড করলে Drive-এর পুরনো ভালো ভার্সন (প্রায় ৩০ দিন/১০০টা পর্যন্ত রাখে) ঠেলে বেরিয়ে যায় —
+  // তাই এই চালুর সময়ে আগেরবার যে ডেটা (exported_at বাদে) পাঠানো হয়েছে হুবহু সেটা হলে আর পাঠাই না।
+  final Map<String, int> _lastHash = {};
+
+  static int _stableHash(String json) {
+    final t = json.replaceAll(RegExp(r'"exported_at"\s*:\s*"[^"]*"\s*,?'), '');
+    var h = 5381;
+    for (final c in t.codeUnits) {
+      h = ((h * 33) ^ c) & 0x7fffffff;
+    }
+    return h ^ t.length;
+  }
+
+  Future<DriveBackupResult> _uploadGuarded(String fileName, String jsonData) async {
+    final hash = _stableHash(jsonData);
+    if (_lastHash[fileName] == hash) return DriveBackupResult.success; // আগেরবারের হুবহু একই ডেটা
+    final res = await _uploadGuardedNow(fileName, jsonData);
+    if (res == DriveBackupResult.success) _lastHash[fileName] = hash;
+    return res;
+  }
+
+  Future<DriveBackupResult> _uploadGuardedNow(String fileName, String jsonData) async {
+    final bytes = utf8.encode(jsonData);
+    final existingId = await _findNewestFileId(fileName);
+    if (existingId != null) {
+      try {
+        final meta = await _driveApi!.files.get(existingId, $fields: 'size') as drive.File;
+        final remoteSize = int.tryParse(meta.size ?? '') ?? 0;
+        final newCount = SafetyNet.itemCount(jsonData);
+        if (newCount == 0 && remoteSize > bytes.length + 200) {
+          lastError = '⚠️ অ্যাপে এখন কোনো ডেটা নেই, কিন্তু Drive-এর আগের ব্যাকআপে ডেটা আছে — ওটা ঢাকা হয়নি। '
+              'আগের ডেটা ফিরে পেতে "ফিরিয়ে আনো" বা "পুরনো ভার্সন" চাপো।';
+          return DriveBackupResult.failed;
+        }
+        if (remoteSize >= 2000 && bytes.length * 2 < remoteSize) {
+          await _saveCopy(existingId, fileName);
+        }
+      } catch (e) {
+        debugPrint('DriveService guard check failed: $e');
+      }
+      await _driveApi!.files.update(
+        drive.File(), existingId,
+        uploadMedia: drive.Media(Stream.value(bytes), bytes.length), $fields: 'id',
+      );
+    } else {
+      final f = drive.File()..name = fileName..parents = [_backupFolderId!];
+      await _driveApi!.files.create(f,
+          uploadMedia: drive.Media(Stream.value(bytes), bytes.length), $fields: 'id');
+    }
+    return DriveBackupResult.success;
+  }
+
+  Future<void> _saveCopy(String fileId, String fileName) async {
+    try {
+      final t = DateTime.now();
+      String two(int n) => n.toString().padLeft(2, '0');
+      final stamp = '${t.year}${two(t.month)}${two(t.day)}-${two(t.hour)}${two(t.minute)}';
+      await _driveApi!.files.copy(
+        drive.File()..name = '$fileName.saved-$stamp'..parents = [_backupFolderId!],
+        fileId,
+        $fields: 'id',
+      );
+      final q = "name contains '$fileName.saved-' and '${_backupFolderId!}' in parents and trashed=false";
+      final list = await _driveApi!.files.list(q: q, $fields: 'files(id,createdTime)', orderBy: 'createdTime desc', pageSize: 30);
+      final old = list.files ?? const <drive.File>[];
+      for (var i = 5; i < old.length; i++) {
+        if (old[i].id != null) await _driveApi!.files.delete(old[i].id!);
+      }
+    } catch (e) {
+      debugPrint('DriveService saveCopy failed: $e');
+    }
+  }
+
+  /// এক ফাইলের সব সংস্করণ (নতুন আগে): এখনকার, Drive-এর পুরনো revision, আর অ্যাপের "সংরক্ষিত কপি"।
+  Future<List<BackupVersion>> listVersions(String fileName) async {
+    final out = <BackupVersion>[];
+    if (!isSignedIn) return out;
+    try {
+      lastError = null;
+      await _initApi();
+      _backupFolderId ??= await _ensureFolder();
+      if (_backupFolderId == null) return out;
+      final id = await _findNewestFileId(fileName);
+      if (id != null) {
+        final cur = await _driveApi!.files.get(id, $fields: 'modifiedTime,size') as drive.File;
+        final curTime = cur.modifiedTime?.toLocal() ?? DateTime.now();
+        out.add(BackupVersion(fileId: id, time: curTime, size: int.tryParse(cur.size ?? '') ?? 0, label: 'এখনকার ব্যাকআপ'));
+        try {
+          final revs = await _driveApi!.revisions.list(id, $fields: 'revisions(id,modifiedTime,size)', pageSize: 200);
+          for (final r in revs.revisions ?? const <drive.Revision>[]) {
+            final t = r.modifiedTime?.toLocal();
+            if (t == null || r.id == null) continue;
+            // সর্বশেষ revision মানেই "এখনকার" — একই সময়ের হলে দুবার দেখাই না
+            if ((t.difference(curTime).inSeconds).abs() <= 2) continue;
+            out.add(BackupVersion(fileId: id, revisionId: r.id, time: t, size: int.tryParse(r.size ?? '') ?? 0, label: 'Drive-এর পুরনো ভার্সন'));
+          }
+        } catch (e) {
+          debugPrint('DriveService revisions failed: $e');
+        }
+      }
+      final q = "name contains '$fileName.saved-' and '${_backupFolderId!}' in parents and trashed=false";
+      final saved = await _driveApi!.files.list(q: q, $fields: 'files(id,modifiedTime,size)', orderBy: 'createdTime desc', pageSize: 20);
+      for (final f in saved.files ?? const <drive.File>[]) {
+        if (f.id == null) continue;
+        out.add(BackupVersion(
+            fileId: f.id,
+            time: f.modifiedTime?.toLocal() ?? DateTime.now(),
+            size: int.tryParse(f.size ?? '') ?? 0,
+            label: 'অ্যাপের রাখা সংরক্ষিত কপি'));
+      }
+      out.sort((a, b) => b.time.compareTo(a.time));
+    } catch (e) {
+      lastError = e.toString();
+      debugPrint('DriveService listVersions error: $e');
+    }
+    return out;
+  }
+
+  /// একটা সংস্করণ নামিয়ে লেখাটা ফেরত দেয় (ফেরানোর আগে ভেতরে কী আছে দেখাতে); একই লেখা ফেরানোর সময় আবার নামে না।
+  Future<String?> previewVersion(String fileName, BackupVersion version) async {
+    _previewKey = null;
+    _previewText = null;
+    final t = await restoreJson(fileName, version: version);
+    if (t != null) {
+      _previewKey = '$fileName|${version.key}';
+      _previewText = t;
+    }
+    return t;
+  }
+
   Future<Map<String, DateTime>> listBackupTimes() async {
     if (!isSignedIn) return {};
     try {

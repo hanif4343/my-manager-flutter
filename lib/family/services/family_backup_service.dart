@@ -64,9 +64,9 @@ class FamilyBackupService {
   }
 
   /// রিস্টোর: নতুন যোগ হওয়া (সদস্য, তারিখ, বিল, জরুরি) সংখ্যা; null → ব্যাকআপ নেই।
-  static Future<({int members, int dates, int bills, int contacts})?> restoreFromDrive() async {
+  static Future<({int members, int dates, int bills, int contacts})?> restoreFromDrive({BackupVersion? version}) async {
     if (!await _ensureDrive()) return null;
-    final text = await DriveService.instance.restoreJson(fileName);
+    final text = await DriveService.instance.restoreJson(fileName, version: version);
     if (text == null || text.isEmpty) return null;
     final Map<String, dynamic> data;
     try {
